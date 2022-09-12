@@ -225,4 +225,4 @@ if __name__ == "__main__":
     repo_df = get_dh_repos_data('../data/repos_topic_dh.csv', rates_df)
     repo_languages_df = get_repo_languages(repo_df, '../data/repos_topic_dh_languages.csv', rates_df)
     contributors_df = get_repo_contributors(repo_df, '../data/repos_topic_dh_contributors.csv', rates_df)
-    commits_df = get_repos_commits(repo_df, '../private_data/repos_topic_dh_commits.csv', rates_df)
+    # commits_df = get_repos_commits(repo_df, '../private_data/repos_topic_dh_commits.csv', rates_df)
