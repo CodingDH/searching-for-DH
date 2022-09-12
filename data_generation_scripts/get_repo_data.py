@@ -112,14 +112,14 @@ def get_languages(row):
     return response.json()
 
 def get_repo_languages(repo_df, output_path, rates_df):
-    calls_remaining = rates_df['resources.core.remaining']
+    calls_remaining = rates_df['resources.core.remaining'].values[0]
     if os.path.exists(output_path):
         repo_df = pd.read_csv(output_path)
     else:
         while len(repo_df[repo_df.languages_url.notna()]) > calls_remaining:
             time.sleep(3700)
             rates_df = check_rate_limit()
-            calls_remaining = rates_df['resources.core.remaining']
+            calls_remaining = rates_df['resources.core.remaining'].values[0]
         else:
             tqdm.pandas(desc="Getting Languages")
             repo_df['languages'] = repo_df.progress_apply(get_languages, axis=1)
