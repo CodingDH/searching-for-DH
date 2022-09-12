@@ -1,11 +1,12 @@
+import re
+import time
 from time import sleep
 import pandas as pd
 import requests
 import os
 from tqdm import tqdm
 import apikey
-import re
-import time
+
 
 auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
 
