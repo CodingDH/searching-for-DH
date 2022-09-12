@@ -12,15 +12,18 @@ auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
 auth_headers = {'Authorization': f'token {auth_token}','User-Agent': 'request'}
 
 def check_rate_limit():
+    # Checks for rate limit so that you don't hit issues with Github API. Mostly for search API that has a 30 requests per minute https://docs.github.com/en/rest/rate-limit
     url = 'https://api.github.com/rate_limit'
     response = requests.get(url, headers=auth_headers)
     rates_df = pd.json_normalize(response.json())
     return rates_df
 
 def check_total_pages(url):
+    # Check total number of pages to get from search. Useful for not going over rate limit
     return re.search('\d+$', requests.get(f'{url}?per_page=1', headers=auth_headers).links['last']['url']).group()
 
 def check_if_new_repos(repo_df):
+    # Checks if there are any new repos or not
     query = f"https://api.github.com/search/repositories?q=topic:digital-humanities&per_page=100&page=1"
     try:
         response = requests.get(query, headers=auth_headers)
@@ -60,6 +63,7 @@ def get_search_api_data(query, total_pages):
     return repo_df
 
 def get_dh_repos_data(output_path, rates_df):
+    #Specifically does a query for DH repos, but checks if rate limit will be hit or not, and whether there are new repos
     query = f"https://api.github.com/search/repositories?q=topic:digital-humanities&per_page=100&page=1"
 
     total_pages = int(check_total_pages(query))
@@ -74,6 +78,7 @@ def get_dh_repos_data(output_path, rates_df):
             repo_df = pd.read_csv(output_path)
             new_repos = check_if_new_repos(repo_df)
             if new_repos:
+                #Could refactor this to combine new and old data rather than removing it
                 os.remove(output_path)
             else:
                 return repo_df
@@ -120,7 +125,7 @@ def get_repo_languages(repo_df, output_path, rates_df):
             repo_df.to_csv(output_path, index=False)
     return repo_df
 
-def get_contributors(repo_df, output_path, ):
+def get_contributors(repo_df, output_path):
     contributors_rows = []
     for _, row in tqdm(repo_df.iterrows(), total=repo_df.shape[0], desc="Getting Contributors"):
         try: 
@@ -199,8 +204,6 @@ def get_repos_commits(repo_df, output_path, rates_df):
                 missing_commits_repos = set(repos) - set(existing_repos)
                 missing_repos_df = repo_df[repo_df.html_url.isin(missing_commits_repos)]
                 missing_repos_df = get_commits(missing_repos_df, output_path)
-                print(missing_repos_df)
-                print(commits_df)
                 final_commits_df = pd.concat([commits_df, missing_repos_df])
                 final_commits_df = final_commits_df.reset_index(drop=True)
                 final_commits_df['commit.committer.date_time'] = pd.to_datetime(final_commits_df['commit.committer.date'], format='%Y-%m-%dT%H:%M:%SZ')
@@ -217,7 +220,8 @@ def get_repos_commits(repo_df, output_path, rates_df):
     return final_commits_df
 
 if __name__ == "__main__":
-    repo_df = get_dh_repos_data('../data/repos_topic_dh.csv')
-    repo_languages_df = get_repo_languages(repo_df, '../data/repos_topic_dh_languages.csv')
-    contributors_df = get_repo_contributors(repo_df, '../data/repos_topic_dh_contributors.csv')
-    commits_df = get_repos_commits(repo_df, '../data/repos_topic_dh_commits.csv')
+    rates_df = check_rate_limit()
+    repo_df = get_dh_repos_data('../data/repos_topic_dh.csv', rates_df)
+    repo_languages_df = get_repo_languages(repo_df, '../data/repos_topic_dh_languages.csv', rates_df)
+    contributors_df = get_repo_contributors(repo_df, '../data/repos_topic_dh_contributors.csv', rates_df)
+    commits_df = get_repos_commits(repo_df, '../private_data/repos_topic_dh_commits.csv', rates_df)
