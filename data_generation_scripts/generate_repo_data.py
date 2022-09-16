@@ -26,16 +26,20 @@ def check_rate_limit():
 def check_total_pages(url):
     # Check total number of pages to get from search. Useful for not going over rate limit
     response = requests.get(f'{url}?per_page=1', headers=auth_headers)
-    if len(response.links) == 0:
-        total_pages = 1
+    if response.status_code != 200:
+        print('hit rate limiting. trying to sleep...')
+        time.sleep(120)
+        response = requests.get(url, headers=auth_headers)
+        total_pages = 1 if len(response.links) == 0 else re.search('\d+$', response.links['last']['url']).group()
     else:
-        total_pages = re.search('\d+$', response.links['last']['url']).group()
+        total_pages = 1 if len(response.links) == 0 else re.search('\d+$', response.links['last']['url']).group()
     return total_pages
 
 def check_total_results(url):
     # Check total results from api call
     response = requests.get(url, headers=auth_headers)
     if response.status_code != 200:
+        print('hit rate limiting. trying to sleep...')
         time.sleep(120)
         response = requests.get(url, headers=auth_headers)
         data = response.json()
@@ -43,25 +47,20 @@ def check_total_results(url):
         data = response.json()
     return data['total_count']
 
-def search_request(url):
-    response = requests.get(url, headers=auth_headers)
-    # response_data.extend(response.json())
-    if response.status_code != 200:
-        print(response.status_code)
-    response_data = response.json()
-    response_df = pd.DataFrame.from_dict(response_data['items'])
-    response_df['query'] = query
-    return response_df
-
-
 def get_search_api_data(query, total_pages):
     # Thanks https://stackoverflow.com/questions/33878019/how-to-get-data-from-all-pages-in-github-api-with-python 
     dfs = []
     pbar = tqdm(total=total_pages, desc="Getting Search API Data")
     try:
         response = requests.get(query, headers=auth_headers)
-        # response_data.extend(response.json())
-        response_data = response.json()
+        if response.status_code != 200:
+            print('hit rate limiting. trying to sleep...')
+            time.sleep(120)
+            response = requests.get(query, headers=auth_headers)
+            response_data = response.json()
+        else:
+            response_data = response.json()
+
         response_df = pd.DataFrame.from_dict(response_data['items'])
         response_df['query'] = query
         dfs.append(response_df)
@@ -70,11 +69,14 @@ def get_search_api_data(query, total_pages):
             time.sleep(120)
             query = response.links['next']['url']
             response = requests.get(query, headers=auth_headers)
-            # response_data.extend(response.json())
-            response_data = response.json()
+            if response.status_code != 200:
+                print('hit rate limiting. trying to sleep...')
+                response = requests.get(query, headers=auth_headers)
+                response_data = response.json()
+            else:
+                response_data = response.json()
             response_df = pd.DataFrame.from_dict(response_data['items'])
             response_df['query'] = query
-            response_df.to_csv(" ")
             dfs.append(response_df)
             pbar.update(1)
     
@@ -82,6 +84,7 @@ def get_search_api_data(query, total_pages):
         print(f"Error with URL: {query}")
 
     pbar.close()
+    print(len(dfs))
     search_df = pd.concat(dfs)
     return search_df
 
@@ -111,7 +114,7 @@ def process_search_data(rates_df, query, output_path, total_results):
         return repo_df
 
 
-def process_large_search_data(rates_df, search_url, term, params, output_path, total_results):
+def process_large_search_data(rates_df, search_url, term, params, initial_output_path, total_results):
     """https://api.github.com/search/repositories?q=%22Digital+Humanities%22+created%3A2017-01-01..2017-12-31+sort:updated"""
     first_year = 2008
     current_year = datetime.now().year
@@ -120,7 +123,7 @@ def process_large_search_data(rates_df, search_url, term, params, output_path, t
     years = list(range(first_year, current_year+1))
     repo_dfs = []
     for year in years:
-        output_path = output_path + f"_{year}.csv"
+        yearly_output_path = initial_output_path + f"_{year}.csv"
         dh_term = term.replace(' ', '+')
         if year == current_year:
             query = search_url + f"%22{dh_term}%22+created%3A{year}-01-01..{year}-{current_month}-{current_day}+sort:created{params}"
@@ -135,17 +138,17 @@ def process_large_search_data(rates_df, search_url, term, params, output_path, t
             rates_df = check_rate_limit()
             calls_remaining = rates_df['resources.search.remaining'].values[0]
         else:
-            if os.path.exists(output_path):
-                repo_df = pd.read_csv(output_path)
+            if os.path.exists(yearly_output_path):
+                repo_df = pd.read_csv(yearly_output_path)
                 print(repo_df.shape[0], len(repo_df), int(total_results))
                 if repo_df.shape[0] != int(total_results):
                     #Could refactor this to combine new and old data rather than removing it
-                    os.remove(output_path)
+                    os.remove(yearly_output_path)
                 else:
                     return repo_df
             repo_df = get_search_api_data(query, total_pages)
             repo_df = repo_df.reset_index(drop=True)
-            repo_df.to_csv(output_path, index=False)
+            repo_df.to_csv(yearly_output_path, index=False)
             repo_dfs.append(repo_df)
         
     final_df = pd.concat(repo_dfs)
@@ -179,51 +182,67 @@ def generate_dh_queries(initial_output_path, rates_df):
     metadata_output_path = "../data/repo_query_directory.csv"
     for index, row in dh_df.iterrows():
         if index == 0:
+            ## remove query directory if first loop
             os.remove(metadata_output_path)
         
+        #Check if term exists as a topic
         search_query = row.dh_term.replace(' ', '+')
         search_topics_query = "https://api.github.com/search/topics?q=" + search_query
         response = requests.get(search_topics_query, headers=auth_headers)
         data = response.json()
-
+        if response.status_code != 200:
+            time.sleep(120)
+            response = requests.get(search_topics_query, headers=auth_headers)
+            data = response.json()
+        #Add query to query directory
         build_query_directory(row.dh_term, row.language, search_topics_query, data['total_count'], metadata_output_path)
+
+        # If term exists as a topic proceed
         if data['total_count'] > 0:
+            # Term may be multiple topics so loop through them
             for item in data['items']:
                 tagged_query = item['name'].replace(' ', '-')
                 repos_tagged_query = "https://api.github.com/search/repositories?q=topic:" + tagged_query + "&per_page=100&page=1"
-
-                total_results = check_total_results(repos_tagged_query)
-                build_query_directory(row.dh_term, row.language, repos_tagged_query, total_results, metadata_output_path)
-                if total_results > 0:
+                # Check how many results and add query to query directory
+                total_tagged_results = check_total_results(repos_tagged_query)
+                build_query_directory(row.dh_term, row.language, repos_tagged_query, total_tagged_results, metadata_output_path)
+                #If results exist then proceed
+                if total_tagged_results > 0:
 
                     output_term = item['name'].replace(' ','_')
-                    
-                    if total_results > 1000:
+                    # If more than 1000 results, need to reformulate the queries by year since Github only returns max 1000 results
+                    if total_tagged_results > 1000:
                         search_url = "https://api.github.com/search/repositories?q=topic:"
                         term = item['name']
                         params = "&per_page=100&page=1"
-                        output_path = initial_output_path + f'repos_tagged_{row.language}_{output_term}'
-                        repo_df = process_search_data(rates_df, search_url, term, params, output_path, total_results)
+                        initial_tagged_output_path = initial_output_path + f'repos_tagged_{row.language}_{output_term}'
+                        repo_df = process_large_search_data(rates_df, search_url, term, params, initial_tagged_output_path, total_tagged_results)
                     else:
-                        output_path = initial_output_path + f'repos_tagged_{row.language}_{output_term}.csv'
-                        repo_df = process_search_data(rates_df, repos_tagged_query, output_path, total_results)
+                        # If fewer than a 1000 proceed to normal search calls
+                        final_tagged_output_path = initial_output_path + f'repos_tagged_{row.language}_{output_term}.csv'
+                        repo_df = process_search_data(rates_df, repos_tagged_query, final_tagged_output_path, total_tagged_results)
+                    #Record original natural language and original DH term. Finally append to list
                     repo_df['dh_term'] = item['name']
                     repo_df['dh_lang'] = row.language
                     final_dfs.append(repo_df)
+
+        # Now search for repos that contain query string
         search_repos_query = "https://api.github.com/search/repositories?q=" + search_query + "&per_page=100&page=1"
-        total_results = check_total_results(search_repos_query)
-        build_query_directory(row.dh_term, row.language, search_repos_query, total_results, metadata_output_path)
-        if total_results > 0:
-            output_term = row.dh_term.replace(' ','_')
-            if total_results > 1000:
-                search_url = "https://api.github.com/search/repositories?q=topic:"
-                term = item['name']
+        # Check how many results and add to query directory
+        total_search_results = check_total_results(search_repos_query)
+        build_query_directory(row.dh_term, row.language, search_repos_query, total_search_results, metadata_output_path)
+
+        if total_search_results > 0:
+            output_term = row.dh_term.replace(' ','+')
+            if total_search_results > 1000:
+                search_url = "https://api.github.com/search/repositories?q="
+                term = row.dh_term
                 params = "&per_page=100&page=1"
-                output_path = initial_output_path + f'repos_tagged_{row.language}_{output_term}'
-                repo_df = process_search_data(rates_df, search_url, term, params, output_path, total_results)
+                initial_searched_output_path = initial_output_path + f'repos_searched_{row.language}_{output_term}'
+                process_large_search_data(rates_df, search_url, term, params, initial_searched_output_path, total_search_results)
             else:
-                output_path = initial_output_path + f'repos_searched_{row.language}_{output_term}.csv'
-                repo_df = process_search_data(rates_df, search_repos_query, output_path, total_results)
+                final_searched_output_path = initial_output_path + f'repos_searched_{row.language}_{output_term}.csv'
+                repo_df = process_search_data(rates_df, search_repos_query, final_searched_output_path, total_search_results)
             repo_df['dh_term'] = row.dh_term
             repo_df['dh_lang'] = row.language
             final_dfs.append(repo_df)
