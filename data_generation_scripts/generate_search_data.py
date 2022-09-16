@@ -10,42 +10,14 @@ import json
 import codecs
 import shutil
 from datetime import datetime
+import sys
+sys.path.append("..")
+from data_generation_scripts.utils import *
 
 
 auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
 
 auth_headers = {'Authorization': f'token {auth_token}','User-Agent': 'request'}
-
-def check_rate_limit():
-    # Checks for rate limit so that you don't hit issues with Github API. Mostly for search API that has a 30 requests per minute https://docs.github.com/en/rest/rate-limit
-    url = 'https://api.github.com/rate_limit'
-    response = requests.get(url, headers=auth_headers)
-    rates_df = pd.json_normalize(response.json())
-    return rates_df
-
-def check_total_pages(url):
-    # Check total number of pages to get from search. Useful for not going over rate limit
-    response = requests.get(f'{url}?per_page=1', headers=auth_headers)
-    if response.status_code != 200:
-        print('hit rate limiting. trying to sleep...')
-        time.sleep(120)
-        response = requests.get(url, headers=auth_headers)
-        total_pages = 1 if len(response.links) == 0 else re.search('\d+$', response.links['last']['url']).group()
-    else:
-        total_pages = 1 if len(response.links) == 0 else re.search('\d+$', response.links['last']['url']).group()
-    return total_pages
-
-def check_total_results(url):
-    # Check total results from api call
-    response = requests.get(url, headers=auth_headers)
-    if response.status_code != 200:
-        print('hit rate limiting. trying to sleep...')
-        time.sleep(120)
-        response = requests.get(url, headers=auth_headers)
-        data = response.json()
-    else:
-        data = response.json()
-    return data['total_count']
 
 def get_search_api_data(query, total_pages):
     # Thanks https://stackoverflow.com/questions/33878019/how-to-get-data-from-all-pages-in-github-api-with-python 
@@ -250,3 +222,12 @@ def generate_dh_queries(initial_output_path, rates_df):
     return final_df
         
         
+def get_search_df():
+    dfs = []
+    for subdir, dirs, files in os.walk('../data/repo_data'):
+        for f in files:
+            temp_df = pd.read_csv(subdir + '/' + f)
+            dfs.append(temp_df)
+    final_df = pd.concat(dfs)
+    repo_df = final_df.drop_duplicates(subset='id')
+    return repo_df
