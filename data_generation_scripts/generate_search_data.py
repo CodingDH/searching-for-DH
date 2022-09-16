@@ -1,6 +1,4 @@
-import re
 import time
-from time import sleep
 import pandas as pd
 import requests
 import os
@@ -8,7 +6,6 @@ from tqdm import tqdm
 import apikey
 import json
 import codecs
-import shutil
 from datetime import datetime
 import sys
 sys.path.append("..")

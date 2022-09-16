@@ -1,6 +1,4 @@
-import re
 import time
-from time import sleep
 import pandas as pd
 import requests
 import os
