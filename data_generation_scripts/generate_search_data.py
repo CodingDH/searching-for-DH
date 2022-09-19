@@ -1,3 +1,4 @@
+from curses import meta
 import time
 import pandas as pd
 import requests
@@ -16,19 +17,14 @@ auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
 
 auth_headers = {'Authorization': f'token {auth_token}','User-Agent': 'request'}
 
+
 def get_search_api_data(query, total_pages):
     # Thanks https://stackoverflow.com/questions/33878019/how-to-get-data-from-all-pages-in-github-api-with-python 
     dfs = []
     pbar = tqdm(total=total_pages, desc="Getting Search API Data")
     try:
         response = requests.get(query, headers=auth_headers)
-        if response.status_code != 200:
-            print('hit rate limiting. trying to sleep...')
-            time.sleep(120)
-            response = requests.get(query, headers=auth_headers)
-            response_data = response.json()
-        else:
-            response_data = response.json()
+        response_data = get_response_data(response, query)
 
         response_df = pd.DataFrame.from_dict(response_data['items'])
         response_df['query'] = query
@@ -38,12 +34,8 @@ def get_search_api_data(query, total_pages):
             time.sleep(120)
             query = response.links['next']['url']
             response = requests.get(query, headers=auth_headers)
-            if response.status_code != 200:
-                print('hit rate limiting. trying to sleep...')
-                response = requests.get(query, headers=auth_headers)
-                response_data = response.json()
-            else:
-                response_data = response.json()
+            response_data = get_response_data(response, query)
+
             response_df = pd.DataFrame.from_dict(response_data['items'])
             response_df['query'] = query
             dfs.append(response_df)
@@ -150,17 +142,15 @@ def generate_dh_queries(initial_output_path, rates_df):
         print(f"Getting repos with this term: {row.dh_term} in this language: {row.language}")
         if index == 0:
             ## remove query directory if first loop
-            os.remove(metadata_output_path)
+            if os.path.exists(metadata_output_path):
+                os.remove(metadata_output_path)
         
         #Check if term exists as a topic
         search_query = row.dh_term.replace(' ', '+')
         search_topics_query = "https://api.github.com/search/topics?q=" + search_query
         response = requests.get(search_topics_query, headers=auth_headers)
-        data = response.json()
-        if response.status_code != 200:
-            time.sleep(120)
-            response = requests.get(search_topics_query, headers=auth_headers)
-            data = response.json()
+        data = get_response_data(response, search_topics_query)
+
         #Add query to query directory
         build_query_directory(row.dh_term, row.language, search_topics_query, data['total_count'], metadata_output_path)
 

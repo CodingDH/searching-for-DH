@@ -47,6 +47,20 @@ def check_total_results(url):
         data = response.json()
     return data['total_count']
 
+def get_response_data(response, query):
+    if response.status_code != 200:
+        if response.status_code == 401:
+            print("response code 401 - unauthorized access. check api key")
+        else:
+            print(f'response code: {response.status_code}. hit rate limiting. trying to sleep...')
+            time.sleep(120)
+            response = requests.get(query, headers=auth_headers)
+            response_data = response.json()
+    else:
+        response_data = response.json()
+    
+    return response_data
+
 def get_api_data(query):
     # Thanks https://stackoverflow.com/questions/33878019/how-to-get-data-from-all-pages-in-github-api-with-python
 
