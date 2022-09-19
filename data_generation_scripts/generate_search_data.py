@@ -53,7 +53,6 @@ def get_search_api_data(query, total_pages):
         print(f"Error with URL: {query}")
 
     pbar.close()
-    print(len(dfs))
     search_df = pd.concat(dfs)
     return search_df
 
@@ -70,7 +69,6 @@ def process_search_data(rates_df, query, output_path, total_results):
     else:
         if os.path.exists(output_path):
             repo_df = pd.read_csv(output_path)
-            print(repo_df.shape[0], len(repo_df), int(total_results))
             if repo_df.shape[0] != int(total_results):
                 #Could refactor this to combine new and old data rather than removing it
                 os.remove(output_path)
@@ -109,7 +107,6 @@ def process_large_search_data(rates_df, search_url, term, params, initial_output
         else:
             if os.path.exists(yearly_output_path):
                 repo_df = pd.read_csv(yearly_output_path)
-                print(repo_df.shape[0], len(repo_df), int(total_results))
                 if repo_df.shape[0] != int(total_results):
                     #Could refactor this to combine new and old data rather than removing it
                     os.remove(yearly_output_path)
@@ -150,6 +147,7 @@ def generate_dh_queries(initial_output_path, rates_df):
     final_dfs = []
     metadata_output_path = "../data/repo_query_directory.csv"
     for index, row in dh_df.iterrows():
+        print(f"Getting repos with this term: {row.dh_term} in this language: {row.language}")
         if index == 0:
             ## remove query directory if first loop
             os.remove(metadata_output_path)
