@@ -23,11 +23,6 @@ def check_total_pages(url):
     # Check total number of pages to get from search. Useful for not going over rate limit
     return re.search('\d+$', requests.get(f'{url}?per_page=1', headers=auth_headers).links['last']['url']).group()
 
-def check_total_results(url):
-    # Check total results from api call
-    response = requests.get(url, headers=auth_headers)
-    return response.json()['total_count']
-
 def check_if_new_repos(repo_df):
     # Checks if there are any new repos or not
     query = f"https://api.github.com/search/repositories?q=topic:digital-humanities&per_page=100&page=1"
@@ -65,13 +60,8 @@ def get_search_api_data(query, total_pages):
     except:
         print(f"Error with URL: {url}")
     pbar.close()
-    search_df = pd.concat(dfs)
-    return search_df
-
-def check_get_topics(dh_df):
-    pass
-
-
+    repo_df = pd.concat(dfs)
+    return repo_df
 
 def get_dh_repos_data(output_path, rates_df):
     #Specifically does a query for DH repos, but checks if rate limit will be hit or not, and whether there are new repos
