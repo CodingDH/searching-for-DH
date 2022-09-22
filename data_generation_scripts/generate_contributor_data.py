@@ -1,3 +1,4 @@
+import math
 import time
 import pandas as pd
 import requests
@@ -61,7 +62,7 @@ def get_repo_contributors(repo_df, output_path, rates_df):
             contributors_df = get_contributors(repo_df, output_path)
     return contributors_df
 
-def organize_data_from_response(response_data):
+def organize_data_from_response(response_data, row):
 
     data = pd.json_normalize(response_data)
     # Add contributor data for easier linking
@@ -85,31 +86,41 @@ def get_connected_repos(df, column_name, output_path):
     :rtype: dataframe
     """
 
-    expanded_rows = []
     for _, row in tqdm(df.iterrows(), total=df.shape[0], desc=f"Getting {column_name} data"):
-        url = row[column_name]
-        total_pages = check_total_pages(url)
-        print(f"{row}: {total_pages} pages")
-
-        response = requests.get(url, headers=auth_headers)
-        # get_response_data function in utils
-        response_data = get_response_data(response, url)
         
-        data = organize_data_from_response(response_data)
+        expanded_rows = []
+
+        url = row[column_name]
+        response = requests.get(url, headers=auth_headers)
+        # get_response_data() function in utils
+        response_data = get_response_data(response, url)
+        # organize_data_from_response() in utils
+        data = organize_data_from_response(response_data, row)
         expanded_rows.append(data)
 
         while "next" in response.links.keys():
-            time.sleep(120)
+            print(f"Getting next page for {url}")
+            time.sleep(5)
             query = response.links['next']['url']
             response = requests.get(query, headers=auth_headers)
+            
             response_data = get_response_data(response, query)
-
-            data = organize_data_from_response(response_data)
+            data = organize_data_from_response(response_data, row)
             expanded_rows.append(data)
 
-        time.sleep(30)
+        user_repos = pd.concat(expanded_rows)
+        user_repos.to_csv(output_path, mode='a', index=False, header=False)
 
-    connected_repos = pd.concat(expanded_rows)
-    connected_repos.to_csv(output_path, index=False)
+        # check status before continuing to next row
+        api_calls = check_api_calls('jerielizabeth')
+        calls_remaining = api_calls['remaining_calls']
+        if int(calls_remaining) < 5:
+            print(f'Remaining queries: {calls_remaining}')
+            reset_time = api_calls['reset_time']
+            current_time = time.time()
+            print(f'Sleeping for {int(reset_time) - math.trunc(current_time)}')
+            time.sleep(int(reset_time) - math.trunc(current_time))
+        else:
+            continue
     
-    return connected_repos
+    print(f"{column_name} queries completed")
