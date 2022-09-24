@@ -1,3 +1,4 @@
+import math
 import time
 import pandas as pd
 import requests
@@ -60,3 +61,66 @@ def get_repo_contributors(repo_df, output_path, rates_df):
         else:
             contributors_df = get_contributors(repo_df, output_path)
     return contributors_df
+
+def organize_data_from_response(response_data, row):
+
+    data = pd.json_normalize(response_data)
+    # Add contributor data for easier linking
+    data['owner'] = row.login
+    data['owner_id'] = row.id
+    data['owner_url'] = row.url
+
+    return data
+
+def get_connected_repos(df, column_name, output_path):
+    """
+    Working from a dataframe of contributors to DH projects, generates repo data for all repositories connected to those users.
+
+    :param df: Dataframe of all contributors to the initial search for DH related repositories
+    :param column_name: String containing the columns with URL to connected data. Expected values are `repos_url`, `organizations_url`, `followers_url`, `subscriptions_url`
+    :param output_path: Location to save table of contributor repos
+    :type df: dataframe
+    :type column_name: str
+    :type output_path: str
+    :return: Dataframe of all contributor related respositories
+    :rtype: dataframe
+    """
+
+    for _, row in tqdm(df.iterrows(), total=df.shape[0], desc=f"Getting {column_name} data"):
+        
+        expanded_rows = []
+
+        url = row[column_name]
+        response = requests.get(url, headers=auth_headers)
+        # get_response_data() function in utils
+        response_data = get_response_data(response, url)
+        # organize_data_from_response() in utils
+        data = organize_data_from_response(response_data, row)
+        expanded_rows.append(data)
+
+        while "next" in response.links.keys():
+            print(f"Getting next page for {url}")
+            time.sleep(5)
+            query = response.links['next']['url']
+            response = requests.get(query, headers=auth_headers)
+            
+            response_data = get_response_data(response, query)
+            data = organize_data_from_response(response_data, row)
+            expanded_rows.append(data)
+
+        user_repos = pd.concat(expanded_rows)
+        user_repos.to_csv(output_path, mode='a', index=False, header=False)
+
+        # check status before continuing to next row
+        api_calls = check_api_calls('jerielizabeth')
+        calls_remaining = api_calls['remaining_calls']
+        if int(calls_remaining) < 5:
+            print(f'Remaining queries: {calls_remaining}')
+            reset_time = api_calls['reset_time']
+            current_time = time.time()
+            print(f'Sleeping for {int(reset_time) - math.trunc(current_time)}')
+            time.sleep(int(reset_time) - math.trunc(current_time))
+        else:
+            continue
+    
+    print(f"{column_name} queries completed")

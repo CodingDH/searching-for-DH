@@ -1,3 +1,14 @@
+# Large Data Files
+
+data/expanded_contributor_data_followers.csv
+data/expanded_contributor_data_repos.csv
+data/expanded_contributor_data_subscriptions.csv
+
+
+
+# ---
+# Defaults from a Python ignore
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

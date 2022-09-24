@@ -23,6 +23,14 @@ def check_rate_limit():
     rates_df = pd.json_normalize(response.json())
     return rates_df
 
+def check_api_calls(user):
+    url=f'https://api.github.com/users/{user}'
+    response = requests.get(url, headers=auth_headers)
+    api_dict = {}
+    api_dict['remaining_calls'] = response.headers['X-RateLimit-Remaining']
+    api_dict['reset_time'] = response.headers['X-RateLimit-Reset']
+    return api_dict
+
 def check_total_pages(url):
     # Check total number of pages to get from search. Useful for not going over rate limit
     response = requests.get(f'{url}?per_page=1', headers=auth_headers)
@@ -46,6 +54,24 @@ def check_total_results(url):
     else:
         data = response.json()
     return data['total_count']
+
+def get_response_data(response, query):
+    if response.status_code != 200:
+        if response.status_code == 401:
+            print("response code 401 - unauthorized access. check api key")
+        else:
+            print(f'response code: {response.status_code}. hit rate limiting. trying to sleep...')
+            time.sleep(120)
+            response = requests.get(query, headers=auth_headers)
+            if response.status_code != 200:
+                print(f'query failed twice with code {response.status_code}. Failing URL: {query}')
+                exit()
+            else:
+                response_data = response.json()
+    else:
+        response_data = response.json()
+    
+    return response_data
 
 def get_api_data(query):
     # Thanks https://stackoverflow.com/questions/33878019/how-to-get-data-from-all-pages-in-github-api-with-python
