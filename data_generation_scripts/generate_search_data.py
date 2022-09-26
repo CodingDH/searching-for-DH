@@ -1,5 +1,6 @@
 from curses import meta
 import time
+from typing import final
 import pandas as pd
 import requests
 import os
@@ -19,6 +20,10 @@ auth_headers = {'Authorization': f'token {auth_token}','User-Agent': 'request'}
 
 
 def get_search_api_data(query, total_pages):
+    """Function to get all data from the search API
+    :param query: the query to be passed to the search API
+    :param total_pages: the total number of pages to be queried
+    :return: a dataframe of the data returned from the API"""
     # Thanks https://stackoverflow.com/questions/33878019/how-to-get-data-from-all-pages-in-github-api-with-python 
     dfs = []
     pbar = tqdm(total=total_pages, desc="Getting Search API Data")
@@ -50,6 +55,12 @@ def get_search_api_data(query, total_pages):
 
 
 def process_search_data(rates_df, query, output_path, total_results):
+    """Function to process the data from the search API
+    :param rates_df: the dataframe of the current rate limit
+    :param query: the query to be passed to the search API
+    :param output_path: the path to the output file
+    :param total_results: the total number of results to be returned from the API
+    :return: a dataframe of the data returned from the API"""
     print(query)
     total_pages = int(check_total_pages(query))
     print(f"Total pages: {total_pages}")
@@ -74,7 +85,14 @@ def process_search_data(rates_df, query, output_path, total_results):
 
 
 def process_large_search_data(rates_df, search_url, term, params, initial_output_path, total_results):
-    """https://api.github.com/search/repositories?q=%22Digital+Humanities%22+created%3A2017-01-01..2017-12-31+sort:updated"""
+    """https://api.github.com/search/repositories?q=%22Digital+Humanities%22+created%3A2017-01-01..2017-12-31+sort:updated
+    Function to process the data from the search API that has over 1000 results
+    :param rates_df: the dataframe of the current rate limit
+    :param search_url: the base url for the search API
+    :param term: the term to be searched for
+    :param params: the parameters to be passed to the search API
+    :param initial_output_path: the path to the output file
+    :param total_results: the total number of results to be returned from the API"""
     first_year = 2008
     current_year = datetime.now().year
     current_day = datetime.now().day
@@ -112,7 +130,7 @@ def process_large_search_data(rates_df, search_url, term, params, initial_output
     final_df = pd.concat(repo_dfs)
     return final_df
 
-def build_query_directory(dh_term, language, query, total_results, output_path):
+def build_search_query_directory(dh_term, language, query, total_results, output_path):
     metadata_dict = {}
     metadata_dict['dh_term'] = dh_term
     metadata_dict['language'] = language
@@ -123,20 +141,39 @@ def build_query_directory(dh_term, language, query, total_results, output_path):
         metadata_df.to_csv(output_path, mode="a", header=False, index=False)
     else:
         metadata_df.to_csv(output_path, index=False)
+    
 
-def generate_dh_queries(initial_output_path, rates_df):
-    """Needs to: 
-     - first get each language
-     - then search for topics
-        - then search for repos tagged with topics OR containing search query
-     - then deduplicate
-     - finally store by language
-     """
+def combine_search_df(final_output_path, dfs):
+    if len(dfs) == 0:
+        dfs = []
+        for subdir, _, files in os.walk('../data/repo_data'):
+            for f in files:
+                temp_df = pd.read_csv(subdir + '/' + f)
+                dfs.append(temp_df)
+    final_df = pd.concat(dfs)
+    final_df[['query', 'id', 'node_id', 'name', 'full_name', 'html_url', 'url']].to_csv('../data/search_queries_repo_join_table.csv', index=False)
+    repo_df = final_df.drop_duplicates(subset='id')
+    repo_df.to_csv(final_output_path, index=False) 
+    return repo_df
+
+
+
+def generate_dh_queries(initial_output_path, rates_df, final_output_path):
+    """Function to generate the queries for the search API
+    :param initial_output_path: the path to the output file
+    :param rates_df: the dataframe of the current rate limit
+    :param final_output_path: the path to the final output file
+    :return: a dataframe of the data returned from the API"""
+
+    #Get the list of terms to search for
     dh_df = pd.DataFrame([json.load(codecs.open('../data/en.Digital humanities.json', 'r', 'utf-8-sig'))])
     dh_df = dh_df.melt()
     dh_df.columns = ['language', 'dh_term']
+    # Combine German and English terms because of identical spelling (should maybe make this a programatic check)
     dh_df.loc[dh_df.language == 'de', 'language'] = 'de_en'
+
     final_dfs = []
+    # Save list of queries 
     metadata_output_path = "../data/repo_query_directory.csv"
     for index, row in dh_df.iterrows():
         print(f"Getting repos with this term: {row.dh_term} in this language: {row.language}")
@@ -151,18 +188,19 @@ def generate_dh_queries(initial_output_path, rates_df):
         response = requests.get(search_topics_query, headers=auth_headers)
         data = get_response_data(response, search_topics_query)
 
-        #Add query to query directory
-        build_query_directory(row.dh_term, row.language, search_topics_query, data['total_count'], metadata_output_path)
+        #Write query to query directory
+        build_search_query_directory(row.dh_term, row.language, search_topics_query, data['total_count'], metadata_output_path)
 
         # If term exists as a topic proceed
         if data['total_count'] > 0:
-            # Term may be multiple topics so loop through them
+            # Term may result in multiple topics so loop through them
             for item in data['items']:
+                # Topics are joined by hyphens rather than plus signs in queries
                 tagged_query = item['name'].replace(' ', '-')
                 repos_tagged_query = "https://api.github.com/search/repositories?q=topic:" + tagged_query + "&per_page=100&page=1"
                 # Check how many results and add query to query directory
                 total_tagged_results = check_total_results(repos_tagged_query)
-                build_query_directory(row.dh_term, row.language, repos_tagged_query, total_tagged_results, metadata_output_path)
+                build_search_query_directory(row.dh_term, row.language, repos_tagged_query, total_tagged_results, metadata_output_path)
                 #If results exist then proceed
                 if total_tagged_results > 0:
 
@@ -187,7 +225,7 @@ def generate_dh_queries(initial_output_path, rates_df):
         search_repos_query = "https://api.github.com/search/repositories?q=" + search_query + "&per_page=100&page=1"
         # Check how many results and add to query directory
         total_search_results = check_total_results(search_repos_query)
-        build_query_directory(row.dh_term, row.language, search_repos_query, total_search_results, metadata_output_path)
+        build_search_query_directory(row.dh_term, row.language, search_repos_query, total_search_results, metadata_output_path)
 
         if total_search_results > 0:
             output_term = row.dh_term.replace(' ','+')
@@ -203,16 +241,40 @@ def generate_dh_queries(initial_output_path, rates_df):
             repo_df['dh_term'] = row.dh_term
             repo_df['dh_lang'] = row.language
             final_dfs.append(repo_df)
-    final_df = pd.concat(final_dfs)
+    final_df = combine_search_df(final_output_path, final_dfs)
     return final_df
         
-        
-def get_search_df():
-    dfs = []
-    for subdir, dirs, files in os.walk('../data/repo_data'):
-        for f in files:
-            temp_df = pd.read_csv(subdir + '/' + f)
-            dfs.append(temp_df)
-    final_df = pd.concat(dfs)
-    repo_df = final_df.drop_duplicates(subset='id')
+def get_search_repo_df(final_output_path, initial_output_path, rates_df, load_existing_data):
+    """Gets the search repo data from Github API and stores it in a dataframe
+    :param final_output_path: path to store final dataframe
+    :param initial_output_path: path to store initial dataframes
+    :param rates_df: dataframe of rate limits
+    :param load_existing_data: boolean to indicate whether to load existing data
+    :return: dataframe of search repo data
+    """
+    if load_existing_data:
+        if os.path.exists(final_output_path):
+            repo_df = pd.read_csv(final_output_path)
+        else:
+            repo_df = generate_dh_queries(initial_output_path, rates_df, final_output_path)
+    else:
+        repo_df = generate_dh_queries(initial_output_path, rates_df, final_output_path)
     return repo_df
+
+def get_all_queried_search_repo_df(final_output_path,  load_existing_data):
+    """Gets the full lists of repos returned by search queries from Github API and stores it in a dataframe 
+    :param final_output_path: path to store final dataframe
+    :param load_existing_data: boolean to indicate whether to load existing data
+    :return: dataframe of search repo data"""
+    if load_existing_data and os.path.exists(final_output_path):
+            searched_repo_df = pd.read_csv(final_output_path)
+    else:
+        dfs = []
+        for subdir, _, files in os.walk('../data/repo_data'):
+            for f in files:
+                temp_df = pd.read_csv(subdir + '/' + f)
+                dfs.append(temp_df)
+        searched_repo_df = pd.concat(dfs)
+        searched_repo_df[['query', 'id', 'node_id', 'name', 'full_name', 'html_url', 'url']].to_csv('../data/search_queries_repo_join_table.csv', index=False)
+    
+    return searched_repo_df
