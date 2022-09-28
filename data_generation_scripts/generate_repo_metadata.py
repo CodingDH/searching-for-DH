@@ -34,17 +34,21 @@ def get_repo_languages(repo_df, output_path, rates_df):
     :param rates_df: dataframe of rate limit info
     :return: dataframe of repos with languages"""
     calls_remaining = rates_df['resources.core.remaining'].values[0]
-    if os.path.exists(output_path):
-        repo_df = pd.read_csv(output_path)
+    if 'languages' in repo_df.columns:
+        repos_without_languages = repo_df[repo_df.languages.isna()]
+    else: 
+        repos_without_languages = repo_df
+
+    while len(repos_without_languages[repos_without_languages.languages_url.notna()]) > calls_remaining:
+        time.sleep(3700)
+        rates_df = check_rate_limit()
+        calls_remaining = rates_df['resources.core.remaining'].values[0]
     else:
-        while len(repo_df[repo_df.languages_url.notna()]) > calls_remaining:
-            time.sleep(3700)
-            rates_df = check_rate_limit()
-            calls_remaining = rates_df['resources.core.remaining'].values[0]
-        else:
-            tqdm.pandas(desc="Getting Languages")
-            repo_df['languages'] = repo_df.progress_apply(get_languages, axis=1)
-            repo_df.to_csv(output_path, index=False)
+        tqdm.pandas(desc="Getting Languages")
+        repos_without_languages['languages'] = repos_without_languages.progress_apply(get_languages, axis=1)
+        repo_df = pd.concat([repo_df, repos_without_languages])
+        repo_df = repo_df.drop_duplicates(subset=['id'])
+        repo_df.to_csv(output_path, index=False)
     return repo_df
 
 def get_labels(row):
@@ -70,17 +74,20 @@ def get_repo_labels(repo_df, output_path, rates_df):
     :param rates_df: dataframe of rate limit info
     :return: dataframe of repos with labels"""
     calls_remaining = rates_df['resources.core.remaining'].values[0]
-    if os.path.exists(output_path):
-        repo_df = pd.read_csv(output_path)
+    if 'labels' in repo_df.columns:
+        repos_without_labels = repo_df[repo_df.labels.isna()]
+    else: 
+        repos_without_labels = repo_df
+    while len(repos_without_labels[repos_without_labels.labels_url.notna()]) > calls_remaining:
+        time.sleep(3700)
+        rates_df = check_rate_limit()
+        calls_remaining = rates_df['resources.core.remaining'].values[0]
     else:
-        while len(repo_df[repo_df.labels_url.notna()]) > calls_remaining:
-            time.sleep(3700)
-            rates_df = check_rate_limit()
-            calls_remaining = rates_df['resources.core.remaining'].values[0]
-        else:
-            tqdm.pandas(desc="Getting Labels")
-            repo_df['labels'] = repo_df.progress_apply(get_labels, axis=1)
-            repo_df.to_csv(output_path, index=False)
+        tqdm.pandas(desc="Getting Labels")
+        repos_without_labels['labels'] = repos_without_labels.progress_apply(get_labels, axis=1)
+        repo_df = pd.concat([repo_df, repos_without_labels])
+        repo_df = repo_df.drop_duplicates(subset=['id'])
+        repo_df.to_csv(output_path, index=False)
     return repo_df
 
 def get_tags(row):
@@ -105,15 +112,18 @@ def get_repo_tags(repo_df, output_path, rates_df):
     :param rates_df: dataframe of rate limit info
     :return: dataframe of repos with tags"""
     calls_remaining = rates_df['resources.core.remaining'].values[0]
-    if os.path.exists(output_path):
-        repo_df = pd.read_csv(output_path)
+    if 'tags' in repo_df.columns:
+        repos_without_tags = repo_df[repo_df.tags.isna()]
+    else: 
+        repos_without_tags = repo_df
+    while len(repos_without_tags[repos_without_tags.tags_url.notna()]) > calls_remaining:
+        time.sleep(3700)
+        rates_df = check_rate_limit()
+        calls_remaining = rates_df['resources.core.remaining'].values[0]
     else:
-        while len(repo_df[repo_df.tags_url.notna()]) > calls_remaining:
-            time.sleep(3700)
-            rates_df = check_rate_limit()
-            calls_remaining = rates_df['resources.core.remaining'].values[0]
-        else:
-            tqdm.pandas(desc="Getting Tags")
-            repo_df['tags'] = repo_df.progress_apply(get_tags, axis=1)
-            repo_df.to_csv(output_path, index=False)
+        tqdm.pandas(desc="Getting Tags")
+        repos_without_tags['tags'] = repos_without_tags.progress_apply(get_tags, axis=1)
+        repo_df = pd.concat([repo_df, repos_without_tags])
+        repo_df = repo_df.drop_duplicates(subset=['id'])
+        repo_df.to_csv(output_path, index=False)
     return repo_df

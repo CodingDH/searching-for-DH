@@ -1,4 +1,5 @@
 import math
+from syslog import LOG_NEWS
 import time
 import pandas as pd
 import requests
@@ -20,7 +21,7 @@ def check_add_users(contibutors_df, users_output_path):
     """
     if os.path.exists(users_output_path):
         users_df = pd.read_csv(users_output_path)
-        new_users_df = contibutors_df[~contibutors_df.login.notin(users_df.login)]
+        new_users_df = contibutors_df[~contibutors_df.login.isin(users_df.login)]
         users_df = pd.concat([users_df, new_users_df])
         users_df.to_csv(users_output_path, index=False)
     else:
@@ -34,6 +35,8 @@ def get_contributors(repo_df, repo_contributors_output_path, users_output_path):
     :param repo_contributors_output_path: path to repo contributors file
     :param users_output_path: path to users file
     returns: dataframe of repo contributors and unique users"""
+    if os.path.exists('../data/error_logs/repo_contributors_errors.csv'):
+        os.remove('../data/error_logs/repo_contributors_errors.csv')
     contributors_rows = []
     repo_contributors = []
     for _, row in tqdm(repo_df.iterrows(), total=repo_df.shape[0], desc="Getting Contributors"):
@@ -47,11 +50,10 @@ def get_contributors(repo_df, repo_contributors_output_path, users_output_path):
             df = pd.json_normalize(response_data)
             repo_contributors_df = df[['login', 'id', 'node_id', 'url', 'html_url']].copy()
             repo_contributors_df['repo_id'] = row.id
-            repo_contributors_df['repo_name'] = row.name
             repo_contributors_df['repo_url'] = row.url
             repo_contributors_df['repo_html_url'] = row.html_url
             repo_contributors_df['repo_full_name'] = row.full_name
-            repo_contributors_df['repo_query'] = row.query
+            repo_contributors_df['contributors_url'] = row.contributors_url
             repo_contributors.append(repo_contributors_df)
             for _, row in df.iterrows():
                 expanded_response = requests.get(row.url, headers=auth_headers)
@@ -64,19 +66,27 @@ def get_contributors(repo_df, repo_contributors_output_path, users_output_path):
                 contributors_rows.append(merged_df)
         except:
             print(f"Error on getting contributors for {row.full_name}")
+            error_df = pd.DataFrame([{'repo_full_name': row.full_name, 'error_time': time.time(), 'contributors_url': row.contributors_url}])
+            if os.path.exists('../data/error_logs/repo_contributors_errors.csv'):
+                error_df.to_csv('../data/error_logs/repo_contributors_errors.csv', mode='a', header=False, index=False)
+            else:
+                error_df.to_csv('../data/error_logs/repo_contributors_errors.csv', index=False)
             continue
     contributors_df = pd.concat(contributors_rows)
+    contributors_df = contributors_df.drop_duplicates(subset=['login', 'id'])
     users_df = check_add_users(contributors_df, users_output_path)
     repo_contributors_df = pd.concat(repo_contributors)
     repo_contributors_df.to_csv(repo_contributors_output_path, index=False)
-    return (repo_contributors_df, users_df)
+    return repo_contributors_df, users_df
 
 
 def get_repo_contributors(repo_df,repo_contributors_output_path, users_output_path, rates_df):
     """Function to get all contributors to a list of repositories and also update final list of users.
-    - Needs to first get all contributors to a repo
-    - Then get all unique users from those contributors
-    """
+    :param repo_df: dataframe of repositories
+    :param repo_contributors_output_path: path to repo contributors file
+    :param users_output_path: path to users file
+    :param rates_df: dataframe of rate limits
+    returns: dataframe of repo contributors and unique users"""
     calls_remaining = rates_df['resources.core.remaining'].values[0]
     while len(repo_df[repo_df.contributors_url.notna()]) > calls_remaining:
         time.sleep(3700)
@@ -84,18 +94,20 @@ def get_repo_contributors(repo_df,repo_contributors_output_path, users_output_pa
         calls_remaining = rates_df['resources.core.remaining'].values[0]
     else:
         if os.path.exists(repo_contributors_output_path):
-            contributors_df = pd.read_csv(repo_contributors_output_path)
-            if len(contributors_df[contributors_df.login.isna()]) > 0:
-                existing_contributors = contributors_df[contributors_df.login.isna() == False]
-                missing_repos = contributors_df[contributors_df.login.isna()].html_url.unique().tolist()
-                missing_repos_df = repo_df[repo_df.html_url.isin(missing_repos)]
-                missing_repos_df, users_df = get_contributors(missing_repos_df, repo_contributors_output_path, users_output_path)
-                contributors_df = pd.concat([existing_contributors, missing_repos_df])
-                contributors_df.to_csv(repo_contributors_output_path, index=False)
+            
+            repo_contributors_df = pd.read_csv(repo_contributors_output_path, low_memory=False)
+            users_df = pd.read_csv(users_output_path, low_memory=False)
+            error_df = pd.read_csv("../data/error_logs/repo_contributors_errors.csv")
+            unprocessed_contributors = repo_df[~repo_df.contributors_url.isin(repo_contributors_df.contributors_url)]
+            unprocessed_contributors = unprocessed_contributors[~unprocessed_contributors.contributors_url.isin(error_df.contributors_url)]
+            if len(unprocessed_contributors) > 0:
+                new_contributors_df, users_df = get_contributors(unprocessed_contributors, repo_contributors_output_path, users_output_path)
+                repo_contributors_df = pd.concat([unprocessed_contributors, new_contributors_df])
+                repo_contributors_df.to_csv(repo_contributors_output_path, index=False)
         else:
-            contributors_df, users_df = get_contributors(repo_df, repo_contributors_output_path, users_output_path)
+            repo_contributors_df, users_df = get_contributors(repo_df, repo_contributors_output_path, users_output_path)
         
-        return contributors_df, users_df
+        return repo_contributors_df, users_df
 
 def organize_data_from_response(response_data, row):
 

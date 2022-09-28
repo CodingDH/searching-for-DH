@@ -22,6 +22,7 @@
     - Forks (counting number of forks per repo and who has forked what)
     - Teams (counting number of teams per repo and who is on which team)
     - Contributors (counting number of contributors per repo and who has contributed what)
+      - What is a collaborator??
     - Starrers (counting number of starrers per repo and who has starred what)
     - Watchers (counting number of watchers per repo and who has watched what)
     - Followers/Following (counting number of followers per user and who is following who)
@@ -71,12 +72,13 @@ ORG {
 ### File Naming Conventions
 
 Three central files:
-1. `repos_data_table.csv`
-2. `users_data_table.csv`
-3. `orgs_data_table.csv`
+1. `repos_dataset.csv`
+2. `users_dataset.csv`
+3. `orgs_dataset.csv`
 
 These contain all unique list of repos and users identified, and also any expanded metadata for those entities.
 
-Other files:
-1. `forks_data_table.csv`
-2. 
+Other files are our join tables:
+1. `forks_join_dataset.csv`
+2. `search_queries_join_dataset.csv`
+3. `followers_following_dataset.csv`
