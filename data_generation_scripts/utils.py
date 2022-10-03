@@ -21,14 +21,6 @@ def check_rate_limit():
     rates_df = pd.json_normalize(response.json())
     return rates_df
 
-def check_api_calls(user):
-    url=f'https://api.github.com/users/{user}'
-    response = requests.get(url, headers=auth_headers)
-    api_dict = {}
-    api_dict['remaining_calls'] = response.headers['X-RateLimit-Remaining']
-    api_dict['reset_time'] = response.headers['X-RateLimit-Reset']
-    return api_dict
-
 def check_total_pages(url):
     # Check total number of pages to get from search. Useful for not going over rate limit
     response = requests.get(f'{url}?per_page=1', headers=auth_headers)

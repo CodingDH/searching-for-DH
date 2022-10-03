@@ -139,9 +139,11 @@ def get_connected_repos(df, column_name, output_path):
 
         url = row[column_name]
         response = requests.get(url, headers=auth_headers)
+        
         # get_response_data() function in utils
         response_data = get_response_data(response, url)
-        # organize_data_from_response() in utils
+        
+        # organize_data_from_response() is local
         data = organize_data_from_response(response_data, row)
         expanded_rows.append(data)
 
@@ -159,11 +161,12 @@ def get_connected_repos(df, column_name, output_path):
 
     
         # check status before continuing to next row
-        api_calls = check_api_calls('jerielizabeth')
-        calls_remaining = api_calls['remaining_calls']
+        rates_df = check_rate_limit()
+
+        calls_remaining = rates_df['resources.core.limit']
         if int(calls_remaining) < 5:
             print(f'Remaining queries: {calls_remaining}')
-            reset_time = api_calls['reset_time']
+            reset_time = rates_df['resources.core.reset']
             current_time = time.time()
             print(f'Sleeping for {int(reset_time) - math.trunc(current_time)}')
             time.sleep(int(reset_time) - math.trunc(current_time))
