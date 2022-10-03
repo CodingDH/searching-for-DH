@@ -3,6 +3,9 @@
 data/large_data_sets/
 
 
+# Additional 
+.DS_Store
+
 
 # ---
 # Defaults from a Python ignore
