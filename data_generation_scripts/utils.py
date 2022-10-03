@@ -67,28 +67,28 @@ def get_response_data(response, query):
     
     return response_data
 
-def get_api_data(query):
-    # Thanks https://stackoverflow.com/questions/33878019/how-to-get-data-from-all-pages-in-github-api-with-python
+# def get_api_data(query):
+#     # Thanks https://stackoverflow.com/questions/33878019/how-to-get-data-from-all-pages-in-github-api-with-python
 
-    try:
-        response = requests.get(f"{query}", headers=auth_headers)
-        if response.status_code != 200:
-            time.sleep(200)
-            response = requests.get(f"{query}", headers=auth_headers)
-        response_data = response.json()
+#     try:
+#         response = requests.get(f"{query}", headers=auth_headers)
+#         if response.status_code != 200:
+#             time.sleep(200)
+#             response = requests.get(f"{query}", headers=auth_headers)
+#         response_data = response.json()
 
-        while "next" in response.links.keys():
-            url = response.links['next']['url']
-            response = requests.get(url, headers=auth_headers)
-            if response.status_code != 200:
-                time.sleep(200)
-                response = requests.get(url, headers=auth_headers)
-            response_data.extend(response.json())
+#         while "next" in response.links.keys():
+#             url = response.links['next']['url']
+#             response = requests.get(url, headers=auth_headers)
+#             if response.status_code != 200:
+#                 time.sleep(200)
+#                 response = requests.get(url, headers=auth_headers)
+#             response_data.extend(response.json())
             
-    except:
-        print(f"Error with URL: {url}")
+#     except:
+#         print(f"Error with URL: {url}")
 
-    return response_data
+#     return response_data
 
 def get_repo_df(output_path):
     """Function to get repo dataframe
