@@ -1,6 +1,6 @@
 # Large Data Files
 
-data/large_data_sets/
+large_datasets/
 
 
 # Additional 
@@ -139,4 +139,4 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
-private_data/
+

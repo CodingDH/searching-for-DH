@@ -14,6 +14,8 @@ auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
 
 auth_headers = {'Authorization': f'token {auth_token}','User-Agent': 'request'}
 
+"""alternatives could be issue_events_url and events_url"""
+
 def get_total_commits(url):
     response = requests.get(f'{url}?per_page=1', headers=auth_headers)
     if response.status_code != 200:
@@ -72,3 +74,53 @@ def get_repos_commits(repo_df, output_path, rates_df):
             # repo_df.to_csv(output_path, index=False)
             final_commits_df = get_commits(repo_df, output_path)
     return final_commits_df
+
+def get_metrics_data(repo_df):
+    """Get metrics data for each repo
+    :param repo_df: dataframe with repo data
+    :return: dataframe with metrics data and original repo data"""
+    metrics_dfs = []
+    for _, row in tqdm(repo_df.iterrows(), total=repo_df.shape[0], desc="Getting Community Metrics"):
+        try: 
+            url = f"https://api.github.com/repos/{row.full_name}/community/profile"
+            response_data = get_api_data(url)
+            response_df = pd.json_normalize(response_data)
+            final_dict = {**row.to_dict(), **response_df.to_dict()}
+            final_df = pd.DataFrame(final_dict)
+            final_df['community_stats_query'] = url
+            metrics_dfs.append(final_df)
+        except:
+            print(f"Error on getting metrics for {row.full_name}")
+            continue
+    metrics_df = pd.concat(metrics_dfs)
+    return metrics_df
+
+def get_community_profile_metrics(repo_df, output_path, rates_df, load_existing=False):
+    """https://docs.github.com/en/rest/metrics/community#get-community-profile-metrics
+    Function to get community profile metrics for a repo
+    :param repo_df: dataframe with repo information
+    :param output_path: path to save the output
+    :param rates_df: dataframe with rate limit information
+    :param load_existing: boolean to load existing data or not
+    :return: dataframe with community profile metrics
+    """
+    if load_existing:
+        repo_df = pd.read_csv(output_path, low_memory=False)
+    else:
+        calls_remaining = rates_df['resources.core.remaining'].values[0]
+        while len(repo_df[repo_df.html_url.notna()]) > calls_remaining:
+            time.sleep(3700)
+            rates_df = check_rate_limit()
+            calls_remaining = rates_df['resources.core.remaining'].values[0]
+        else:
+            repos_with_health_percentage = repo_df[repo_df.health_percentage.notna()] if 'health_percentage' in repo_df.columns else []
+            repos_missing_health_percentage = repo_df[repo_df.health_percentage.isna()] if 'health_percentage' in repo_df.columns else repo_df
+            if len(repos_missing_health_percentage) > 0:
+                metrics_df = get_metrics_data(repos_missing_health_percentage)
+                repo_df = pd.concat([repos_with_health_percentage, metrics_df]) if len(repos_with_health_percentage) > 0 else metrics_df
+                repo_df.to_csv(output_path, index=False)
+            else:
+                repo_df = repos_with_health_percentage
+        repo_df.to_csv(output_path, index=False)
+    return repo_df
+            

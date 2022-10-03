@@ -3,12 +3,8 @@ import time
 from time import sleep
 import pandas as pd
 import requests
-import os
 from tqdm import tqdm
 import apikey
-import json
-import codecs
-import shutil
 from datetime import datetime
 
 
@@ -17,6 +13,8 @@ auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
 auth_headers = {'Authorization': f'token {auth_token}','User-Agent': 'request'}
 
 def check_rate_limit():
+    """Function to check rate limit status
+    :return: data from rate limit api call"""
     # Checks for rate limit so that you don't hit issues with Github API. Mostly for search API that has a 30 requests per minute https://docs.github.com/en/rest/rate-limit
     url = 'https://api.github.com/rate_limit'
     response = requests.get(url, headers=auth_headers)
@@ -56,6 +54,10 @@ def check_total_results(url):
     return data['total_count']
 
 def get_response_data(response, query):
+    """Function to get response data from api call
+    :param response: response from api call
+    :param query: query used to make api call
+    :return: response data"""
     if response.status_code != 200:
         if response.status_code == 401:
             print("response code 401 - unauthorized access. check api key")
@@ -95,3 +97,17 @@ def get_api_data(query):
         print(f"Error with URL: {url}")
 
     return response_data
+
+def get_repo_df(output_path):
+    """Function to get repo dataframe
+    :param output_path: path to output file
+    :return: repo dataframe"""
+    repo_df = pd.read_csv(output_path)
+    return repo_df
+
+def get_user_df(output_path):
+    """Function to get user dataframe
+    :param output_path: path to output file
+    :return: user dataframe"""
+    user_df = pd.read_csv(output_path)
+    return user_df
