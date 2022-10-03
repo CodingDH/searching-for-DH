@@ -1,3 +1,15 @@
+# Large Data Files
+
+data/large_datasets/
+
+
+# Additional 
+.DS_Store
+
+
+# ---
+# Defaults from a Python ignore
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -127,4 +139,4 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
-private_data/
+
