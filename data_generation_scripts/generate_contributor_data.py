@@ -164,7 +164,7 @@ def get_connected_repos(df, column_name, output_path):
         rates_df = check_rate_limit()
 
         calls_remaining = rates_df['resources.core.limit']
-        if int(calls_remaining) < 5:
+        if int(calls_remaining) < 0:
             print(f'Remaining queries: {calls_remaining}')
             reset_time = rates_df['resources.core.reset']
             current_time = time.time()
