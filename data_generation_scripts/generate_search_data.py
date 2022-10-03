@@ -34,7 +34,7 @@ def get_search_api_data(query, total_pages):
         if len(response_df) > 0:
             response_df['query'] = query
         else:
-            response_df = pd.DataFrame()
+            response_df = pd.read_csv('../data/repo_data/repo_headers.csv')
         dfs.append(response_df)
         pbar.update(1)
         while "next" in response.links.keys():
@@ -47,7 +47,7 @@ def get_search_api_data(query, total_pages):
             if len(response_df) > 0:
                 response_df['query'] = query
             else:
-                response_df = pd.DataFrame()
+                response_df = pd.read_csv('../data/repo_data/repo_headers.csv')
             dfs.append(response_df)
             pbar.update(1)
     
