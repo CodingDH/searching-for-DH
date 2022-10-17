@@ -14,21 +14,6 @@ auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
 
 auth_headers = {'Authorization': f'token {auth_token}','User-Agent': 'request'}
 
-def check_add_users(contibutors_df, users_output_path):
-    """Function to check if users are already in the users file and add them if not (Might need to add this to utils.py)
-    :param contibutors_df: dataframe of contributors
-    :param users_output_path: path to users file
-    """
-    if os.path.exists(users_output_path):
-        users_df = pd.read_csv(users_output_path)
-        new_users_df = contibutors_df[~contibutors_df.login.isin(users_df.login)]
-        users_df = pd.concat([users_df, new_users_df])
-        users_df.to_csv(users_output_path, index=False)
-    else:
-        users_df = contibutors_df
-        users_df.to_csv(users_output_path, index=False)
-    return users_df
-
 def get_contributors(repo_df, repo_contributors_output_path, users_output_path):
     """Function to get all contributors to a list of repositories and also update final list of users.
     :param repo_df: dataframe of repositories
@@ -64,6 +49,17 @@ def get_contributors(repo_df, repo_contributors_output_path, users_output_path):
                 cols = list(set(expanded_df.columns) & set(df.columns))
                 merged_df = df.merge(expanded_df, on=cols, how='left')
                 contributors_rows.append(merged_df)
+            rates_df = check_rate_limit()
+
+            calls_remaining = rates_df['resources.core.limit']
+            if int(calls_remaining) < 0:
+                print(f'Remaining queries: {calls_remaining}')
+                reset_time = rates_df['resources.core.reset']
+                current_time = time.time()
+                print(f'Sleeping for {int(reset_time) - math.trunc(current_time)}')
+                time.sleep(int(reset_time) - math.trunc(current_time))
+            else:
+                continue
         except:
             print(f"Error on getting contributors for {row.full_name}")
             error_df = pd.DataFrame([{'repo_full_name': row.full_name, 'error_time': time.time(), 'contributors_url': row.contributors_url}])
@@ -80,34 +76,39 @@ def get_contributors(repo_df, repo_contributors_output_path, users_output_path):
     return repo_contributors_df, users_df
 
 
-def get_repo_contributors(repo_df,repo_contributors_output_path, users_output_path, rates_df):
+def get_repo_contributors(repo_df,repo_contributors_output_path, users_output_path, rates_df, load_existing=True):
     """Function to get all contributors to a list of repositories and also update final list of users.
     :param repo_df: dataframe of repositories
     :param repo_contributors_output_path: path to repo contributors file
     :param users_output_path: path to users file
     :param rates_df: dataframe of rate limits
+    :param load_existing: boolean to load existing data
     returns: dataframe of repo contributors and unique users"""
-    calls_remaining = rates_df['resources.core.remaining'].values[0]
-    while len(repo_df[repo_df.contributors_url.notna()]) > calls_remaining:
-        time.sleep(3700)
-        rates_df = check_rate_limit()
-        calls_remaining = rates_df['resources.core.remaining'].values[0]
+    if load_existing:
+        repo_contributors_df = pd.read_csv(repo_contributors_output_path, low_memory=False)
+        users_df = pd.read_csv(users_output_path, low_memory=False)
     else:
-        if os.path.exists(repo_contributors_output_path):
-            
-            repo_contributors_df = pd.read_csv(repo_contributors_output_path, low_memory=False)
-            users_df = pd.read_csv(users_output_path, low_memory=False)
-            error_df = pd.read_csv("../data/error_logs/repo_contributors_errors.csv")
-            unprocessed_contributors = repo_df[~repo_df.contributors_url.isin(repo_contributors_df.contributors_url)]
-            unprocessed_contributors = unprocessed_contributors[~unprocessed_contributors.contributors_url.isin(error_df.contributors_url)]
-            if len(unprocessed_contributors) > 0:
-                new_contributors_df, users_df = get_contributors(unprocessed_contributors, repo_contributors_output_path, users_output_path)
-                repo_contributors_df = pd.concat([unprocessed_contributors, new_contributors_df])
-                repo_contributors_df.to_csv(repo_contributors_output_path, index=False)
+        calls_remaining = rates_df['resources.core.remaining'].values[0]
+        while len(repo_df[repo_df.contributors_url.notna()]) > calls_remaining:
+            time.sleep(3700)
+            rates_df = check_rate_limit()
+            calls_remaining = rates_df['resources.core.remaining'].values[0]
         else:
-            repo_contributors_df, users_df = get_contributors(repo_df, repo_contributors_output_path, users_output_path)
+            if os.path.exists(repo_contributors_output_path):
+                
+                repo_contributors_df = pd.read_csv(repo_contributors_output_path, low_memory=False)
+                users_df = pd.read_csv(users_output_path, low_memory=False)
+                error_df = pd.read_csv("../data/error_logs/repo_contributors_errors.csv")
+                unprocessed_contributors = repo_df[~repo_df.contributors_url.isin(repo_contributors_df.contributors_url)]
+                unprocessed_contributors = unprocessed_contributors[~unprocessed_contributors.contributors_url.isin(error_df.contributors_url)]
+                if len(unprocessed_contributors) > 0:
+                    new_contributors_df, users_df = get_contributors(unprocessed_contributors, repo_contributors_output_path, users_output_path)
+                    repo_contributors_df = pd.concat([unprocessed_contributors, new_contributors_df])
+                    repo_contributors_df.to_csv(repo_contributors_output_path, index=False)
+            else:
+                repo_contributors_df, users_df = get_contributors(repo_df, repo_contributors_output_path, users_output_path)
         
-        return repo_contributors_df, users_df
+    return repo_contributors_df, users_df
 
 def organize_data_from_response(response_data, row):
 

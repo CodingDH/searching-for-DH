@@ -85,7 +85,6 @@ def process_search_data(rates_df, query, output_path, total_results):
         repo_df = get_search_api_data(query, total_pages)
         repo_df = repo_df.reset_index(drop=True)
         repo_df.to_csv(output_path, index=False)
-        return repo_df
 
 
 def process_large_search_data(rates_df, search_url, dh_term, params, initial_output_path, total_results):
@@ -114,6 +113,7 @@ def process_large_search_data(rates_df, search_url, dh_term, params, initial_out
         total_pages = int(check_total_pages(query))
         print(f"Total pages: {total_pages}")
         calls_remaining = rates_df['resources.search.remaining'].values[0]
+        total_results = check_total_results(query)
         while total_pages > calls_remaining:
             time.sleep(3700)
             rates_df = check_rate_limit()
@@ -125,26 +125,29 @@ def process_large_search_data(rates_df, search_url, dh_term, params, initial_out
                     #Could refactor this to combine new and old data rather than removing it
                     os.remove(yearly_output_path)
                 else:
+                    repo_dfs.append(repo_df)
                     return repo_df
             repo_df = get_search_api_data(query, total_pages)
             repo_df = repo_df.reset_index(drop=True)
             repo_df.to_csv(yearly_output_path, index=False)
-            repo_dfs.append(repo_df)
         
-    final_df = pd.concat(repo_dfs)
-    return final_df    
+   
 
-def combine_search_df(repo_output_path, join_output_path, dfs):
-    if len(dfs) == 0:
-        dfs = []
-        for subdir, _, files in os.walk('../data/repo_data'):
-            for f in files:
-                try:
-                    temp_df = pd.read_csv(subdir + '/' + f)
-                    dfs.append(temp_df)
-                except pd.errors.EmptyDataError:
-                    print(f'Empty dataframe for {f}')
+def combine_search_df(repo_output_path, join_output_path):
+    """Function to combine the dataframes of the search API data
+    :param repo_output_path: the path to the output file
+    :param join_output_path: the path to the output file
+    :return: a dataframe of the combined data"""
+    dfs = []
+    for subdir, _, files in os.walk('../data/repo_data'):
+        for f in files:
+            try:
+                temp_df = pd.read_csv(subdir + '/' + f)
+                dfs.append(temp_df)
+            except pd.errors.EmptyDataError:
+                print(f'Empty dataframe for {f}')
     join_df = pd.concat(dfs)
+    print(len(join_df), len(dfs))
     join_df[['query', 'id', 'node_id', 'name', 'full_name', 'html_url', 'url']].to_csv(join_output_path, index=False)
     repo_df = join_df.drop_duplicates(subset='id')
     repo_df = repo_df.reset_index(drop=True)
@@ -167,7 +170,6 @@ def generate_initial_dh_repos(initial_output_path, rates_df, repo_output_path, j
     # Combine German and English terms because of identical spelling (should maybe make this a programatic check)
     dh_df.loc[dh_df.language == 'de', 'language'] = 'de_en'
 
-    final_dfs = []
     for _, row in dh_df.iterrows():
         print(f"Getting repos with this term: {row.dh_term} in this language: {row.language}")
         
@@ -196,13 +198,11 @@ def generate_initial_dh_repos(initial_output_path, rates_df, repo_output_path, j
                         search_url = "https://api.github.com/search/repositories?q=topic:"
                         params = "&per_page=100&page=1"
                         initial_tagged_output_path = initial_output_path + f'repos_tagged_{row.language}_{output_term}'
-                        repo_df = process_large_search_data(rates_df, search_url, dh_term, params, initial_tagged_output_path, total_tagged_results)
+                        process_large_search_data(rates_df, search_url, dh_term, params, initial_tagged_output_path, total_tagged_results)
                     else:
                         # If fewer than a 1000 proceed to normal search calls
                         final_tagged_output_path = initial_output_path + f'repos_tagged_{row.language}_{output_term}.csv'
-                        repo_df = process_search_data(rates_df, repos_tagged_query, final_tagged_output_path, total_tagged_results)
-
-                    final_dfs.append(repo_df)
+                        process_search_data(rates_df, repos_tagged_query, final_tagged_output_path, total_tagged_results)
 
         # Now search for repos that contain query string
         search_repos_query = "https://api.github.com/search/repositories?q=" + search_query + "&per_page=100&page=1"
@@ -217,11 +217,12 @@ def generate_initial_dh_repos(initial_output_path, rates_df, repo_output_path, j
                 params = "&per_page=100&page=1"
                 initial_searched_output_path = initial_output_path + f'repos_searched_{row.language}_{output_term}'
                 process_large_search_data(rates_df, search_url, dh_term, params, initial_searched_output_path, total_search_results)
+                
             else:
                 final_searched_output_path = initial_output_path + f'repos_searched_{row.language}_{output_term}.csv'
-                repo_df = process_search_data(rates_df, search_repos_query, final_searched_output_path, total_search_results)
-            final_dfs.append(repo_df)
-    repo_df, join_df = combine_search_df(repo_output_path, join_output_path, final_dfs)
+                process_search_data(rates_df, search_repos_query, final_searched_output_path, total_search_results)
+
+    repo_df, join_df = combine_search_df(repo_output_path, join_output_path)
     return repo_df, join_df
         
 def get_initial_repo_df(repo_output_path, join_output_path, initial_output_path, rates_df, load_existing_data):
