@@ -133,21 +133,21 @@ def process_large_search_data(rates_df, search_url, dh_term, params, initial_out
         
    
 
-def combine_search_df(repo_output_path, join_output_path):
+def combine_search_df(initial_output_path, repo_output_path, join_output_path):
     """Function to combine the dataframes of the search API data
     :param repo_output_path: the path to the output file
     :param join_output_path: the path to the output file
     :return: a dataframe of the combined data"""
     dfs = []
-    for subdir, _, files in os.walk('../data/repo_data'):
+    for subdir, _, files in os.walk(initial_output_path):
         for f in files:
-            try:
-                temp_df = pd.read_csv(subdir + '/' + f)
-                dfs.append(temp_df)
-            except pd.errors.EmptyDataError:
-                print(f'Empty dataframe for {f}')
+            if ('searched' in f) or ('tagged' in f):
+                try:
+                    temp_df = pd.read_csv(subdir + '/' + f)
+                    dfs.append(temp_df)
+                except pd.errors.EmptyDataError:
+                    print(f'Empty dataframe for {f}')
     join_df = pd.concat(dfs)
-    print(len(join_df), len(dfs))
     join_df[['query', 'id', 'node_id', 'name', 'full_name', 'html_url', 'url']].to_csv(join_output_path, index=False)
     repo_df = join_df.drop_duplicates(subset='id')
     repo_df = repo_df.reset_index(drop=True)
@@ -222,7 +222,7 @@ def generate_initial_dh_repos(initial_output_path, rates_df, repo_output_path, j
                 final_searched_output_path = initial_output_path + f'repos_searched_{row.language}_{output_term}.csv'
                 process_search_data(rates_df, search_repos_query, final_searched_output_path, total_search_results)
 
-    repo_df, join_df = combine_search_df(repo_output_path, join_output_path)
+    repo_df, join_df = combine_search_df(initial_output_path, repo_output_path, join_output_path)
     return repo_df, join_df
         
 def get_initial_repo_df(repo_output_path, join_output_path, initial_output_path, rates_df, load_existing_data):
