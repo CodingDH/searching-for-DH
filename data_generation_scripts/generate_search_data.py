@@ -34,7 +34,7 @@ def get_search_api_data(query, total_pages):
         if len(response_df) > 0:
             response_df['query'] = query
         else:
-            response_df = pd.read_csv('../data/repo_data/repo_headers.csv')
+            response_df = pd.read_csv('../data/metadata_files/repo_headers.csv')
         dfs.append(response_df)
         pbar.update(1)
         while "next" in response.links.keys():
@@ -47,7 +47,7 @@ def get_search_api_data(query, total_pages):
             if len(response_df) > 0:
                 response_df['query'] = query
             else:
-                response_df = pd.read_csv('../data/repo_data/repo_headers.csv')
+                response_df = pd.read_csv('../data/metadata_files/repo_headers.csv')
             dfs.append(response_df)
             pbar.update(1)
     
@@ -164,7 +164,7 @@ def generate_initial_dh_repos(initial_output_path, rates_df, repo_output_path, j
     :return: a dataframe of the data returned from the API"""
 
     #Get the list of terms to search for
-    dh_df = pd.DataFrame([json.load(codecs.open('../data/en.Digital humanities.json', 'r', 'utf-8-sig'))])
+    dh_df = pd.DataFrame([json.load(codecs.open('../data/metadata_files/en.Digital humanities.json', 'r', 'utf-8-sig'))])
     dh_df = dh_df.melt()
     dh_df.columns = ['language', 'dh_term']
     # Combine German and English terms because of identical spelling (should maybe make this a programatic check)

@@ -115,7 +115,7 @@ def get_new_users(potential_new_users_df, temp_users_dir, users_progress_bar):
     :return: new users dataframe
     """
     # Check if temp users directory exists. If it does, delete it and recreate it. Otherwise create it.
-    user_cols = pd.read_csv('../data/users_dataset_cols.csv')
+    user_cols = pd.read_csv('../data/metadat_files/users_dataset_cols.csv')
     if os.path.exists(temp_users_dir):
         shutil.rmtree(temp_users_dir)
         os.makedirs(temp_users_dir)  

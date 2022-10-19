@@ -126,7 +126,7 @@ def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_fiel
         os.makedirs(temp_repo_actors_dir)  
     
     temp_users_dir = f"../data/temp/temp_users/"
-    urls_df = pd.read_csv("../data/repo_url_cols.csv")
+    urls_df = pd.read_csv("../data/metadata_files/repo_url_cols.csv")
     original_auth_headers = auth_headers.copy()
     repo_progress_bar = tqdm(total=len(repo_df), desc="Getting Repo Actors", position=0)
     users_progress_bar = tqdm(total=0, desc="Getting Users", position=1)
