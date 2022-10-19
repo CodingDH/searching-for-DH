@@ -1,4 +1,3 @@
-from syslog import LOG_NEWS
 import time
 from urllib.parse import parse_qs
 import pandas as pd
@@ -16,93 +15,6 @@ import ast
 auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
 
 auth_headers = {'Authorization': f'token {auth_token}','User-Agent': 'request'}
-
-def get_issues(repo_df, repo_issues_output_path, users_output_path):
-    error_file_path = f"../data/error_logs/{repo_issues_output_path.split('/')[-1].split('.csv')[0]}_errors.csv"
-    if os.path.exists(error_file_path):
-        os.remove(error_file_path)
-
-    temp_repo_issues_dir = f"../data/temp/{repo_issues_output_path.split('/')[-1].split('.csv')[0]}/"
-    if os.path.exists(temp_repo_issues_dir):
-        shutil.rmtree(temp_repo_issues_dir)
-        os.makedirs(temp_repo_issues_dir)
-    else:
-        os.makedirs(temp_repo_issues_dir)  
-    
-    temp_users_dir = f"../data/temp/temp_users/"
-    repo_progress_bar = tqdm(total=len(repo_df), desc="Getting Repo Actors", position=0)
-    users_progress_bar = tqdm(total=0, desc="Getting Users", position=1)
-    for _, row in repo_df.iterrows():
-        try:
-            url = row.issues_url.split('{')[0] + '?state=all&per_page=100'
-            dfs = []
-            response = requests.get(url, headers=auth_headers)
-            response_data = get_response_data(response, url)
-            if len(response_data) == 0:
-                repo_progress_bar.update(1)
-                continue
-            response_df = pd.json_normalize(response_data)
-            dfs.append(response_df)
-            while "next" in response.links.keys():
-                time.sleep(120)
-                query = response.links['next']['url']
-                response = requests.get(query, headers=auth_headers)
-                response_data = get_response_data(response, query)
-                if len(response_data) == 0:
-                    repo_progress_bar.update(1)
-                    continue
-                response_df = pd.json_normalize(response_data)
-                dfs.append(response_df)
-            data_df = pd.concat(dfs)
-            if len(data_df) == 0:
-                repo_progress_bar.update(1)
-                continue
-            else:
-                data_df.to_csv(temp_repo_issues_dir + row.name + '.csv', index=False)
-                repo_progress_bar.update(1)
-                cols = data_df.columns
-                subset_cols = [col for col in cols if col.startswith('user')]
-                user_df = data_df[subset_cols]
-                user_df.columns = [col.split('.')[-1] for col in user_df.columns]
-
-                check_add_users(user_df, temp_users_dir, users_progress_bar)
-        except:
-            print(f"Error on getting actors for {row.full_name}")
-            error_df = pd.DataFrame([{'repo_full_name': row.full_name, 'error_time': time.time(), f'issues_url': row['issues_url']}])
-            if os.path.exists(error_file_path):
-                error_df.to_csv(error_file_path, mode='a', header=False, index=False)
-            else:
-                error_df.to_csv(error_file_path, index=False)
-            repo_progress_bar.update(1)
-            continue
-
-def get_repo_issues(repo_df, users_df, repo_issues_output_path, users_output_path, rates_df, load_existing):
-    if load_existing:
-        # if the file already exists, load it and return it
-        repo_issues_df = pd.read_csv(repo_issues_output_path, low_memory=False)
-        users_df = pd.read_csv(users_output_path, low_memory=False)
-    else:
-        # if the file doesn't exist, check that we have enough rate limits to get the data
-        calls_remaining = rates_df['resources.core.remaining'].values[0]
-        while len(repo_df[repo_df.issues_url.notna()]) > calls_remaining:
-            time.sleep(3700)
-            rates_df = check_rate_limit()
-            calls_remaining = rates_df['resources.core.remaining'].values[0]
-        else:
-            if os.path.exists(repo_issues_output_path):
-                repo_issues_df = pd.read_csv(repo_issues_output_path, low_memory=False)
-                unprocessed_issues = repo_df[~repo_df.url.isin(repo_issues_df.repository_url)]
-                error_file_path = f"../data/error_logs/{repo_issues_output_path.split('/')[-1].split('.csv')[0]}_errors.csv"
-                if os.path.exists(error_file_path):
-                    error_df = pd.read_csv(error_file_path)
-                    unprocessed_issues = unprocessed_issues[~unprocessed_issues.issues_url.isin(error_df.issues_url)]
-                if len(unprocessed_issues) > 0:
-                    new_issues_df = get_issues(unprocessed_issues, repo_issues_output_path, users_output_path)
-                else:
-                    new_issues_df = unprocessed_issues
-                repo_issues_df = pd.concat([repo_issues_df, new_issues_df])
-                repo_issues_df.to_csv(repo_issues_output_path, index=False)
-    return repo_issues_df, users_df
 
 def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_field, is_stargazers, is_forks, is_issues):
     """Function to get all contributors to a list of repositories and also update final list of users.
@@ -259,8 +171,8 @@ def get_repos_user_actors(repo_df,repo_actors_output_path, users_output_path, ra
     return repo_actors_df, users_df
 
 if __name__ == "__main__":
-    repo_df = pd.read_csv("../data/repos_dataset.csv", low_memory=False)
-    repo_actors_output_path = "../data/repo_stargazers_join_dataset.csv"
-    users_output_path = "../data/users_dataset.csv"
+    repo_df = pd.read_csv("../data/entity_files/repos_dataset.csv", low_memory=False)
+    repo_actors_output_path = "../data/join_files/repo_stargazers_join_dataset.csv"
+    users_output_path = "../data/entity_files/users_dataset.csv"
     rates_df = check_rate_limit()
     repo_actors_df, users_df = get_repos_user_actors(repo_df, repo_actors_output_path, users_output_path, rates_df, 'stargazers_url', load_existing=False)
