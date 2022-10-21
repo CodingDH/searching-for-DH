@@ -79,6 +79,8 @@ Three central files:
 These contain all unique list of repos and users identified, and also any expanded metadata for those entities.
 
 Other files are our join tables:
-1. `forks_join_dataset.csv`
+1. `repo_forks_join_dataset.csv`
 2. `search_queries_join_dataset.csv`
 3. `followers_following_dataset.csv`
+
+For more about our data organization, see the [Data Organization README](data/README.md).
