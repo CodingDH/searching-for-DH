@@ -1,8 +1,6 @@
-# get all repo tags  /repos/OWNER/REPO/tags
-# get all repo labels /repos/OWNER/REPO/labels
-
-
+from syslog import LOG_NEWS
 import time
+from urllib.parse import parse_qs
 import pandas as pd
 import requests
 import os
@@ -11,6 +9,8 @@ import apikey
 import sys
 sys.path.append("..")
 from data_generation_scripts.utils import *
+import shutil
+import ast
 
 
 auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
@@ -22,10 +22,8 @@ def get_languages(row):
     :param row: row from repo_df
     :return: dictionary of languages with number of bytes"""
     response = requests.get(row.languages_url, headers=auth_headers)
-    if response.status_code != 200:
-        time.sleep(120)
-        response = requests.get(row.languages_url, headers=auth_headers)
-    return response.json()
+    response_data = get_response_data(response, row.languages_url)
+    return response_data
 
 def get_repo_languages(repo_df, output_path, rates_df):
     """Function to get languages for all repos in repo_df
@@ -56,12 +54,10 @@ def get_labels(row):
     :param row: row from repo_df
     :return: list of labels
     Could save this output in separate file since labels also returns url, color, description, and whether the label is default or not"""
-    response = requests.get(row.labels_url.str.split('{')[0], headers=auth_headers)
-    if response.status_code != 200:
-        time.sleep(120)
-        response = requests.get(row.labels_url, headers=auth_headers)
-    labels_df = pd.DataFrame(response.json())
-    if len(labels_df) > 0:
+    response = requests.get(row.labels_url.split('{')[0], headers=auth_headers)
+    response_data = get_response_data(response, row.labels_url.split('{')[0])
+    if len(response_data) > 0:
+        labels_df = pd.DataFrame(response_data)
         labels = labels_df['name'].tolist()
     else:
         labels = []
@@ -95,11 +91,9 @@ def get_tags(row):
     :param row: row from repo_df
     :return: list of tags"""
     response = requests.get(row.tags_url, headers=auth_headers)
-    if response.status_code != 200:
-        time.sleep(120)
-        response = requests.get(row.tags_url, headers=auth_headers)
-    tags_df = pd.DataFrame(response.json())
-    if len(tags_df) > 0:
+    response_data = get_response_data(response, row.tags_url)
+    if len(response_data) > 0:
+        tags_df = pd.DataFrame(response_data)
         tags = tags_df['name'].tolist()
     else:
         tags = []
@@ -126,4 +120,69 @@ def get_repo_tags(repo_df, output_path, rates_df):
         repo_df = pd.concat([repo_df, repos_without_tags])
         repo_df = repo_df.drop_duplicates(subset=['id'])
         repo_df.to_csv(output_path, index=False)
+    return repo_df
+
+def get_profiles(repo_df, temp_repo_dir, error_file_path):
+    """Function to get community profiles and health percentages for all repos in repo_df
+    :param repo_df: dataframe of repos
+    :param temp_repo_dir: path to temp directory to write repos
+    :param error_file_path: path to file to write errors
+    :return: dataframe of repos with community profiles and health percentages
+    """
+    for _, row in tqdm(repo_df.iterrows(), total=len(repo_df), desc="Getting Community Profile"):
+        try:
+            response = requests.get(row.url +'/community/profile', headers=auth_headers)
+            response_data = get_response_data(response, row.url +'/community/profile')
+            if len(response_data) > 0:
+                response_df = pd.json_normalize(response_data)
+                response_df = response_df.rename(columns={'updated_at': 'community_profile_updated_at'})
+                final_df = pd.DataFrame(row.to_dict() | response_df.to_dict())
+                temp_name = row.full_name.replace('/', '_')
+                temp_output_path = temp_repo_dir + f'{temp_name}_community_profile.csv'
+                final_df.to_csv(temp_output_path, index=False)
+            else:
+                continue
+        except:
+            print('Error getting community profile for repo: ' + row.full_name)
+            error_df = pd.DataFrame([{'repo_full_name': row.full_name, 'error_time': time.time(), 'url': str(row.url) +'/community/profile'}])
+            if os.path.exists(error_file_path):
+                error_df.to_csv(error_file_path, mode='a', header=False, index=False)
+            else:
+                error_df.to_csv(error_file_path, index=False)
+            continue
+    repo_df = read_combine_files(temp_repo_dir)
+    return repo_df
+
+def get_repo_profile(repo_df, repo_output_path, rates_df, error_file_path, temp_repo_dir):
+    """Function to get community profiles and health percentages for all repos in repo_df
+    :param repo_df: dataframe of repos
+    :param repo_output_path: path to save output
+    :param rates_df: dataframe of rate limit info
+    :param error_file_path: path to file to write errors
+    :param temp_repo_dir: path to temp directory to write repos
+    :return: dataframe of repos with community profiles and health percentages
+    """
+    if os.path.exists(temp_repo_dir):
+        shutil.rmtree(temp_repo_dir)
+        os.makedirs(temp_repo_dir)
+    else:
+        os.makedirs(temp_repo_dir) 
+    if os.path.exists(error_file_path):
+        os.remove(error_file_path)
+
+    calls_remaining = rates_df['resources.core.remaining'].values[0]
+    if 'health_percentage' in repo_df.columns:
+        repos_without_community_profile = repo_df[repo_df.health_percentage.isna()]
+    else: 
+        repos_without_community_profile = repo_df
+    while len(repos_without_community_profile[repos_without_community_profile.url.notna()]) > calls_remaining:
+        time.sleep(3700)
+        rates_df = check_rate_limit()
+        calls_remaining = rates_df['resources.core.remaining'].values[0]
+    else:
+        if len(repos_without_community_profile) > 0:
+            updated_repos = get_profiles(repos_without_community_profile, temp_repo_dir, error_file_path)
+            repo_df = pd.concat([repo_df, updated_repos])
+            repo_df.to_csv(repo_output_path, index=False)
+    shutil.rmtree(temp_repo_dir)
     return repo_df

@@ -1,6 +1,7 @@
 # Large Data Files
-
 data/large_datasets/
+# Temporary Files
+data/temp/
 
 
 # Additional 
