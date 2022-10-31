@@ -61,6 +61,8 @@ def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_fiel
     # It would be slightly faster to have this as .apply but for now leaving as a for loop to make it easier to debug
     for _, row in repo_df.iterrows():
         try:
+            if 'commits' in get_url_field:
+                print(row.total_commits)
             # Check if there is a counts value in the API and whether it is greater than 0. If 0, skip to the next repo
             counts_exist = repo_urls_metdata.count_type.values[0]
             if counts_exist != 'None':
@@ -164,9 +166,9 @@ def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_fiel
         repo_actors_df.to_csv(repo_actors_output_path, index=False)
     else:
         repo_actors_df = pd.DataFrame()
-
-    # Delete the temporary directory
-    shutil.rmtree(temp_repo_actors_dir)
+    if load_existing_temp_files == False:
+        # Delete the temporary directory
+        shutil.rmtree(temp_repo_actors_dir)
     # Close the progress bars
     repo_progress_bar.close()
     users_progress_bar.close()
