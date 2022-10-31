@@ -170,7 +170,7 @@ def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_fiel
         repo_actors_df.to_csv(repo_actors_output_path, index=False)
     else:
         repo_actors_df = pd.DataFrame()
-    if load_existing_temp_files:
+    if load_existing_temp_files == False:
         # Delete the temporary directory
         shutil.rmtree(temp_repo_actors_dir)
     # Close the progress bars
