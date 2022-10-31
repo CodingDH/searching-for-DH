@@ -186,3 +186,40 @@ def get_repo_profile(repo_df, repo_output_path, rates_df, error_file_path, temp_
             repo_df.to_csv(repo_output_path, index=False)
     shutil.rmtree(temp_repo_dir)
     return repo_df
+
+def make_total_commits_calls(row):
+    try:
+        url = row['commits_url'].replace('{/sha}', '')
+        response = requests.get(f'{url}?per_page=1', headers=auth_headers)
+        if response.status_code != 200:
+            print('hit rate limiting. trying to sleep...')
+            time.sleep(120)
+            response = requests.get(url, headers=auth_headers)
+            total_commits = 1 if len(response.links) == 0 else re.search('\d+$', response.links['last']['url']).group()
+        else:
+            total_commits = 1 if len(response.links) == 0 else re.search('\d+$', response.links['last']['url']).group()
+    except:
+        total_commits = 0
+    return total_commits
+
+def get_total_commits(repo_df, repos_with_commits_output_path):
+    """Function to check if commits have been made to a repo
+    :param repo_df: dataframe of repos
+    :return: dataframe of repos with total commits
+    """
+    if 'total_commits' in repo_df.columns:
+        repos_without_commits = repo_df[repo_df.total_commits.isna()]
+    else:
+        if os.path.exists(repos_with_commits_output_path):
+            repo_df = pd.read_csv(repos_with_commits_output_path)
+            repos_without_commits = repo_df[repo_df.total_commits.isna()]
+        else:
+            repos_without_commits = repo_df
+    
+    if len(repos_without_commits) > 0:
+        tqdm.pandas(desc="Getting Total Commits")
+        repos_without_commits['total_commits'] = repos_without_commits.progress_apply(make_total_commits_calls, axis=1)
+        repo_df = pd.concat([repo_df, repos_without_commits])
+        repo_df = repo_df.drop_duplicates(subset=['id'])
+    
+    return repo_df
