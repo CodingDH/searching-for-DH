@@ -15,14 +15,15 @@ import ast
 auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
 
 auth_headers = {'Authorization': f'token {auth_token}','User-Agent': 'request'}
+stargazers_auth_headers = {'Authorization': f'token {auth_token}','User-Agent': 'request', 'Accept': 'application/vnd.github.v3.star+json'}
 
-def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_field, is_stargazers):
+def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_field, load_existing_temp_files):
     """Function to get all contributors to a list of repositories and also update final list of users.
     :param repo_df: dataframe of repositories
     :param repo_contributors_output_path: path to repo contributors file
     :param users_output_path: path to users file
     :param get_url_field: field in repo_df to get url from
-    :param is_stargazers: boolean to indicate if we are getting stargazers because stargazers have a slightly different Auth Headers
+    :param load_existing_temp_files: boolean to indicate if we should load existing temp files or not
     returns: dataframe of repo contributors and unique users"""
 
     # Create the path for the error logs
@@ -36,11 +37,12 @@ def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_fiel
     temp_repo_actors_dir = f"../data/temp/{repo_actors_output_path.split('/')[-1].split('.csv')[0]}/"
 
     # Delete existing temporary directory and create it again
-    if os.path.exists(temp_repo_actors_dir):
-        shutil.rmtree(temp_repo_actors_dir)
-        os.makedirs(temp_repo_actors_dir)
-    else:
-        os.makedirs(temp_repo_actors_dir)  
+    if load_existing_temp_files == False:
+        if os.path.exists(temp_repo_actors_dir):
+            shutil.rmtree(temp_repo_actors_dir)
+            os.makedirs(temp_repo_actors_dir)
+        else:
+            os.makedirs(temp_repo_actors_dir)  
     
     # Also define temporary directory path for users
     temp_users_dir = f"../data/temp/temp_users/"
@@ -49,8 +51,8 @@ def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_fiel
     urls_df = pd.read_csv("../data/metadata_files/repo_url_cols.csv")
     # Subset the urls df to only the relevant field (for example `stargazers_url` or `contributors_url`)
     repo_urls_metdata = urls_df[urls_df.url_type == get_url_field]
-    # Copy the original auth-headers so we can update them for stargazers
-    original_auth_headers = auth_headers.copy()
+    # Determine what auth headers to use
+    active_auth_headers = auth_headers.copy() if 'stargazers' not in get_url_field else stargazers_auth_headers.copy()
 
     # Create our progress bars for getting Repo Contributors and Users (not sure the user one works properly in Jupyter though)
     repo_progress_bar = tqdm(total=len(repo_df), desc="Getting Repo Actors", position=0)
@@ -71,18 +73,19 @@ def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_fiel
             # Create the temporary directory path to store the data
             temp_repo_actors_path =  F"{row.full_name.replace('/','')}_repo_actors_{get_url_field}.csv" if 'full_name' in repo_df.columns else F"id_{str(row.id)}_repo_actors_{get_url_field}.csv"
 
+            # Check if the repo_actors_df has already been saved to the temporary directory
+            if os.path.exists(temp_repo_actors_dir + temp_repo_actors_path):
+                repo_progress_bar.update(1)
+                continue
+
             # Create the url to get the repo actors
             url = row[get_url_field].split('{')[0] + '?per_page=100&page=1' if '{' in row[get_url_field] else row[get_url_field] + '?per_page=100&page=1'
 
             # Check if we need to specify state (either open or close or all) for the URL
             url = url.replace('?', '?state=all&') if repo_urls_metdata.check_state.values[0] else url
 
-            # Check if stargazers and update the auth headers if so
-            if is_stargazers:
-                original_auth_headers = original_auth_headers | {'Accept': 'application/vnd.github.star+json'} 
-
             # Make the first request
-            response = requests.get(url, headers=original_auth_headers)
+            response = requests.get(url, headers=active_auth_headers)
             response_data = get_response_data(response, url)
 
             # If the response is empty, skip to the next repo
@@ -169,7 +172,7 @@ def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_fiel
     return repo_actors_df
 
 
-def get_repos_user_actors(repo_df,repo_actors_output_path, users_output_path, get_url_field, load_existing, is_stargazers):
+def get_repos_user_actors(repo_df,repo_actors_output_path, users_output_path, get_url_field, load_existing_files, load_existing_temp_files):
     """Function to take a list of repositories and get any user activities that are related to a repo, save that into a join table, and also update final list of users.
     :param repo_df: dataframe of repositories
     :param repo_actors_output_path: path to repo actors file (actors here could be subscribers, stargazers, etc...)
@@ -179,7 +182,7 @@ def get_repos_user_actors(repo_df,repo_actors_output_path, users_output_path, ge
     :param is_stargazers: boolean to indicate if the actors are stargazers because stargazers have a slightly different Auth Headers
     returns: dataframe of repo contributors and unique users"""
     # Flag to check if we want to reload existing data or rerun our code
-    if load_existing:
+    if load_existing_files:
         # Load relevant datasets and return them
         repo_actors_df = pd.read_csv(repo_actors_output_path, low_memory=False)
         users_df = pd.read_csv(users_output_path, low_memory=False)
@@ -205,7 +208,7 @@ def get_repos_user_actors(repo_df,repo_actors_output_path, users_output_path, ge
             
             # If there are unprocessed repos, run the get_actors code to get them or return the existing data if there are no unprocessed repos
             if len(unprocessed_actors) > 0:
-                new_actors_df = get_actors(unprocessed_actors, repo_actors_output_path, users_output_path, get_url_field, is_stargazers)
+                new_actors_df = get_actors(unprocessed_actors, repo_actors_output_path, users_output_path, get_url_field, load_existing_temp_files)
             else:
                 new_actors_df = unprocessed_actors
             # Finally combine the existing join file with the new data and save it
@@ -213,7 +216,7 @@ def get_repos_user_actors(repo_df,repo_actors_output_path, users_output_path, ge
             repo_actors_df.to_csv(repo_actors_output_path, index=False)
         else:
             # If the join file doesn't exist, run the get_actors code to get them
-            repo_actors_df = get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_field, is_stargazers)
+            repo_actors_df = get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_field, load_existing_temp_files)
     # Finally, get the unique users fil which is updated in the get_actors code and return it
     users_df = get_user_df(users_output_path)
     return repo_actors_df, users_df
