@@ -80,7 +80,9 @@ def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_fiel
             if os.path.exists(temp_repo_actors_dir + temp_repo_actors_path):
                 repo_progress_bar.update(1)
                 continue
-
+            
+            if 'commits' in get_url_field:
+                print(row.total_commits)
             # Create the url to get the repo actors
             url = row[get_url_field].split('{')[0] + '?per_page=100&page=1' if '{' in row[get_url_field] else row[get_url_field] + '?per_page=100&page=1'
 
@@ -95,7 +97,9 @@ def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_fiel
             if len(response_data) == 0:
                 repo_progress_bar.update(1)
                 continue
-
+            
+            if 'commits' in get_url_field:
+                print(row.total_commits)
             # Else append the response data to the list of dfs
             response_df = pd.json_normalize(response_data)
             dfs.append(response_df)
