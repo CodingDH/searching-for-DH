@@ -30,8 +30,9 @@ def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_fiel
     error_file_path = f"../data/error_logs/{repo_actors_output_path.split('/')[-1].split('.csv')[0]}_errors.csv"
 
     # Delete existing error log 
-    if os.path.exists(error_file_path):
-        os.remove(error_file_path)
+    if load_existing_temp_files == False:
+        if os.path.exists(error_file_path):
+            os.remove(error_file_path)
 
     # Create the temporary directory path to store the data
     temp_repo_actors_dir = f"../data/temp/{repo_actors_output_path.split('/')[-1].split('.csv')[0]}/"
