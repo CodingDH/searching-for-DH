@@ -43,6 +43,9 @@ def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_fiel
             shutil.rmtree(temp_repo_actors_dir)
             os.makedirs(temp_repo_actors_dir)
         else:
+            os.makedirs(temp_repo_actors_dir)
+    else:
+        if not os.path.exists(temp_repo_actors_dir):
             os.makedirs(temp_repo_actors_dir)  
     
     # Also define temporary directory path for users
@@ -60,108 +63,103 @@ def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_fiel
     users_progress_bar = tqdm(total=0, desc="Getting Users", position=1)
     # It would be slightly faster to have this as .apply but for now leaving as a for loop to make it easier to debug
     for _, row in repo_df.iterrows():
-        try:
-            if 'commits' in get_url_field:
-                print(row.total_commits)
-            # Check if there is a counts value in the API and whether it is greater than 0. If 0, skip to the next repo
-            counts_exist = repo_urls_metdata.count_type.values[0]
-            if counts_exist != 'None':
-                if (row[counts_exist] == 0):
-                    repo_progress_bar.update(1)
-                    continue
-
-            # Create an empty list to hold all the response data
-            dfs = []
-
-            # Create the temporary directory path to store the data
-            temp_repo_actors_path =  F"{row.full_name.replace('/','')}_repo_actors_{get_url_field}.csv" if 'full_name' in repo_df.columns else F"id_{str(row.id)}_repo_actors_{get_url_field}.csv"
-
-            # Check if the repo_actors_df has already been saved to the temporary directory
-            if os.path.exists(temp_repo_actors_dir + temp_repo_actors_path):
+        # try:
+        # Check if there is a counts value in the API and whether it is greater than 0. If 0, skip to the next repo
+        counts_exist = repo_urls_metdata.count_type.values[0]
+        if counts_exist != 'None':
+            if (row[counts_exist] == 0):
                 repo_progress_bar.update(1)
                 continue
-            
-            if 'commits' in get_url_field:
-                print(row.total_commits)
-            # Create the url to get the repo actors
-            url = row[get_url_field].split('{')[0] + '?per_page=100&page=1' if '{' in row[get_url_field] else row[get_url_field] + '?per_page=100&page=1'
 
-            # Check if we need to specify state (either open or close or all) for the URL
-            url = url.replace('?', '?state=all&') if repo_urls_metdata.check_state.values[0] else url
+        # Create an empty list to hold all the response data
+        dfs = []
 
-            # Make the first request
-            response = requests.get(url, headers=active_auth_headers)
-            response_data = get_response_data(response, url)
+        # Create the temporary directory path to store the data
+        temp_repo_actors_path =  F"{row.full_name.replace('/','')}_repo_actors_{get_url_field}.csv" if 'full_name' in repo_df.columns else F"id_{str(row.id)}_repo_actors_{get_url_field}.csv"
 
-            # If the response is empty, skip to the next repo
+        # Check if the repo_actors_df has already been saved to the temporary directory
+        if os.path.exists(temp_repo_actors_dir + temp_repo_actors_path):
+            repo_progress_bar.update(1)
+            continue
+        
+        if 'commits' in get_url_field:
+            print(row.total_commits)
+        # Create the url to get the repo actors
+        url = row[get_url_field].split('{')[0] + '?per_page=100&page=1' if '{' in row[get_url_field] else row[get_url_field] + '?per_page=100&page=1'
+
+        # Check if we need to specify state (either open or close or all) for the URL
+        url = url.replace('?', '?state=all&') if repo_urls_metdata.check_state.values[0] else url
+
+        # Make the first request
+        response = requests.get(url, headers=active_auth_headers)
+        response_data = get_response_data(response, url)
+
+        # If the response is empty, skip to the next repo
+        if len(response_data) == 0:
+            repo_progress_bar.update(1)
+            continue
+        # Else append the response data to the list of dfs
+        response_df = pd.json_normalize(response_data)
+        dfs.append(response_df)
+        # Check if there is a next page and if so, keep making requests until there is no next page
+        while "next" in response.links.keys():
+            time.sleep(120)
+            query = response.links['next']['url']
+            response = requests.get(query, headers=auth_headers)
+            response_data = get_response_data(response, query)
             if len(response_data) == 0:
                 repo_progress_bar.update(1)
                 continue
-            
-            if 'commits' in get_url_field:
-                print(row.total_commits)
-            # Else append the response data to the list of dfs
             response_df = pd.json_normalize(response_data)
             dfs.append(response_df)
-            # Check if there is a next page and if so, keep making requests until there is no next page
-            while "next" in response.links.keys():
-                time.sleep(120)
-                query = response.links['next']['url']
-                response = requests.get(query, headers=auth_headers)
-                response_data = get_response_data(response, query)
-                if len(response_data) == 0:
-                    repo_progress_bar.update(1)
-                    continue
-                response_df = pd.json_normalize(response_data)
-                dfs.append(response_df)
 
-            # Concatenate the list of dfs into a single dataframe
-            data_df = pd.concat(dfs)
+        # Concatenate the list of dfs into a single dataframe
+        data_df = pd.concat(dfs)
 
-            # If the dataframe is empty, skip to the next repo
-            if len(data_df) == 0:
-                repo_progress_bar.update(1)
-                continue
-            else:
-                # Copy the dataframe to repo_actors_df
-                repo_actors_df = data_df.copy()
-
-                # Add metadata from the requesting repo to the repo_actors_df
-                repo_actors_df['repo_id'] = row.id
-                repo_actors_df['repo_url'] = row.url
-                repo_actors_df['repo_html_url'] = row.html_url
-                repo_actors_df['repo_full_name'] = row.full_name if 'full_name' in repo_df.columns else repo_df.repo_full_name
-                repo_actors_df[get_url_field] = row[get_url_field]
-
-                # Save the repo_actors_df to the temporary directory
-                repo_actors_df.to_csv(temp_repo_actors_dir + temp_repo_actors_path, index=False)
-
-                # If 'login' is in the repo_actors_df, then we need to get the user data for each of the users
-                if 'login' in data_df.columns:
-                    # Check how the API has coded user data
-                    user_types = ['user.', 'owner.', 'author.']
-                    for user_type in user_types:
-                        if user_type in data_df.columns.tolist():
-                            # Subset the columns of the data_df to be only the user relevant columns
-                            subset_cols = data_df.columns
-                            subset_cols = [col for col in subset_cols if col.startswith(user_type.replace('.', ''))]
-                            data_df = data_df[subset_cols]
-                            data_df.columns = [col.split('.')[-1] for col in data_df.columns]
-                            break
-                    # Get the unique users from the data_df
-                    check_add_users(data_df, users_output_path, temp_users_dir, users_progress_bar, return_df=False)
-                repo_progress_bar.update(1)
-            
-        except:
-            print(f"Error on getting actors for {row.full_name}")
-            error_df = pd.DataFrame([{'repo_full_name': row.full_name, 'error_time': time.time(), f'{get_url_field}': row[get_url_field]}])
-            # Write errors to relevant error log
-            if os.path.exists(error_file_path):
-                error_df.to_csv(error_file_path, mode='a', header=False, index=False)
-            else:
-                error_df.to_csv(error_file_path, index=False)
+        # If the dataframe is empty, skip to the next repo
+        if len(data_df) == 0:
             repo_progress_bar.update(1)
             continue
+        else:
+            # Copy the dataframe to repo_actors_df
+            repo_actors_df = data_df.copy()
+
+            # Add metadata from the requesting repo to the repo_actors_df
+            repo_actors_df['repo_id'] = row.id
+            repo_actors_df['repo_url'] = row.url
+            repo_actors_df['repo_html_url'] = row.html_url
+            repo_actors_df['repo_full_name'] = row.full_name if 'full_name' in repo_df.columns else repo_df.repo_full_name
+            repo_actors_df[get_url_field] = row[get_url_field]
+
+            # Save the repo_actors_df to the temporary directory
+            repo_actors_df.to_csv(temp_repo_actors_dir + temp_repo_actors_path, index=False)
+
+            # If 'login' is in the repo_actors_df, then we need to get the user data for each of the users
+            if 'login' in data_df.columns:
+                # Check how the API has coded user data
+                user_types = ['user.', 'owner.', 'author.']
+                for user_type in user_types:
+                    if user_type in data_df.columns.tolist():
+                        # Subset the columns of the data_df to be only the user relevant columns
+                        subset_cols = data_df.columns
+                        subset_cols = [col for col in subset_cols if col.startswith(user_type.replace('.', ''))]
+                        data_df = data_df[subset_cols]
+                        data_df.columns = [col.split('.')[-1] for col in data_df.columns]
+                        break
+                # Get the unique users from the data_df
+                check_add_users(data_df, users_output_path, temp_users_dir, users_progress_bar, return_df=False)
+            repo_progress_bar.update(1)
+            
+        # except:
+        #     print(f"Error on getting actors for {row.full_name}")
+        #     error_df = pd.DataFrame([{'repo_full_name': row.full_name, 'error_time': time.time(), f'{get_url_field}': row[get_url_field]}])
+        #     # Write errors to relevant error log
+        #     if os.path.exists(error_file_path):
+        #         error_df.to_csv(error_file_path, mode='a', header=False, index=False)
+        #     else:
+        #         error_df.to_csv(error_file_path, index=False)
+        #     repo_progress_bar.update(1)
+        #     continue
 
     # Finally, merge all the temporary files into a single file
     repo_actors_df = read_combine_files(temp_repo_actors_dir)

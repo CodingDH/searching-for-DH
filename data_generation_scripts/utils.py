@@ -8,6 +8,7 @@ import os
 import math
 import shutil
 from tqdm import tqdm
+from datetime import datetime
 
 
 auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
@@ -108,7 +109,7 @@ def get_response_data(response, query):
 
 #     return response_data
 
-def read_combine_files(dir_path):
+def read_combine_files(dir_path, file_path_contains=None):
     """Function to get combined users dataframe. Run this after all users have been added to the temp directory
     :param dir_path: path to users temp folder
     :return: combined users dataframe"""
@@ -116,8 +117,11 @@ def read_combine_files(dir_path):
     for subdir, _, files in os.walk(dir_path):
         for f in files:
             try:
-                temp_df = pd.read_csv(subdir + '/' + f)
-                rows.append(temp_df)
+                if file_path_contains is not None:
+                    if file_path_contains in f:
+                        rows.append(pd.read_csv(os.path.join(subdir, f)))
+                else:
+                    rows.append(pd.read_csv(os.path.join(subdir, f)))
             except pd.errors.EmptyDataError:
                 print(f'Empty dataframe for {f}')
     combined_df = pd.concat(rows) if len(rows) > 0 else pd.DataFrame()
@@ -212,6 +216,20 @@ def check_add_users(potential_new_users_df, users_output_path, temp_users_dir, u
     if return_df:
         return users_df
     
+def get_new_repo(row):
+    """Function to get new repo from the repo file
+    :param row: row of the repo dataframe
+    :return: new repo dataframe
+    """
+    # Create temporary file name for repo
+    temp_repo_path = f"{row.full_name.replace('/', '')}_potential_repos.csv"
+    response = requests.get(row.url, headers=auth_headers)
+    response_data = get_response_data(response, row.url)
+    if len(response_data) == 0:
+        return pd.DataFrame()
+    response_df = pd.json_normalize(response_data)
+    response_df.to_csv(temp_repo_path, index=False)
+    return response_df
 
 def check_add_repo(potential_new_repo_df, repo_output_path):
     """Function to check if repo are already in the repo file and add them if not (Might need to add this to utils.py)
@@ -251,3 +269,23 @@ def check_return_error_file(error_file_path):
         return error_df
     else:
         return []
+
+def check_if_older_file_exists(file_path):
+    """Function to check if older file exists
+    :param file_path: path to file
+    :param file_name: name of file"""
+    if os.path.exists(file_path):
+        src = file_path 
+        new_file_path = '../data/older_datasets/'+ file_path.split('data/')[1]
+        if 'repo_data' in file_path:
+            time_stamp = datetime.now().strftime("%Y_%m_%d_%H-%M-%S")
+            new_file_path = new_file_path.replace('repo_data/', f'repo_data_{time_stamp}/')
+        
+        new_dir = os.path.dirname(new_file_path)
+        if not os.path.exists(new_dir):
+            os.makedirs(new_dir)
+        dst = new_file_path  + '_' + str(time.time()) + '.csv'
+        shutil.copy2(src, dst)  
+        
+
+    

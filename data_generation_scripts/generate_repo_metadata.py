@@ -7,6 +7,7 @@ import os
 from tqdm import tqdm
 import apikey
 import sys
+from ast import literal_eval
 sys.path.append("..")
 from data_generation_scripts.utils import *
 import shutil
@@ -222,4 +223,23 @@ def get_total_commits(repo_df, repos_with_commits_output_path):
         repo_df = pd.concat([repo_df, repos_without_commits])
         repo_df = repo_df.drop_duplicates(subset=['id'])
     
+    return repo_df
+
+
+def clean_owner(row):
+    row['cleaned_owner'] = str(dict( ('owner.'+k, v )for k, v in row.owner.items()))
+    return row
+
+def get_repo_owners(repo_df, repo_output_path):
+    """Function to get repo owners
+    :param repo_df: dataframe of repos
+    :param repo_output_path: path to save output
+    :return: dataframe of repos with owners
+    """
+    tqdm.pandas(desc="Cleaning Repo Owners")
+    repo_df.owner = repo_df.owner.apply(literal_eval)
+    repo_df = repo_df.progress_apply(clean_owner, axis=1)
+    repo_df = repo_df.drop(columns=['owner'])
+    repo_df.cleaned_owner = repo_df.cleaned_owner.apply(literal_eval)
+    repo_df = repo_df.drop('cleaned_owner', axis=1).join(pd.DataFrame(repo_df.cleaned_owner.values.tolist()))
     return repo_df
