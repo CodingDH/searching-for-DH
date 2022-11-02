@@ -131,14 +131,14 @@ def process_large_search_data(rates_df, search_url, dh_term, params, initial_out
                 repo_df = pd.read_csv(yearly_output_path)
                 if repo_df.shape[0] != int(total_results):
                     #Could refactor this to combine new and old data rather than removing it
-                    check_if_older_file_exists(output_path)
+                    check_if_older_file_exists(yearly_output_path)
                     os.remove(yearly_output_path)
                 else:
                     repo_dfs.append(repo_df)
                     return repo_df
             repo_df = get_search_api_data(query, total_pages)
             repo_df = repo_df.reset_index(drop=True)
-            check_if_older_file_exists(output_path)
+            check_if_older_file_exists(yearly_output_path)
             repo_df.to_csv(yearly_output_path, index=False)
         
    
@@ -158,8 +158,7 @@ def combine_search_df(initial_output_path, repo_output_path, join_output_path):
                 except pd.errors.EmptyDataError:
                     print(f'Empty dataframe for {f}')
     join_df = pd.concat(dfs)
-    join_df['search_query_time'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    # join_df[['search_query', 'id', 'node_id', 'name', 'full_name', 'html_url', 'url']].to_csv(join_output_path, index=False)
+    join_df['search_query_time'] = datetime.now().strftime("%Y-%m-%d")
     check_if_older_file_exists(join_output_path)
     join_df.to_csv(join_output_path, index=False)
     repo_df = join_df.drop_duplicates(subset='id')
@@ -169,12 +168,13 @@ def combine_search_df(initial_output_path, repo_output_path, join_output_path):
     repo_df.to_csv(repo_output_path, index=False) 
     return repo_df, join_df
 
-def generate_initial_dh_repos(initial_output_path, rates_df, repo_output_path, join_output_path):
+def generate_initial_dh_repos(initial_output_path, rates_df, repo_output_path, join_output_path, load_existing_temp_files):
     """Function to generate the queries for the search API
     :param initial_output_path: the path to the output file
     :param rates_df: the dataframe of the current rate limit
     :param repo_output_path: the path to the output file
     :param join_output_path: the path to the output file
+    :param load_existing_temp_files: whether to load existing temp files or not
     :return: a dataframe of the data returned from the API"""
 
     #Get the list of terms to search for
@@ -237,14 +237,18 @@ def generate_initial_dh_repos(initial_output_path, rates_df, repo_output_path, j
                 process_search_data(rates_df, search_repos_query, final_searched_output_path, total_search_results)
 
     repo_df, join_df = combine_search_df(initial_output_path, repo_output_path, join_output_path)
+    join_unique_field = 'search_query'
+    repo_df = check_for_entity_in_older_queries(repo_output_path, repo_df, load_existing_temp_files)
+    join_df = check_for_joins_in_older_queries(repo_df, join_output_path, join_df, join_unique_field, load_existing_temp_files)
     return repo_df, join_df
         
-def get_initial_repo_df(repo_output_path, join_output_path, initial_output_path, rates_df, load_existing_data):
+def get_initial_repo_df(repo_output_path, join_output_path, initial_output_path, rates_df, load_existing_data, load_existing_temp_files):
     """Gets the search repo data from Github API and stores it in a dataframe
     :param final_output_path: path to store final dataframe
     :param initial_output_path: path to store initial dataframes
     :param rates_df: dataframe of rate limits
     :param load_existing_data: boolean to indicate whether to load existing data
+    :param load_existing_temp_files: boolean to indicate whether to load existing temp files
     :return: dataframe of search repo data
     """
     if load_existing_data:
@@ -252,43 +256,10 @@ def get_initial_repo_df(repo_output_path, join_output_path, initial_output_path,
             repo_df = pd.read_csv(repo_output_path)
             join_df = pd.read_csv(join_output_path)
         else:
-            repo_df, join_df = generate_initial_dh_repos(initial_output_path, rates_df, repo_output_path, join_output_path)
+            repo_df, join_df = generate_initial_dh_repos(initial_output_path, rates_df, repo_output_path, join_output_path, load_existing_temp_files)
     else:
-        repo_df, join_df = generate_initial_dh_repos(initial_output_path, rates_df, repo_output_path, join_output_path)
+        repo_df, join_df = generate_initial_dh_repos(initial_output_path, rates_df, repo_output_path, join_output_path, load_existing_temp_files)
     return repo_df, join_df
 
-def check_if_repos_exist_in_older_queries(repo_file_path, repo_df, join_file_path, join_files_df):
-    # Needs to check if older repos exist and then find their values in older join_files_df
-    older_repo_file_path = repo_file_path.replace('data/', 'data/older_datasets/')
-    older_repo_file_dir = os.path.dirname(older_repo_file_path) + '/'
-    older_join_file_path = join_file_path.replace('data/', 'data/older_datasets/')
-    older_join_file_dir = os.path.dirname(older_join_file_path) + '/'
-    if os.path.exists(older_repo_file_dir):
-        older_repo_df = read_combine_files(older_repo_file_dir)
-        if len(older_repo_df) > 0:
-            missing_repos = older_repo_df[~older_repo_df.id.isin(repo_df.id)]
-            if len(missing_repos) > 0:
-                repo_headers = pd.read_csv('../data/metadata_files/repo_headers.csv')
-                join_check_contains = join_file_path.split('/')[-1].split('.csv')[0]
-                older_join_df = read_combine_files(older_join_file_dir, join_check_contains)
-
-                if set(missing_repos.columns) != set(repo_headers.columns):
-                    tqdm.pandas(desc="Getting missing repos")
-                    cleaned_missing_repos = missing_repos.progress_apply(get_new_repo, axis=1)
-                    missing_repos = cleaned_missing_repos.dropna()
-                missing_join = older_join_df[older_join_df.id.isin(missing_repos.id)]
-                missing_join['cleaned_search_query_time'] = pd.to_datetime(missing_join['search_query_time'], errors='coerce')
-                missing_join = missing_join.sort_values(by=['cleaned_search_query_time']).drop_duplicates(subset=['id'], keep='first').drop(columns=['cleaned_search_query_time'])
-
-                join_files_df = pd.concat([join_files_df, missing_join])
-                join_files_df = join_files_df.drop_duplicates(subset=['id', 'search_query_time'])
-                join_files_df.to_csv(join_file_path, index=False)
-
-                repo_df = pd.concat([repo_df, missing_repos])
-
-                
-                repo_df = repo_df.drop_duplicates(subset=['id'])
-                repo_df.to_csv(repo_file_path, index=False)
-    return repo_df, join_files_df
 
 
