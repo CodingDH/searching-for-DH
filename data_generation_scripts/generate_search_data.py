@@ -34,7 +34,7 @@ def get_search_api_data(query, total_pages):
         if len(response_df) > 0:
             response_df['search_query'] = query
         else:
-            response_df = pd.read_csv('../data/metadata_files/repo_headers.csv')
+            response_df = pd.read_csv('../data/metadata_files/search_repo_headers.csv')
         dfs.append(response_df)
         pbar.update(1)
         while "next" in response.links.keys():
@@ -47,7 +47,7 @@ def get_search_api_data(query, total_pages):
             if len(response_df) > 0:
                 response_df['search_query'] = query
             else:
-                response_df = pd.read_csv('../data/metadata_files/repo_headers.csv')
+                response_df = pd.read_csv('../data/metadata_files/search_repo_headers.csv')
             dfs.append(response_df)
             pbar.update(1)
     
@@ -164,17 +164,20 @@ def combine_search_df(initial_output_path, repo_output_path, join_output_path):
     repo_df = join_df.drop_duplicates(subset='id')
     repo_df = repo_df.reset_index(drop=True)
     repo_df = repo_df.drop(columns=['search_query'])
+    repo_headers = pd.read_csv('../data/metadata_files/repo_headers.csv')
+    repo_df = repo_df[repo_headers.columns]
+    repo_df['repo_query_time'] = datetime.now().strftime("%Y-%m-%d")
     check_if_older_file_exists(repo_output_path)
     repo_df.to_csv(repo_output_path, index=False) 
     return repo_df, join_df
 
-def generate_initial_dh_repos(initial_output_path, rates_df, repo_output_path, join_output_path, load_existing_temp_files):
+def generate_initial_dh_repos(initial_output_path, rates_df, repo_output_path, join_output_path, overwrite_existing_temp_files=True):
     """Function to generate the queries for the search API
     :param initial_output_path: the path to the output file
     :param rates_df: the dataframe of the current rate limit
     :param repo_output_path: the path to the output file
     :param join_output_path: the path to the output file
-    :param load_existing_temp_files: whether to load existing temp files or not
+    :param overwrite_existing_temp_files: whether to overwrite existing temp files or not
     :return: a dataframe of the data returned from the API"""
 
     #Get the list of terms to search for
@@ -238,8 +241,8 @@ def generate_initial_dh_repos(initial_output_path, rates_df, repo_output_path, j
 
     repo_df, join_df = combine_search_df(initial_output_path, repo_output_path, join_output_path)
     join_unique_field = 'search_query'
-    repo_df = check_for_entity_in_older_queries(repo_output_path, repo_df, load_existing_temp_files)
-    join_df = check_for_joins_in_older_queries(repo_df, join_output_path, join_df, join_unique_field, load_existing_temp_files)
+    repo_df = check_for_entity_in_older_queries(repo_output_path, repo_df, overwrite_existing_temp_files)
+    join_df = check_for_joins_in_older_queries(repo_df, join_output_path, join_df, join_unique_field)
     return repo_df, join_df
         
 def get_initial_repo_df(repo_output_path, join_output_path, initial_output_path, rates_df, load_existing_data, load_existing_temp_files):

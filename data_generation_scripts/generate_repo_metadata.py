@@ -130,7 +130,8 @@ def get_profiles(repo_df, temp_repo_dir, error_file_path):
     :param error_file_path: path to file to write errors
     :return: dataframe of repos with community profiles and health percentages
     """
-    for _, row in tqdm(repo_df.iterrows(), total=len(repo_df), desc="Getting Community Profile"):
+    profile_bar = tqdm(total=len(repo_df), desc="Getting Community Profiles")
+    for _, row in repo_df.iterrows():
         try:
             response = requests.get(row.url +'/community/profile', headers=auth_headers)
             response_data = get_response_data(response, row.url +'/community/profile')
@@ -143,8 +144,9 @@ def get_profiles(repo_df, temp_repo_dir, error_file_path):
                 final_df.to_csv(temp_output_path, index=False)
             else:
                 continue
+            profile_bar.update(1)
         except:
-            print('Error getting community profile for repo: ' + row.full_name)
+            profile_bar.total = profile_bar.total - 1
             error_df = pd.DataFrame([{'repo_full_name': row.full_name, 'error_time': time.time(), 'url': str(row.url) +'/community/profile'}])
             if os.path.exists(error_file_path):
                 error_df.to_csv(error_file_path, mode='a', header=False, index=False)
@@ -152,6 +154,8 @@ def get_profiles(repo_df, temp_repo_dir, error_file_path):
                 error_df.to_csv(error_file_path, index=False)
             continue
     repo_df = read_combine_files(temp_repo_dir)
+    clean_write_error_file(error_file_path, 'repo_full_name')
+    profile_bar.close()
     return repo_df
 
 def get_repo_profile(repo_df, repo_output_path, rates_df, error_file_path, temp_repo_dir):
@@ -168,8 +172,6 @@ def get_repo_profile(repo_df, repo_output_path, rates_df, error_file_path, temp_
         os.makedirs(temp_repo_dir)
     else:
         os.makedirs(temp_repo_dir) 
-    if os.path.exists(error_file_path):
-        os.remove(error_file_path)
 
     calls_remaining = rates_df['resources.core.remaining'].values[0]
     if 'health_percentage' in repo_df.columns:

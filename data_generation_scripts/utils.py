@@ -125,7 +125,15 @@ def check_return_error_file(error_file_path):
         error_df = pd.read_csv(error_file_path)
         return error_df
     else:
-        return []
+        return pd.DataFrame()
+
+def clean_write_error_file(error_file_path, drop_field):
+    """Function to clean error file and write it
+    :param error_file_path: path to error file
+    :param drop_field: field to drop from error file"""
+    error_df = pd.read_csv(error_file_path)
+    error_df = error_df.sort_values(by=['error_time']).drop_duplicates(subset=[drop_field], keep='last')
+    error_df.to_csv(error_file_path, index=False)
 
 def check_if_older_file_exists(file_path):
     """Function to check if older file exists
@@ -145,12 +153,8 @@ def check_if_older_file_exists(file_path):
             shutil.copy2(src, dst)  
 
 
-def check_for_entity_in_older_queries(entity_path, entity_df, load_existing_temp_files):
+def check_for_entity_in_older_queries(entity_path, entity_df, overwrite_existing_temp_files):
     entity_type = entity_path.split('/')[-1].split('_dataset')[0]
-    error_file_path = f"../data/error_logs/potential_{entity_type}_errors.csv"
-    if load_existing_temp_files == False:
-        if os.path.exists(error_file_path):
-            os.remove(error_file_path)
 
     older_entity_file_path = entity_path.replace('data/', 'data/older_datasets/')
     older_entity_file_dir = os.path.dirname(older_entity_file_path) + '/'
@@ -164,13 +168,31 @@ def check_for_entity_in_older_queries(entity_path, entity_df, load_existing_temp
             if set(missing_entities.columns) != set(user_headers.columns):
                 users_progress_bar = tqdm(total=0, desc="Getting Missing Users")
                 temp_users_dir = '../data/temp/potential_users/'
-                cleaned_missing_entities = get_new_users(missing_entities, temp_users_dir, users_progress_bar, load_existing_temp_files)
+                error_file_path = "../data/error_logs/potential_users_errors.csv"
+                error_df = check_return_error_file(error_file_path)
+                now = pd.Timestamp('now')
+                error_df['error_time'] = pd.to_datetime(error_df['error_time'])
+                error_df['time_since_error'] = (now - error_df['error_time']).dt.days
+                error_df = error_df[error_df.time_since_error > 7]
+                missing_entities = missing_entities[~missing_entities.id.isin(error_df.id)]
+                if len(missing_entities) > 0:
+                    cleaned_missing_entities = get_new_users(missing_entities, temp_users_dir, users_progress_bar, error_file_path, overwrite_existing_temp_files)
+                    clean_write_error_file(error_file_path, 'login')
         if entity_type == 'repos':
             repo_headers = pd.read_csv('../data/metadata_files/repo_headers.csv')
             if set(missing_entities.columns) != set(repo_headers.columns):
                 repos_progress_bar = tqdm(total=0, desc="Getting Missing Repos")
                 temp_repos_dir = '../data/temp/potential_repos/'
-                cleaned_missing_entities = get_new_repos(missing_entities, temp_repos_dir, repos_progress_bar, load_existing_temp_files)
+                error_file_path = "../data/error_logs/potential_repos_errors.csv"
+                error_df = check_return_error_file(error_file_path)
+                now = pd.Timestamp('now')
+                error_df['error_time'] = pd.to_datetime(error_df['error_time'])
+                error_df['time_since_error'] = (now - error_df['error_time']).dt.days
+                error_df = error_df[error_df.time_since_error > 7]
+                missing_entities = missing_entities[~missing_entities.id.isin(error_df.id)]
+                if len(missing_entities) > 0:
+                    cleaned_missing_entities = get_new_repos(missing_entities, temp_repos_dir, repos_progress_bar, error_file_path, overwrite_existing_temp_files)
+                    clean_write_error_file(error_file_path, 'full_name')
         if len(cleaned_missing_entities) > 0:
             missing_entities = cleaned_missing_entities[cleaned_missing_entities.id.notna()]
             entity_df = pd.concat([entity_df, missing_entities])
@@ -183,28 +205,23 @@ def check_for_entity_in_older_queries(entity_path, entity_df, load_existing_temp
 2. Check add user
 4. Get user"""
 
-def get_new_users(potential_new_users_df, temp_users_dir, users_progress_bar, load_existing_temp_files):
+def get_new_users(potential_new_users_df, temp_users_dir, users_progress_bar,  error_file_path, overwrite_existing_temp_files = True):
     """Function to get new users from the users file
     :param potential_new_users_df: dataframe of new identified users
     :param temp_users_dir: path to temp users directory
     :param users_progress_bar: progress bar for users (Not sure this is working though)
-    :param load_existing_temp_files: boolean to load existing temp files or not
+    :param error_file_path: path to error file
+    :param overwrite_existing_temp_files: boolean to overwrite existing temp files or not
     :return: new users dataframe
     """
     # Check if temp users directory exists. If it does, delete it and recreate it. Otherwise create it.
     user_cols = pd.read_csv('../data/metadata_files/users_dataset_cols.csv')
-    if load_existing_temp_files == False:
-        if os.path.exists(temp_users_dir):
-            shutil.rmtree(temp_users_dir)
-            os.makedirs(temp_users_dir)  
-        else:
-            os.makedirs(temp_users_dir)
-   
-    # Check if users error files exists. If it does, delete it. Otherwise create it. This does mean that we might try and get the same user more than once, and it will error out each time. We could change this to being time based or query based error, but for now leaving this as is.
-    error_file_path = "../data/error_logs/potential_users_errors.csv"
-    if load_existing_temp_files == False:
-        if os.path.exists(error_file_path):
-            os.remove(error_file_path)
+    
+    if (os.path.exists(temp_users_dir)) and (overwrite_existing_temp_files):
+        shutil.rmtree(temp_users_dir)
+          
+    if not os.path.exists(temp_users_dir):
+        os.makedirs(temp_users_dir)
     # Update and refresh progress bar with the length of the potential new users dataframe
     users_progress_bar.total = len(potential_new_users_df)
     users_progress_bar.refresh()
@@ -239,47 +256,55 @@ def get_new_users(potential_new_users_df, temp_users_dir, users_progress_bar, lo
                 continue
             users_progress_bar.update(1)
         except:
-            print(f"Error on getting users for {user_row.login}")
-            error_df = pd.DataFrame([{'login': user_row.login, 'error_time': time.time()}])
-            
+            users_progress_bar.total = users_progress_bar.total - 1
+            error_df = pd.DataFrame([{'login': user_row.login, 'error_time': time.time(), 'error_url': user_row.url}])
             if os.path.exists(error_file_path):
                 error_df.to_csv(error_file_path, mode='a', header=False, index=False)
             else:
                 error_df.to_csv(error_file_path, index=False)
-            users_progress_bar.update(1)
+            # users_progress_bar.update(1)
             continue
     # Combine all users in temp directory into one dataframe
     new_users_df = read_combine_files(temp_users_dir)
+    users_progress_bar.close()
     # Delete temp directory
-    if load_existing_temp_files == False:
+    if overwrite_existing_temp_files:
         shutil.rmtree(temp_users_dir)
     return new_users_df
 
 
-def check_add_users(potential_new_users_df, users_output_path, temp_users_dir, users_progress_bar, return_df, load_existing_temp_files):
+def check_add_users(potential_new_users_df, users_output_path, temp_users_dir, users_progress_bar, return_df, overwrite_existing_temp_files):
     """Function to check if users are already in the users file and add them if not (Might need to add this to utils.py)
     :param potential_new_users_df: dataframe of new identified users
     :param users_output_path: path to users file
     :param temp_users_dir: path to temp users directory to store initial files
     :param users_progress_bar: progress bar for users (Not sure this is working though)
     :param return_df: boolean to return the dataframe or not
-    :param load_existing_temp_files: boolean to load existing temp files or not
+    :param overwrite_existing_temp_files: boolean to overwrite existing temp files or not
     """
+    excluded_users = pd.read_csv('../data/metadata_files/excluded_users.csv')
+    potential_new_users_df = potential_new_users_df[~potential_new_users_df.login.isin(excluded_users.login)]
+    error_file_path = "../data/error_logs/potential_users_errors.csv"
+    error_df = check_return_error_file(error_file_path)
     if os.path.exists(users_output_path):
         users_df = pd.read_csv(users_output_path)
         new_users_df = potential_new_users_df[~potential_new_users_df.login.isin(users_df.login)]
+        if len(error_df) > 0:
+            new_users_df = new_users_df[~new_users_df.login.isin(error_df.login)]
         if len(new_users_df) > 0:
-            expanded_new_users = get_new_users(new_users_df, temp_users_dir, users_progress_bar, load_existing_temp_files)
+            expanded_new_users = get_new_users(new_users_df, temp_users_dir, users_progress_bar, error_file_path, overwrite_existing_temp_files)
         else:
             expanded_new_users = new_users_df
         users_df = pd.concat([users_df, expanded_new_users])
         users_df = users_df.drop_duplicates(subset=['login', 'id'])
     else:
-        users_df = get_new_users(potential_new_users_df, temp_users_dir, users_progress_ba, load_existing_temp_files)
+        users_df = get_new_users(potential_new_users_df, temp_users_dir, users_progress_bar, error_file_path, overwrite_existing_temp_files)
+    
+    clean_write_error_file(error_file_path)
     check_if_older_file_exists(users_output_path)
     users_df['user_query_time'] = datetime.now().strftime("%Y-%m-%d")
     users_df.to_csv(users_output_path, index=False)
-    check_for_entity_in_older_queries(users_output_path, user_df, load_existing_temp_files)
+    check_for_entity_in_older_queries(users_output_path, users_df, overwrite_existing_temp_files)
     if return_df:
         return users_df
 
@@ -295,28 +320,22 @@ def get_user_df(output_path):
 2. Check if repos are already in the repos file and add them if not
 3. Get repo dataset"""
     
-def get_new_repos(potential_new_repos_df, temp_repos_dir, repos_progress_bar, load_existing_temp_files):
+def get_new_repos(potential_new_repos_df, temp_repos_dir, repos_progress_bar,  error_file_path, overwrite_existing_temp_files=True):
     """Function to get new repos from the repos file
     :param potential_new_repos_df: dataframe of new identified repos
     :param temp_repos_dir: path to temp repos directory
     :param repos_progress_bar: progress bar for repos 
-    :param load_existing_temp_files: boolean to load existing temp files or not
+    :param overwrite_existing_temp_files: boolean to overwrite existing temp files or not
     :return: new repos dataframe
     """
     repo_headers = pd.read_csv('../data/metadata_files/repo_headers.csv')
     # Check if temp users directory exists. If it does, delete it and recreate it. Otherwise create it.
-    if load_existing_temp_files == False:
-        if os.path.exists(temp_repos_dir):
-            shutil.rmtree(temp_repos_dir)
-            os.makedirs(temp_repos_dir)  
-        else:
-            os.makedirs(temp_repos_dir)
+    if (os.path.exists(temp_repos_dir)) and (overwrite_existing_temp_files):
+        shutil.rmtree(temp_repos_dir)
 
-    # Check if repos error files exists. If it does, delete it. Otherwise create it. This does mean that we might try and get the same repo more than once, and it will error out each time. We could change this to being time based or query based error, but for now leaving this as is.
-    error_file_path = "../data/error_logs/potential_repos_errors.csv"
-    if load_existing_temp_files == False:
-        if os.path.exists(error_file_path):
-            os.remove(error_file_path)
+    if not os.path.exists(temp_repos_dir):
+        os.makedirs(temp_repos_dir)  
+
     # Create temporary file name for repo
     repos_progress_bar.total = len(potential_new_repos_df)
     repos_progress_bar.refresh()
@@ -349,33 +368,52 @@ def get_new_repos(potential_new_repos_df, temp_repos_dir, repos_progress_bar, lo
                 continue
             repos_progress_bar.update(1)
         except:
-            print(f"Error on getting repo for {row.full_name}")
+            repos_progress_bar.total = repos_progress_bar.total - 1
+            # print(f"Error on getting repo for {row.full_name}")
             error_df = pd.DataFrame([{'full_name': row.full_name, 'error_time': time.time()}])
             if os.path.exists(error_file_path):
                 error_df.to_csv(error_file_path, mode='a', header=False, index=False)
             else:
                 error_df.to_csv(error_file_path, index=False)
-            repos_progress_bar.update(1)
+            # repos_progress_bar.update(1)
             continue
     new_repos_df = read_combine_files(temp_repos_dir)
-    if load_existing_temp_files == False:
+    new_repos_df = new_repos_df.drop_duplicates(subset=['full_name', 'id'])
+    new_repos_df = new_repos_df[repo_headers.columns]
+    repos_progress_bar.close()
+    if overwrite_existing_temp_files:
         shutil.rmtree(temp_repos_dir)
     return new_repos_df
 
-def check_add_repos(potential_new_repo_df, repo_output_path):
+def check_add_repos(potential_new_repo_df, repo_output_path, overwrite_existing_temp_files, return_df):
     """Function to check if repo are already in the repo file and add them if not 
     :param potential_new_repo_df: dataframe of contributors
     :param repo_output_path: path to repo file
+    :param overwrite_existing_temp_files: boolean to overwrite existing temp files or not
+    :param return_df: boolean to return dataframe or not
+    :return: repo dataframe
     """
+    error_file_path = '../data/error_logs/potential_repos_errors.csv'
+    repo_headers = pd.read_csv('../data/metadata_files/repo_headers.csv')
     if os.path.exists(repo_output_path):
         repo_df = pd.read_csv(repo_output_path)
         new_repo_df = potential_new_repo_df[~potential_new_repo_df.id.isin(repo_df.id)]
-        repo_df = pd.concat([repo_df, new_repo_df])
-        repo_df.to_csv(repo_output_path, index=False)
+        error_df = check_return_error_file(error_file_path)
+        if len(error_df) > 0:
+            new_repo_df = new_repo_df[~new_repo_df.full_name.isin(error_df.full_name)]
+        if len(new_repo_df) > 0:
+            new_repo_df = new_repo_df[repo_headers.columns]
+            repo_df = pd.concat([repo_df, new_repo_df])
+            repo_df = repo_df.drop_duplicates(subset=['id'])
     else:
         repo_df = potential_new_repo_df
-        repo_df.to_csv(repo_output_path, index=False)
-    return repo_df
+
+    check_if_older_file_exists(repo_output_path)
+    repo_df['repo_query_time'] = datetime.now().strftime("%Y-%m-%d")
+    repo_df.to_csv(repo_output_path, index=False)
+    check_for_entity_in_older_queries(repo_output_path, repo_df, overwrite_existing_temp_files)
+    if return_df:
+        return repo_df
 
 def get_repo_df(output_path):
     """Function to get repo dataframe
@@ -387,13 +425,9 @@ def get_repo_df(output_path):
 """Join Functions
 1. Check if older join entities exist and add them to our latest join"""
 
-def check_for_joins_in_older_queries(entity_df, join_file_path, join_files_df, join_unique_field, load_existing_temp_files):
+def check_for_joins_in_older_queries(entity_df, join_file_path, join_files_df, join_unique_field):
     # Needs to check if older repos exist and then find their values in older join_files_df
     join_type = join_file_path.split('/')[-1].split('_dataset')[0]
-    error_file_path = f"../data/error_logs/potential_{join_type}_errors.csv"
-    if load_existing_temp_files == False:
-        if os.path.exists(error_file_path):
-            os.remove(error_file_path)
 
     older_join_file_path = join_file_path.replace('data/', 'data/older_datasets/')
     older_join_file_dir = os.path.dirname(older_join_file_path) + '/'

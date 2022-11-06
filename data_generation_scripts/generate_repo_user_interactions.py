@@ -16,36 +16,25 @@ auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
 auth_headers = {'Authorization': f'token {auth_token}','User-Agent': 'request'}
 stargazers_auth_headers = {'Authorization': f'token {auth_token}','User-Agent': 'request', 'Accept': 'application/vnd.github.v3.star+json'}
 
-def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_field, load_existing_temp_files):
+def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_field, error_file_path, overwrite_existing_temp_files=True):
     """Function to get all contributors to a list of repositories and also update final list of users.
     :param repo_df: dataframe of repositories
     :param repo_contributors_output_path: path to repo contributors file
     :param users_output_path: path to users file
     :param get_url_field: field in repo_df to get url from
-    :param load_existing_temp_files: boolean to indicate if we should load existing temp files or not
+    :param error_file_path: path to error file
+    :param overwrite_existing_temp_files: boolean to indicate if we should overwrite existing temp files or not
     returns: dataframe of repo contributors and unique users"""
-
-    # Create the path for the error logs
-    error_file_path = f"../data/error_logs/{repo_actors_output_path.split('/')[-1].split('.csv')[0]}_errors.csv"
-
-    # Delete existing error log 
-    if load_existing_temp_files == False:
-        if os.path.exists(error_file_path):
-            os.remove(error_file_path)
 
     # Create the temporary directory path to store the data
     temp_repo_actors_dir = f"../data/temp/{repo_actors_output_path.split('/')[-1].split('.csv')[0]}/"
 
     # Delete existing temporary directory and create it again
-    if load_existing_temp_files == False:
-        if os.path.exists(temp_repo_actors_dir):
-            shutil.rmtree(temp_repo_actors_dir)
-            os.makedirs(temp_repo_actors_dir)
-        else:
-            os.makedirs(temp_repo_actors_dir)
-    else:
-        if not os.path.exists(temp_repo_actors_dir):
-            os.makedirs(temp_repo_actors_dir)  
+    if (os.path.exists(temp_repo_actors_dir)) and (overwrite_existing_temp_files):
+        shutil.rmtree(temp_repo_actors_dir)
+        
+    if not os.path.exists(temp_repo_actors_dir):
+        os.makedirs(temp_repo_actors_dir)  
     
     # Also define temporary directory path for users
     temp_users_dir = f"../data/temp/temp_users/"
@@ -104,7 +93,7 @@ def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_fiel
             while "next" in response.links.keys():
                 time.sleep(120)
                 query = response.links['next']['url']
-                response = requests.get(query, headers=auth_headers)
+                response = requests.get(query, headers=active_auth_headers)
                 response_data = get_response_data(response, query)
                 if len(response_data) == 0:
                     repo_progress_bar.update(1)
@@ -152,36 +141,36 @@ def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_fiel
                     check_add_users(data_df, users_output_path, temp_users_dir, users_progress_bar, return_df=False)
                 repo_progress_bar.update(1)
         except:
-            print(f"Error on getting actors for {row.full_name}")
-            error_df = pd.DataFrame([{'repo_full_name': row.full_name, 'error_time': time.time(), f'{get_url_field}': row[get_url_field]}])
+            # print(f"Error on getting actors for {row.full_name}")
+            repo_progress_bar.total = repo_progress_bar.total - 1
+            error_df = pd.DataFrame([{'repo_full_name': row.full_name, 'error_time': time.time(), 'error_url': url}])
             # Write errors to relevant error log
             if os.path.exists(error_file_path):
                 error_df.to_csv(error_file_path, mode='a', header=False, index=False)
             else:
                 error_df.to_csv(error_file_path, index=False)
-            repo_progress_bar.update(1)
+            # repo_progress_bar.update(1)
             continue
 
     # Finally, merge all the temporary files into a single file
     repo_actors_df = read_combine_files(temp_repo_actors_dir)
 
-    if load_existing_temp_files == False:
+    if overwrite_existing_temp_files:
         # Delete the temporary directory
         shutil.rmtree(temp_repo_actors_dir)
     # Close the progress bars
     repo_progress_bar.close()
-    users_progress_bar.close()
     return repo_actors_df
 
 
-def get_repos_user_actors(repo_df,repo_actors_output_path, users_output_path, get_url_field, load_existing_files, load_existing_temp_files):
+def get_repos_user_actors(repo_df,repo_actors_output_path, users_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files):
     """Function to take a list of repositories and get any user activities that are related to a repo, save that into a join table, and also update final list of users.
     :param repo_df: dataframe of repositories
     :param repo_actors_output_path: path to repo actors file (actors here could be subscribers, stargazers, etc...)
     :param users_output_path: path to users file
     :param get_url_field: field in repo_df that contains the url to get the actors
     :param load_existing: boolean to load existing data
-    :param is_stargazers: boolean to indicate if the actors are stargazers because stargazers have a slightly different Auth Headers
+    :param overwrite_existing_temp_files: boolean to overwrite existing temporary files
     returns: dataframe of repo contributors and unique users"""
     # Flag to check if we want to reload existing data or rerun our code
     if load_existing_files:
@@ -190,6 +179,9 @@ def get_repos_user_actors(repo_df,repo_actors_output_path, users_output_path, ge
         users_df = pd.read_csv(users_output_path, low_memory=False)
     else:
         # If we want to rerun our code, first check if the join file exists
+
+        # Create the path for the error logs
+        error_file_path = f"../data/error_logs/{repo_actors_output_path.split('/')[-1].split('.csv')[0]}_errors.csv"
         if os.path.exists(repo_actors_output_path):
             # If it does, load it
             repo_actors_df = pd.read_csv(repo_actors_output_path, low_memory=False)
@@ -206,11 +198,12 @@ def get_repos_user_actors(repo_df,repo_actors_output_path, users_output_path, ge
             if os.path.exists(error_file_path):
                 # If it does, load it and also add the repos that were in the error log to the unprocessed repos so that we don't keep trying to grab errored repos
                 error_df = pd.read_csv(error_file_path)
-                unprocessed_actors = unprocessed_actors[~unprocessed_actors[get_url_field].isin(error_df[get_url_field])]
+                if len(error_df) > 0:
+                    unprocessed_actors = unprocessed_actors[~unprocessed_actors[get_url_field].isin(error_df[get_url_field])]
             
             # If there are unprocessed repos, run the get_actors code to get them or return the existing data if there are no unprocessed repos
             if len(unprocessed_actors) > 0:
-                new_actors_df = get_actors(unprocessed_actors, repo_actors_output_path, users_output_path, get_url_field, load_existing_temp_files)
+                new_actors_df = get_actors(unprocessed_actors, repo_actors_output_path, users_output_path, get_url_field, overwrite_existing_temp_files, error_file_path)
             else:
                 new_actors_df = unprocessed_actors
             # Finally combine the existing join file with the new data and save it
@@ -218,13 +211,14 @@ def get_repos_user_actors(repo_df,repo_actors_output_path, users_output_path, ge
             
         else:
             # If the join file doesn't exist, run the get_actors code to get them
-            repo_actors_df = get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_field, load_existing_temp_files)
+            repo_actors_df = get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_field, overwrite_existing_temp_files, error_file_path)
         
         check_if_older_file_exists(repo_actors_output_path)
         repo_actors_df['repo_query_time'] = datetime.now().strftime("%Y-%m-%d")
         repo_actors_df.to_csv(repo_actors_output_path, index=False)
     # Finally, get the unique users which is updated in the get_actors code and return it
+    clean_write_error_file(error_file_path, 'full_name')
     join_unique_field = 'repo_query'
-    check_for_joins_in_older_queries(repo_df, repo_actors_output_path, repo_actors_df, join_unique_field, load_existing_temp_files)
+    check_for_joins_in_older_queries(repo_df, repo_actors_output_path, repo_actors_df, join_unique_field)
     users_df = get_user_df(users_output_path)
     return repo_actors_df, users_df
