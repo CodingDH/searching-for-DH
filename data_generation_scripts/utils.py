@@ -141,7 +141,7 @@ def check_if_older_file_exists(file_path):
     :param file_name: name of file"""
     if os.path.exists(file_path):
         src = file_path 
-        new_file_path = file_path.replace('/data/','/data/older_datasets/')
+        new_file_path = file_path.replace('/data/','/data/older_files/')
         time_stamp = datetime.now().strftime("%Y_%m_%d")
         dst = new_file_path.replace('.csv', f'_{time_stamp}.csv')
         
@@ -156,7 +156,7 @@ def check_if_older_file_exists(file_path):
 def check_for_entity_in_older_queries(entity_path, entity_df, overwrite_existing_temp_files):
     entity_type = entity_path.split('/')[-1].split('_dataset')[0]
 
-    older_entity_file_path = entity_path.replace('data/', 'data/older_datasets/')
+    older_entity_file_path = entity_path.replace('data/', 'data/older_files/')
     older_entity_file_dir = os.path.dirname(older_entity_file_path) + '/'
 
     older_entity_df = read_combine_files(older_entity_file_dir, entity_type)
@@ -429,7 +429,7 @@ def check_for_joins_in_older_queries(entity_df, join_file_path, join_files_df, j
     # Needs to check if older repos exist and then find their values in older join_files_df
     join_type = join_file_path.split('/')[-1].split('_dataset')[0]
 
-    older_join_file_path = join_file_path.replace('data/', 'data/older_datasets/')
+    older_join_file_path = join_file_path.replace('data/', 'data/older_files/')
     older_join_file_dir = os.path.dirname(older_join_file_path) + '/'
 
     older_join_df = read_combine_files(older_join_file_dir, join_type)
