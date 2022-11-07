@@ -3,7 +3,6 @@
 # OR get subscribers which gets both
 
 import time
-from urllib.parse import parse_qs
 import pandas as pd
 import requests
 import os
@@ -167,23 +166,23 @@ def get_user_repo_activities(user_df,user_repos_output_path, repos_output_path, 
         check_if_older_file_exists(user_repos_output_path)
         user_repos_df['user_query_time'] = datetime.now().strftime("%Y-%m-%d")
         user_repos_df.to_csv(user_repos_output_path, index=False)
-    clean_write_error_file(error_file_path, 'login')
-    # Finally, get the unique users which is updated in the get_actors code and return it
-    join_unique_field = 'user_query'
-    check_for_joins_in_older_queries(user_df, user_repos_output_path, user_repos_df, join_unique_field)
-    repos_df = get_repo_df(repos_output_path)
+        clean_write_error_file(error_file_path, 'login')
+        # Finally, get the unique users which is updated in the get_actors code and return it
+        join_unique_field = 'user_query'
+        check_for_joins_in_older_queries(user_df, user_repos_output_path, user_repos_df, join_unique_field)
+        repos_df = get_repo_df(repos_output_path)
     return user_repos_df, repos_df
 
 
 if __name__ == '__main__':
     # Get the data
     user_df = pd.read_csv("../data/entity_files/users_dataset.csv", low_memory=False)
-    repo_df = pd.read_csv("../data/entity_files/repos_dataset.csv", low_memory=False)
+    repo_df = pd.read_csv("../data/large_files/entity_files/repos_dataset.csv", low_memory=False)
     search_queries_df = pd.read_csv('../data/join_files/search_queries_join_dataset.csv', low_memory=False)
     subset_repo_df = repo_df[repo_df.id.isin(search_queries_df.id)]
     original_owners = user_df[user_df.login.isin(subset_repo_df['owner.login'])]
     user_repos_output_path = "../data/join_files/user_starred_join_dataset.csv"
-    repos_output_path = "../data/entity_files/repos_dataset.csv"
+    repos_output_path = "../data/large_files/entity_files/repos_dataset.csv"
     get_url_field = "starred_url"
     load_existing_files = False
     overwrite_existing_temp_files = False

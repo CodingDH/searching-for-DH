@@ -1,2 +1,0 @@
-# - get followers
-# - get following

@@ -216,9 +216,9 @@ def get_repos_user_actors(repo_df,repo_actors_output_path, users_output_path, ge
         check_if_older_file_exists(repo_actors_output_path)
         repo_actors_df['repo_query_time'] = datetime.now().strftime("%Y-%m-%d")
         repo_actors_df.to_csv(repo_actors_output_path, index=False)
-    # Finally, get the unique users which is updated in the get_actors code and return it
-    clean_write_error_file(error_file_path, 'full_name')
-    join_unique_field = 'repo_query'
-    check_for_joins_in_older_queries(repo_df, repo_actors_output_path, repo_actors_df, join_unique_field)
-    users_df = get_user_df(users_output_path)
+        # Finally, get the unique users which is updated in the get_actors code and return it
+        clean_write_error_file(error_file_path, 'full_name')
+        join_unique_field = 'repo_query'
+        check_for_joins_in_older_queries(repo_df, repo_actors_output_path, repo_actors_df, join_unique_field)
+        users_df = get_user_df(users_output_path)
     return repo_actors_df, users_df
