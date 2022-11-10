@@ -131,9 +131,12 @@ def clean_write_error_file(error_file_path, drop_field):
     """Function to clean error file and write it
     :param error_file_path: path to error file
     :param drop_field: field to drop from error file"""
-    error_df = pd.read_csv(error_file_path)
-    error_df = error_df.sort_values(by=['error_time']).drop_duplicates(subset=[drop_field], keep='last')
-    error_df.to_csv(error_file_path, index=False)
+    if os.path.exists(error_file_path):
+        error_df = pd.read_csv(error_file_path)
+        error_df = error_df.sort_values(by=['error_time']).drop_duplicates(subset=[drop_field], keep='last')
+        error_df.to_csv(error_file_path, index=False)
+    else:
+        print('no error file to clean')
 
 def check_if_older_file_exists(file_path):
     """Function to check if older file exists
@@ -455,4 +458,11 @@ def check_for_joins_in_older_queries(entity_df, join_file_path, join_files_df, j
 
         
 
-    
+if __name__ == '__main__':
+    user_df = pd.read_csv('../data/entity_files/users_dataset.csv')
+    potential_new_users_df = user_df.copy()
+    temp_users_dir = '../data/temp/redo_users/'
+    users_progress_bar = tqdm(total=len(potential_new_users_df), desc='Redoing Users')
+    error_file_path = '../data/error_logs/redo_users_errors.csv'
+    overwrite_existing_temp_files = False
+    get_new_users(potential_new_users_df, temp_users_dir, users_progress_bar,  error_file_path, overwrite_existing_temp_files)
