@@ -32,7 +32,7 @@ def get_user_users(user_df, user_users_output_path, users_output_path, get_url_f
         os.makedirs(temp_user_users_dir)
 
     # Create our progress bars for getting users (not sure the user one works properly in Jupyter though)
-    user_progress_bar = tqdm(total=len(user_df), desc="Getting User's Repos", position=0)
+    user_progress_bar = tqdm(total=len(user_df), desc="Getting User's Interactions", position=0)
 
     for _, row in user_df.iterrows():
         try:
@@ -96,6 +96,7 @@ def get_user_users(user_df, user_users_output_path, users_output_path, get_url_f
 
                 # Get the unique users from the data_df
                 check_add_users(data_df, users_output_path, overwrite_existing_temp_files, return_df=False)
+                
                 user_progress_bar.update(1)
         except:
             user_progress_bar.total = user_progress_bar.total - 1

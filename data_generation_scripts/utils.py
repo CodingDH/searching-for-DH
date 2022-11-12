@@ -276,7 +276,7 @@ def get_new_users(potential_new_users_df, temp_users_dir, users_progress_bar,  e
     return new_users_df
 
 
-def check_add_users(potential_new_users_df, users_output_path, temp_users_dir, users_progress_bar, return_df, overwrite_existing_temp_files):
+def check_add_users(potential_new_users_df, users_output_path, return_df, overwrite_existing_temp_files):
     """Function to check if users are already in the users file and add them if not (Might need to add this to utils.py)
     :param potential_new_users_df: dataframe of new identified users
     :param users_output_path: path to users file
@@ -285,6 +285,8 @@ def check_add_users(potential_new_users_df, users_output_path, temp_users_dir, u
     :param return_df: boolean to return the dataframe or not
     :param overwrite_existing_temp_files: boolean to overwrite existing temp files or not
     """
+    # Also define temporary directory path for users
+    temp_users_dir = f"../data/temp/temp_users/"
     excluded_users = pd.read_csv('../data/metadata_files/excluded_users.csv')
     potential_new_users_df = potential_new_users_df[~potential_new_users_df.login.isin(excluded_users.login)]
     error_file_path = "../data/error_logs/potential_users_errors.csv"
@@ -295,12 +297,14 @@ def check_add_users(potential_new_users_df, users_output_path, temp_users_dir, u
         if len(error_df) > 0:
             new_users_df = new_users_df[~new_users_df.login.isin(error_df.login)]
         if len(new_users_df) > 0:
+            users_progress_bar = tqdm(total=len(new_users_df), desc='Users', position=1)
             expanded_new_users = get_new_users(new_users_df, temp_users_dir, users_progress_bar, error_file_path, overwrite_existing_temp_files)
         else:
             expanded_new_users = new_users_df
         users_df = pd.concat([users_df, expanded_new_users])
         users_df = users_df.drop_duplicates(subset=['login', 'id'])
     else:
+        users_progress_bar = tqdm(total=len(new_users_df), desc='Users', position=1)
         users_df = get_new_users(potential_new_users_df, temp_users_dir, users_progress_bar, error_file_path, overwrite_existing_temp_files)
     
     clean_write_error_file(error_file_path)

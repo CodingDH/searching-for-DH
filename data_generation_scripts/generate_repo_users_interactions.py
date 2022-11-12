@@ -54,9 +54,6 @@ def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_fiel
         
     if not os.path.exists(temp_repo_actors_dir):
         os.makedirs(temp_repo_actors_dir)  
-    
-    # Also define temporary directory path for users
-    temp_users_dir = f"../data/temp/temp_users/"
 
     # Load in the Repo URLS metadata folder that contains relevant info on how to process various fields
     urls_df = pd.read_csv("../data/metadata_files/repo_url_cols.csv")
@@ -67,7 +64,6 @@ def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_fiel
 
     # Create our progress bars for getting Repo Contributors and Users (not sure the user one works properly in Jupyter though)
     repo_progress_bar = tqdm(total=len(repo_df), desc="Getting Repo Actors", position=0)
-    users_progress_bar = tqdm(total=0, desc="Getting Users", position=1)
     # It would be slightly faster to have this as .apply but for now leaving as a for loop to make it easier to debug
     for _, row in repo_df.iterrows():
         try:
@@ -158,7 +154,8 @@ def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_fiel
                             data_df.columns = [col.split('.')[-1] for col in data_df.columns]
                             break
                     # Get the unique users from the data_df
-                    check_add_users(data_df, users_output_path, temp_users_dir, users_progress_bar, return_df=False)
+                    return_df=False
+                    check_add_users(data_df, users_output_path, return_df, overwrite_existing_temp_files)
                 repo_progress_bar.update(1)
         except:
             # print(f"Error on getting actors for {row.full_name}")
