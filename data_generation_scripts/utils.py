@@ -457,6 +457,8 @@ def check_for_joins_in_older_queries(entity_df, join_file_path, join_files_df, j
             if len(missing_join) > 0:
                 time_field = 'search_query_time' if 'search_query' in join_unique_field else 'repo_query_time'
                 cleaned_field = 'cleaned_search_query_time' if 'search_query' in join_unique_field else 'cleaned_repo_query_time'
+                missing_join[cleaned_field] = None
+                missing_join.loc[missing_join[time_field].isna(), cleaned_field] = '2022-10-10'
                 missing_join[cleaned_field] = pd.to_datetime(missing_join[time_field], errors='coerce')
                 missing_join = missing_join.sort_values(by=[cleaned_field]).drop_duplicates(subset=['id'], keep='first').drop(columns=[cleaned_field])
 
@@ -466,14 +468,3 @@ def check_for_joins_in_older_queries(entity_df, join_file_path, join_files_df, j
 
             
     return join_files_df
-
-        
-
-if __name__ == '__main__':
-    user_df = pd.read_csv('../data/entity_files/users_dataset.csv')
-    potential_new_users_df = user_df.copy()
-    temp_users_dir = '../data/temp/redo_users/'
-    users_progress_bar = tqdm(total=len(potential_new_users_df), desc='Redoing Users')
-    error_file_path = '../data/error_logs/redo_users_errors.csv'
-    overwrite_existing_temp_files = False
-    get_new_users(potential_new_users_df, temp_users_dir, users_progress_bar,  error_file_path, overwrite_existing_temp_files)

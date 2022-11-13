@@ -246,6 +246,6 @@ if __name__ == '__main__':
     print(len(subset_repo_df))
     get_url_field = 'commits_url'
     load_existing_files = False
-    load_existing_temp_files = False
-    commits_df, users_df = get_repos_user_actors(subset_repo_df, '../data/large_files/join_files/repo_commits_join_dataset.csv', '../data/entity_files/users_dataset.csv', get_url_field, load_existing_files, load_existing_temp_files)
+    overwrite_existing_temp_files = False
+    commits_df, users_df = get_repos_user_actors(subset_repo_df, '../data/large_files/join_files/repo_commits_join_dataset.csv', '../data/entity_files/users_dataset.csv', get_url_field, load_existing_files, overwrite_existing_temp_files)
     commits_errors_df = check_return_error_file('../data/error_logs/repo_commits_join_dataset_errors.csv')
