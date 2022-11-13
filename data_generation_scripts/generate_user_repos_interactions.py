@@ -98,7 +98,7 @@ def get_user_repos(user_df, user_repos_output_path, repos_output_path, get_url_f
                 user_repos_df.to_csv(temp_user_repos_dir + temp_user_repos_path, index=False)
 
                 # Get the unique repos from the data_df
-                check_add_repos(data_df, repos_output_path, overwrite_existing_temp_files, return_df=False)
+                check_add_repos(data_df, repos_output_path,  return_df=False)
                 user_progress_bar.update(1)
         except:
             user_progress_bar.total = user_progress_bar.total - 1
