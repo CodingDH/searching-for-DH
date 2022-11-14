@@ -16,7 +16,25 @@ auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
 auth_headers = {'Authorization': f'token {auth_token}','User-Agent': 'request'}
 stargazers_auth_headers = {'Authorization': f'token {auth_token}','User-Agent': 'request', 'Accept': 'application/vnd.github.v3.star+json'}
 
-def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_field, error_file_path, overwrite_existing_temp_files=True):
+def get_additional_commit_data(response_df):
+    """Function to get additional commit data from the commit url
+    :param response_df: dataframe of commits
+    returns: dataframe of commits with additional data"""
+    dfs = []
+    for _, row in response_df.iterrows():
+        commit_response = requests.get(row.url, headers=auth_headers)
+        commit_response_data = get_response_data(commit_response, row.url)
+        response_commit_df = pd.json_normalize(commit_response_data)
+        row['files'] = response_commit_df['files'].values[0]
+        row['stats.total'] = response_commit_df['stats.total'].values[0]
+        row['stats.additions'] = response_commit_df['stats.additions'].values[0]
+        row['stats.deletions'] = response_commit_df['stats.deletions'].values[0]
+        updated_df = pd.DataFrame([row.to_dict()])
+        dfs.append(updated_df)
+    response_df = pd.concat(dfs)
+    return response_df
+
+def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_field, error_file_path, overwrite_existing_temp_files):
     """Function to get all contributors to a list of repositories and also update final list of users.
     :param repo_df: dataframe of repositories
     :param repo_contributors_output_path: path to repo contributors file
@@ -30,14 +48,12 @@ def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_fiel
     temp_repo_actors_dir = f"../data/temp/{repo_actors_output_path.split('/')[-1].split('.csv')[0]}/"
 
     # Delete existing temporary directory and create it again
+    print('temp overwrite', os.path.exists(temp_repo_actors_dir), overwrite_existing_temp_files)
     if (os.path.exists(temp_repo_actors_dir)) and (overwrite_existing_temp_files):
         shutil.rmtree(temp_repo_actors_dir)
         
     if not os.path.exists(temp_repo_actors_dir):
         os.makedirs(temp_repo_actors_dir)  
-    
-    # Also define temporary directory path for users
-    temp_users_dir = f"../data/temp/temp_users/"
 
     # Load in the Repo URLS metadata folder that contains relevant info on how to process various fields
     urls_df = pd.read_csv("../data/metadata_files/repo_url_cols.csv")
@@ -48,7 +64,6 @@ def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_fiel
 
     # Create our progress bars for getting Repo Contributors and Users (not sure the user one works properly in Jupyter though)
     repo_progress_bar = tqdm(total=len(repo_df), desc="Getting Repo Actors", position=0)
-    users_progress_bar = tqdm(total=0, desc="Getting Users", position=1)
     # It would be slightly faster to have this as .apply but for now leaving as a for loop to make it easier to debug
     for _, row in repo_df.iterrows():
         try:
@@ -69,9 +84,6 @@ def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_fiel
             if os.path.exists(temp_repo_actors_dir + temp_repo_actors_path):
                 repo_progress_bar.update(1)
                 continue
-            
-            if 'commits' in get_url_field:
-                print(row.total_commits)
             # Create the url to get the repo actors
             url = row[get_url_field].split('{')[0] + '?per_page=100&page=1' if '{' in row[get_url_field] else row[get_url_field] + '?per_page=100&page=1'
 
@@ -88,6 +100,8 @@ def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_fiel
                 continue
             # Else append the response data to the list of dfs
             response_df = pd.json_normalize(response_data)
+            if get_url_field == 'commits_url':
+                response_df = get_additional_commit_data(response_df)
             dfs.append(response_df)
             # Check if there is a next page and if so, keep making requests until there is no next page
             while "next" in response.links.keys():
@@ -99,6 +113,8 @@ def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_fiel
                     repo_progress_bar.update(1)
                     continue
                 response_df = pd.json_normalize(response_data)
+                if get_url_field == 'commits_url':
+                    response_df = get_additional_commit_data(response_df)
                 dfs.append(response_df)
 
             # Concatenate the list of dfs into a single dataframe
@@ -138,7 +154,8 @@ def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_fiel
                             data_df.columns = [col.split('.')[-1] for col in data_df.columns]
                             break
                     # Get the unique users from the data_df
-                    check_add_users(data_df, users_output_path, temp_users_dir, users_progress_bar, return_df=False)
+                    return_df=False
+                    check_add_users(data_df, users_output_path, return_df, overwrite_existing_temp_files)
                 repo_progress_bar.update(1)
         except:
             # print(f"Error on getting actors for {row.full_name}")
@@ -203,7 +220,7 @@ def get_repos_user_actors(repo_df,repo_actors_output_path, users_output_path, ge
             
             # If there are unprocessed repos, run the get_actors code to get them or return the existing data if there are no unprocessed repos
             if len(unprocessed_actors) > 0:
-                new_actors_df = get_actors(unprocessed_actors, repo_actors_output_path, users_output_path, get_url_field, overwrite_existing_temp_files, error_file_path)
+                new_actors_df = get_actors(unprocessed_actors, repo_actors_output_path, users_output_path, get_url_field, error_file_path, overwrite_existing_temp_files)
             else:
                 new_actors_df = unprocessed_actors
             # Finally combine the existing join file with the new data and save it
@@ -211,7 +228,7 @@ def get_repos_user_actors(repo_df,repo_actors_output_path, users_output_path, ge
             
         else:
             # If the join file doesn't exist, run the get_actors code to get them
-            repo_actors_df = get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_field, overwrite_existing_temp_files, error_file_path)
+            repo_actors_df = get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_field, error_file_path, overwrite_existing_temp_files)
         
         check_if_older_file_exists(repo_actors_output_path)
         repo_actors_df['repo_query_time'] = datetime.now().strftime("%Y-%m-%d")
@@ -222,3 +239,13 @@ def get_repos_user_actors(repo_df,repo_actors_output_path, users_output_path, ge
         check_for_joins_in_older_queries(repo_df, repo_actors_output_path, repo_actors_df, join_unique_field)
         users_df = get_user_df(users_output_path)
     return repo_actors_df, users_df
+
+if __name__ == '__main__':
+    # Get the data
+    subset_repo_df = pd.read_csv('../data/entity_files/subset_repos_dataset_with_commits.csv', low_memory=False)
+    print(len(subset_repo_df))
+    get_url_field = 'commits_url'
+    load_existing_files = False
+    overwrite_existing_temp_files = False
+    commits_df, users_df = get_repos_user_actors(subset_repo_df, '../data/large_files/join_files/repo_commits_join_dataset.csv', '../data/entity_files/users_dataset.csv', get_url_field, load_existing_files, overwrite_existing_temp_files)
+    commits_errors_df = check_return_error_file('../data/error_logs/repo_commits_join_dataset_errors.csv')

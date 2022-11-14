@@ -131,9 +131,15 @@ def clean_write_error_file(error_file_path, drop_field):
     """Function to clean error file and write it
     :param error_file_path: path to error file
     :param drop_field: field to drop from error file"""
-    error_df = pd.read_csv(error_file_path)
-    error_df = error_df.sort_values(by=['error_time']).drop_duplicates(subset=[drop_field], keep='last')
-    error_df.to_csv(error_file_path, index=False)
+    if os.path.exists(error_file_path):
+        error_df = pd.read_csv(error_file_path)
+        if 'error_time' in error_df.columns:
+            error_df = error_df.sort_values(by=['error_time']).drop_duplicates(subset=[drop_field], keep='last')
+        else: 
+            error_df = error_df.drop_duplicates(subset=[drop_field], keep='last')
+        error_df.to_csv(error_file_path, index=False)
+    else:
+        print('no error file to clean')
 
 def check_if_older_file_exists(file_path):
     """Function to check if older file exists
@@ -153,7 +159,7 @@ def check_if_older_file_exists(file_path):
             shutil.copy2(src, dst)  
 
 
-def check_for_entity_in_older_queries(entity_path, entity_df, overwrite_existing_temp_files):
+def check_for_entity_in_older_queries(entity_path, entity_df):
     entity_type = entity_path.split('/')[-1].split('_dataset')[0]
 
     older_entity_file_path = entity_path.replace('data/', 'data/older_files/')
@@ -166,37 +172,39 @@ def check_for_entity_in_older_queries(entity_path, entity_df, overwrite_existing
         if entity_type == 'users':
             user_headers = pd.read_csv('../data/metadata_files/users_dataset_cols.csv')
             if set(missing_entities.columns) != set(user_headers.columns):
-                users_progress_bar = tqdm(total=0, desc="Getting Missing Users")
-                temp_users_dir = '../data/temp/potential_users/'
                 error_file_path = "../data/error_logs/potential_users_errors.csv"
                 error_df = check_return_error_file(error_file_path)
                 now = pd.Timestamp('now')
                 error_df['error_time'] = pd.to_datetime(error_df['error_time'])
                 error_df['time_since_error'] = (now - error_df['error_time']).dt.days
                 error_df = error_df[error_df.time_since_error > 7]
-                missing_entities = missing_entities[~missing_entities.id.isin(error_df.id)]
-                if len(missing_entities) > 0:
-                    cleaned_missing_entities = get_new_users(missing_entities, temp_users_dir, users_progress_bar, error_file_path, overwrite_existing_temp_files)
-                    clean_write_error_file(error_file_path, 'login')
+                missing_entities = missing_entities[~missing_entities.login.isin(error_df.login)]
+                missing_entities = missing_entities[user_headers.columns]
+                # if len(missing_entities) > 0:
+                #     cleaned_missing_entities = get_new_users(missing_entities, temp_users_dir, users_progress_bar, error_file_path, overwrite_existing_temp_files)
+                #     clean_write_error_file(error_file_path, 'login')
         if entity_type == 'repos':
             repo_headers = pd.read_csv('../data/metadata_files/repo_headers.csv')
             if set(missing_entities.columns) != set(repo_headers.columns):
-                repos_progress_bar = tqdm(total=0, desc="Getting Missing Repos")
-                temp_repos_dir = '../data/temp/potential_repos/'
                 error_file_path = "../data/error_logs/potential_repos_errors.csv"
                 error_df = check_return_error_file(error_file_path)
                 now = pd.Timestamp('now')
                 error_df['error_time'] = pd.to_datetime(error_df['error_time'])
                 error_df['time_since_error'] = (now - error_df['error_time']).dt.days
                 error_df = error_df[error_df.time_since_error > 7]
-                missing_entities = missing_entities[~missing_entities.id.isin(error_df.id)]
-                if len(missing_entities) > 0:
-                    cleaned_missing_entities = get_new_repos(missing_entities, temp_repos_dir, repos_progress_bar, error_file_path, overwrite_existing_temp_files)
-                    clean_write_error_file(error_file_path, 'full_name')
-        if len(cleaned_missing_entities) > 0:
-            missing_entities = cleaned_missing_entities[cleaned_missing_entities.id.notna()]
+                missing_entities = missing_entities[~missing_entities.full_name.isin(error_df.full_name)]
+                missing_entities = missing_entities[repo_headers.columns]
+                # if len(missing_entities) > 0:
+                #     repo_df = pd.concat([entity_df, missing_entities])
+                #     repo_df = repo_df.drop_duplicates(subset=['id', 'full_name'], keep='last')
+                #     repo_df.to_csv(entity_path, index=False)
+        if len(missing_entities) > 0:
+            missing_entities = missing_entities[missing_entities.id.notna()]
             entity_df = pd.concat([entity_df, missing_entities])
-            entity_df = entity_df.drop_duplicates(subset=['id'])
+            cleaned_field = 'cleaned_repo_query_time' if entity_type == 'repos' else 'cleaned_user_query_time'
+            time_field = 'repo_query_time' if entity_type == 'repos' else 'user_query_time'
+            entity_df[cleaned_field] = pd.to_datetime(entity_df[time_field], errors='coerce')
+            entity_df = entity_df.sort_values(by=[cleaned_field]).drop_duplicates(subset=['id'], keep='first').drop(columns=[cleaned_field])
             entity_df.to_csv(entity_path, index=False)
     return entity_df
 
@@ -273,7 +281,7 @@ def get_new_users(potential_new_users_df, temp_users_dir, users_progress_bar,  e
     return new_users_df
 
 
-def check_add_users(potential_new_users_df, users_output_path, temp_users_dir, users_progress_bar, return_df, overwrite_existing_temp_files):
+def check_add_users(potential_new_users_df, users_output_path, return_df, overwrite_existing_temp_files):
     """Function to check if users are already in the users file and add them if not (Might need to add this to utils.py)
     :param potential_new_users_df: dataframe of new identified users
     :param users_output_path: path to users file
@@ -282,6 +290,8 @@ def check_add_users(potential_new_users_df, users_output_path, temp_users_dir, u
     :param return_df: boolean to return the dataframe or not
     :param overwrite_existing_temp_files: boolean to overwrite existing temp files or not
     """
+    # Also define temporary directory path for users
+    temp_users_dir = f"../data/temp/temp_users/"
     excluded_users = pd.read_csv('../data/metadata_files/excluded_users.csv')
     potential_new_users_df = potential_new_users_df[~potential_new_users_df.login.isin(excluded_users.login)]
     error_file_path = "../data/error_logs/potential_users_errors.csv"
@@ -292,20 +302,23 @@ def check_add_users(potential_new_users_df, users_output_path, temp_users_dir, u
         if len(error_df) > 0:
             new_users_df = new_users_df[~new_users_df.login.isin(error_df.login)]
         if len(new_users_df) > 0:
+            users_progress_bar = tqdm(total=len(new_users_df), desc='Users', position=1)
             expanded_new_users = get_new_users(new_users_df, temp_users_dir, users_progress_bar, error_file_path, overwrite_existing_temp_files)
         else:
             expanded_new_users = new_users_df
         users_df = pd.concat([users_df, expanded_new_users])
         users_df = users_df.drop_duplicates(subset=['login', 'id'])
     else:
+        users_progress_bar = tqdm(total=len(new_users_df), desc='Users', position=1)
         users_df = get_new_users(potential_new_users_df, temp_users_dir, users_progress_bar, error_file_path, overwrite_existing_temp_files)
     
-    clean_write_error_file(error_file_path)
+    clean_write_error_file(error_file_path, 'login')
     check_if_older_file_exists(users_output_path)
     users_df['user_query_time'] = datetime.now().strftime("%Y-%m-%d")
     users_df.to_csv(users_output_path, index=False)
-    check_for_entity_in_older_queries(users_output_path, users_df, overwrite_existing_temp_files)
+    check_for_entity_in_older_queries(users_output_path, users_df)
     if return_df:
+        users_df = get_user_df(users_output_path)
         return users_df
 
 def get_user_df(output_path):
@@ -370,7 +383,7 @@ def get_new_repos(potential_new_repos_df, temp_repos_dir, repos_progress_bar,  e
         except:
             repos_progress_bar.total = repos_progress_bar.total - 1
             # print(f"Error on getting repo for {row.full_name}")
-            error_df = pd.DataFrame([{'full_name': row.full_name, 'error_time': time.time()}])
+            error_df = pd.DataFrame([{'full_name': row.full_name, 'error_time': time.time(), 'error_url': row.url}])
             if os.path.exists(error_file_path):
                 error_df.to_csv(error_file_path, mode='a', header=False, index=False)
             else:
@@ -385,7 +398,7 @@ def get_new_repos(potential_new_repos_df, temp_repos_dir, repos_progress_bar,  e
         shutil.rmtree(temp_repos_dir)
     return new_repos_df
 
-def check_add_repos(potential_new_repo_df, repo_output_path, overwrite_existing_temp_files, return_df):
+def check_add_repos(potential_new_repo_df, repo_output_path, return_df):
     """Function to check if repo are already in the repo file and add them if not 
     :param potential_new_repo_df: dataframe of contributors
     :param repo_output_path: path to repo file
@@ -411,15 +424,16 @@ def check_add_repos(potential_new_repo_df, repo_output_path, overwrite_existing_
     check_if_older_file_exists(repo_output_path)
     repo_df['repo_query_time'] = datetime.now().strftime("%Y-%m-%d")
     repo_df.to_csv(repo_output_path, index=False)
-    check_for_entity_in_older_queries(repo_output_path, repo_df, overwrite_existing_temp_files)
+    check_for_entity_in_older_queries(repo_output_path, repo_df)
     if return_df:
+        repo_df = get_repo_df(repo_output_path)
         return repo_df
 
 def get_repo_df(output_path):
     """Function to get repo dataframe
     :param output_path: path to output file
     :return: repo dataframe"""
-    repo_df = pd.read_csv(output_path)
+    repo_df = pd.read_csv(output_path, low_memory=False)
     return repo_df
 
 """Join Functions
@@ -443,6 +457,8 @@ def check_for_joins_in_older_queries(entity_df, join_file_path, join_files_df, j
             if len(missing_join) > 0:
                 time_field = 'search_query_time' if 'search_query' in join_unique_field else 'repo_query_time'
                 cleaned_field = 'cleaned_search_query_time' if 'search_query' in join_unique_field else 'cleaned_repo_query_time'
+                missing_join[cleaned_field] = None
+                missing_join.loc[missing_join[time_field].isna(), cleaned_field] = '2022-10-10'
                 missing_join[cleaned_field] = pd.to_datetime(missing_join[time_field], errors='coerce')
                 missing_join = missing_join.sort_values(by=[cleaned_field]).drop_duplicates(subset=['id'], keep='first').drop(columns=[cleaned_field])
 
@@ -452,7 +468,3 @@ def check_for_joins_in_older_queries(entity_df, join_file_path, join_files_df, j
 
             
     return join_files_df
-
-        
-
-    

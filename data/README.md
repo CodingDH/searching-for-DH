@@ -54,6 +54,8 @@ These files are stored in the `metadata_files` folder.
 3. `users_dataset_cols.csv` - a dataset for the relevant user columns we want to keep in our `users_dataset.csv` file. Otherwise we get a lot of additional columns for auth users (i.e us) when we pull the data, which creates dozens of nulls.
 4. `repo_headers.csv` - a dataset containing just the column headers for our `repo_dataset.csv` so that we can use it to create empty DataFrame to append to.
 5. `iso_639_choices.csv` - a dataset that takes our language codes from `en.Digital humanities.json` and converts them to the full language names.
+6. `search_repo_headers.csv` - a dataset containing just the column headers for our `search_repo_dataset.csv` so that we can use it to create empty DataFrame to append to.
+7. `excluded_users.csv` - a dataset containing a list of users that we want to exclude from our analysis. This is because they are either bots or they are not relevant to our analysis. This is a manual process, and we will need to update this list as we go along.
 
 
 ## Directory Structure
@@ -89,5 +91,16 @@ Currently, the directory structure is as follows:
 │   └── repo_data (original repo data)
 │   └── temp (where you can store temp files)
 │   └── error_logs (where you can store error logs)
-│   └── large_datasets (where you can store large datasets that will not get pushed up and live in Google Drive)
+│   └── large_files (where you can store large datasets that will not get pushed up and live in Google Drive)
+│       └── entity_files
+│       └── join_files
+│       └── archived_files
+│   └── older_files (where timestamped versions of datasets will live)
+│       └── entity_files
+│       └── join_files
+│       └── archived_files
+│       └── repo_data
+│       └── large_files
+│           └── entity_files
+│           └── join_files
 ```
