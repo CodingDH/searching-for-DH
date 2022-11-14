@@ -167,15 +167,11 @@ def get_user_users_activities(user_df,user_users_output_path, users_output_path,
 
 if __name__ == '__main__':
     # Get the data
-    user_df = pd.read_csv("../data/entity_files/users_dataset.csv", low_memory=False)
-    repo_df = pd.read_csv("../data/large_files/entity_files/repos_dataset.csv", low_memory=False)
-    search_queries_df = pd.read_csv('../data/join_files/search_queries_join_dataset.csv', low_memory=False)
-    subset_repo_df = repo_df[repo_df.id.isin(search_queries_df.id)]
-    original_owners = user_df[user_df.login.isin(subset_repo_df['owner.login'])]
+    core_users, core_repos = get_core_users_repos()
     user_users_output_path = "../data/join_files/user_following_join_dataset.csv"
     users_output_path = "../data/entity_files/users_dataset.csv"
     get_url_field = "following_url"
     load_existing_files = False
     overwrite_existing_temp_files = False
 
-    users_starred_df, user_df = get_user_users_activities(original_owners,user_users_output_path, users_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files)
+    users_starred_df, user_df = get_user_users_activities(core_users,user_users_output_path, users_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files)

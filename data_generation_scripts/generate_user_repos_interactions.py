@@ -181,9 +181,9 @@ if __name__ == '__main__':
     search_queries_df = pd.read_csv('../data/join_files/search_queries_join_dataset.csv', low_memory=False)
     subset_repo_df = repo_df[repo_df.id.isin(search_queries_df.id)]
     original_owners = user_df[user_df.login.isin(subset_repo_df['owner.login'])]
-    user_repos_output_path = "../data/join_files/user_starred_join_dataset.csv"
+    user_repos_output_path = "../data/join_files/user_repo_join_dataset.csv"
     repos_output_path = "../data/large_files/entity_files/repos_dataset.csv"
-    get_url_field = "starred_url"
+    get_url_field = "repo_url"
     load_existing_files = False
     overwrite_existing_temp_files = False
 
