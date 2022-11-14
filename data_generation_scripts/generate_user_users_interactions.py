@@ -167,15 +167,7 @@ def get_user_users_activities(user_df,user_users_output_path, users_output_path,
 
 if __name__ == '__main__':
     # Get the data
-    user_df = pd.read_csv("../data/entity_files/users_dataset.csv")
-    repo_df = pd.read_csv("../data/large_files/entity_files/repos_dataset.csv", low_memory=False)
-    search_queries_repo_join_df = pd.read_csv("../data/join_files/search_queries_repo_join_dataset.csv")
-    search_queries_user_join_df = pd.read_csv("../data/join_files/search_queries_user_join_dataset.csv")
-    contributors_df = pd.read_csv('../data/join_files/repo_contributors_join_dataset.csv')
-    contributors_counts = contributors_df.groupby(['login']).size().reset_index(name='counts')
-    top_contributors = contributors_counts[contributors_counts.counts > 1]
-    core_repos = repo_df[repo_df["id"].isin(search_queries_repo_join_df["id"].unique())]
-    core_users = user_df[(user_df.login.isin(top_contributors.login)) | (user_df.login.isin(search_queries_user_join_df.login)) | (user_df.login.isin(core_repos['owner.login']))].drop_duplicates(subset=['login'])
+    core_users, core_repos = get_core_users_repos()
     user_users_output_path = "../data/join_files/user_following_join_dataset.csv"
     users_output_path = "../data/entity_files/users_dataset.csv"
     get_url_field = "following_url"
