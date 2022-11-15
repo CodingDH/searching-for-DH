@@ -204,6 +204,22 @@ def check_for_entity_in_older_queries(entity_path, entity_df):
             entity_df.to_csv(entity_path, index=False)
     return entity_df
 
+def check_file_size_and_move(file_dir):
+    """Function to check if file size is too large and move it
+    :param file_dir: path to file directory"""
+    for dir, _, files in os.walk(file_dir):
+        for file in files:
+            file_path = os.path.join(dir, file)
+            size = os.path.getsize(file_path)
+            size = round(size/(1024*1024), 2)
+            if size > 50:
+            
+                new_file_path = file_path.replace('data/', 'data/large_files/')
+            
+                if not os.path.exists(new_file_path):
+                    shutil.copy2(file_path, new_file_path)
+                    os.remove(file_path)
+
 """User Functions
 1. Get new users data
 2. Check add user
@@ -484,3 +500,7 @@ def get_core_users_repos():
     core_repos = repo_df[repo_df["id"].isin(search_queries_repo_join_df["id"].unique())]
     core_users = user_df[(user_df.login.isin(top_contributors.login)) | (user_df.login.isin(search_queries_user_join_df.login)) | (user_df.login.isin(core_repos['owner.login']))].drop_duplicates(subset=['login'])
     return core_users, core_repos
+
+if __name__ == '__main__':
+    file_dir = '../data/join_files/'
+    check_file_size_and_move(file_dir)
