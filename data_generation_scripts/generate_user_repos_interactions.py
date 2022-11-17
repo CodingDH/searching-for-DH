@@ -2,17 +2,21 @@
 # - get user repos
 # OR get subscribers which gets both
 
+import os
+import sys
 import time
+
+import apikey
 import pandas as pd
 import requests
-import os
 from tqdm import tqdm
-import apikey
-import sys
+
 sys.path.append("..")
-from data_generation_scripts.utils import *
 import shutil
 import warnings
+
+from data_generation_scripts.utils import *
+
 warnings.filterwarnings('ignore')
 # import argparse
 

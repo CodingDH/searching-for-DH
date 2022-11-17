@@ -1,8 +1,14 @@
+.gitignore
+
 # Large Data Files
 data/large_files/
+<<<<<<< HEAD
 data/older_files/large_files/
+=======
+data/older_files/large_files
+>>>>>>> 3069f064fc2ffdcdc2ae0cf7748e074a46f006b0
 data/older_files/larger_datasets
-data/large_datasets/
+
 # Temporary Files
 data/temp/
 
