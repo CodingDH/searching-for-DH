@@ -477,7 +477,7 @@ def get_orgs(org_df, org_output_path, error_file_path, overwrite_existing_temp_f
             if len(response_data) == 0:
                 response_df = pd.read_csv('../data/metadata_files/org_headers.csv')
             else:
-                response_df = pd.json_normalize(response_data.json())
+                response_df = pd.json_normalize(response_data)
             response_df.to_csv(temp_org_dir + temp_org_path, index=False)
             org_progress_bar.update(1)
         except:
@@ -581,17 +581,8 @@ def get_core_users_repos():
     """Function to get core users and repos
     :return: core users and repos
     """
-    user_df = pd.read_csv("../data/entity_files/users_dataset.csv")
     repo_df = pd.read_csv("../data/large_files/entity_files/repos_dataset.csv", low_memory=False)
     search_queries_repo_join_df = pd.read_csv("../data/join_files/search_queries_repo_join_dataset.csv")
-    search_queries_user_join_df = pd.read_csv("../data/join_files/search_queries_user_join_dataset.csv")
-    contributors_df = pd.read_csv('../data/join_files/repo_contributors_join_dataset.csv')
-    contributors_counts = contributors_df.groupby(['login']).size().reset_index(name='counts')
-    top_contributors = contributors_counts[contributors_counts.counts > 1]
     core_repos = repo_df[repo_df["id"].isin(search_queries_repo_join_df["id"].unique())]
-    core_users = user_df[(user_df.login.isin(top_contributors.login)) | (user_df.login.isin(search_queries_user_join_df.login)) | (user_df.login.isin(core_repos['owner.login']))].drop_duplicates(subset=['login'])
+    core_users = pd.read_csv("../data/derived_files/core_users.csv")
     return core_users, core_repos
-
-if __name__ == '__main__':
-    file_dir = '../data/join_files/'
-    check_file_size_and_move(file_dir)

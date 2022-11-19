@@ -156,7 +156,7 @@ def get_org_repo_activities(org_df,org_repos_output_path, repos_output_path, get
         check_if_older_file_exists(org_repos_output_path)
         org_repos_df['org_query_time'] = datetime.now().strftime("%Y-%m-%d")
         org_repos_df.to_csv(org_repos_output_path, index=False)
-        clean_write_error_file(error_file_path, 'org_login')
+        clean_write_error_file(error_file_path, 'login')
         join_unique_field = 'org_query'
         check_for_joins_in_older_queries(org_df, org_repos_output_path, org_repos_df, join_unique_field)
         repos_df = get_repo_df(repos_output_path)
