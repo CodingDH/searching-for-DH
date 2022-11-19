@@ -18,7 +18,6 @@ import warnings
 from data_generation_scripts.utils import *
 
 warnings.filterwarnings('ignore')
-# import argparse
 
 
 auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")

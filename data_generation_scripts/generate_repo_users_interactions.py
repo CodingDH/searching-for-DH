@@ -1,5 +1,4 @@
 import time
-from urllib.parse import parse_qs
 import pandas as pd
 import requests
 import os
