@@ -34,7 +34,10 @@ def get_search_api_data(query, total_pages):
         if len(response_df) > 0:
             response_df['search_query'] = query
         else:
-            response_df = pd.read_csv('../data/metadata_files/search_repo_headers.csv')
+            if 'repo' in query:
+                response_df = pd.read_csv('../data/metadata_files/search_repo_headers.csv')
+            else:
+                response_df = pd.read_csv('../data/metadata_files/search_user_headers.csv')
         dfs.append(response_df)
         pbar.update(1)
         while "next" in response.links.keys():
@@ -146,10 +149,15 @@ def process_large_search_data(rates_df, search_url, dh_term, params, initial_out
         
    
 
-def combine_search_df(initial_repo_output_path, repo_output_path, repo_join_output_path, initial_user_output_path, user_output_path, user_join_output_path, overwrite_existing_temp_files):
+def combine_search_df(initial_repo_output_path, repo_output_path, repo_join_output_path, initial_user_output_path, user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files):
     """Function to combine the dataframes of the search API data
-    :param repo_output_path: the path to the output file
-    :param join_output_path: the path to the output file
+    :param initial_repo_output_path: the path to the initial repo output file
+    :param repo_output_path: the path to the repo output file
+    :param repo_join_output_path: the path to the repo join output file
+    :param initial_user_output_path: the path to the initial user output file
+    :param user_output_path: the path to the output file
+    :param user_join_output_path: the path to the output file
+    :param org_output_path: the path to the output file
     :return: a dataframe of the combined data"""
     return_df = True
     repo_searched_files = read_combine_files(initial_repo_output_path, 'searched')
@@ -172,20 +180,27 @@ def combine_search_df(initial_repo_output_path, repo_output_path, repo_join_outp
     user_df = user_join_df.drop_duplicates(subset='id')
     user_df = user_df.reset_index(drop=True)
     user_df = user_df.drop(columns=['search_query'])
+    org_df = user_df[user_df.type == "Organization"]
 
 
     user_df = check_add_users(user_df, user_output_path, return_df, overwrite_existing_temp_files)
 
-    return repo_df, repo_join_df, user_df, user_join_df
+    org_df = check_add_orgs(org_df, org_output_path, return_df, overwrite_existing_temp_files)
 
-def generate_initial_search_datasets(rates_df, initial_repo_output_path,  repo_output_path, repo_join_output_path, initial_user_output_path,  user_output_path, user_join_output_path, overwrite_existing_temp_files=True):
+    return repo_df, repo_join_df, user_df, user_join_df, org_df
+
+def generate_initial_search_datasets(rates_df, initial_repo_output_path,  repo_output_path, repo_join_output_path, initial_user_output_path,  user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files=True):
     """Function to generate the queries for the search API
-    :param initial_repo_output_path: the path to the output file
-    :param rates_df: the dataframe of the current rate limit
-    :param repo_output_path: the path to the output file
-    :param join_output_path: the path to the output file
-    :param overwrite_existing_temp_files: whether to overwrite existing temp files or not
-    :return: a dataframe of the data returned from the API"""
+    :param rates_df: the dataframe of the rate limit data
+    :param initial_repo_output_path: the path to the initial repo output file
+    :param repo_output_path: the path to the repo output file
+    :param repo_join_output_path: the path to the repo join output file
+    :param initial_user_output_path: the path to the initial user output file
+    :param user_output_path: the path to the output file
+    :param user_join_output_path: the path to the output file
+    :param org_output_path: the path to the output file
+    :param overwrite_existing_temp_files: whether to overwrite existing temp files
+    :return: a dataframe of the combined data"""
 
     #Get the list of terms to search for
     dh_df = pd.DataFrame([json.load(codecs.open('../data/metadata_files/en.Digital humanities.json', 'r', 'utf-8-sig'))])
@@ -270,13 +285,13 @@ def generate_initial_search_datasets(rates_df, initial_repo_output_path,  repo_o
                 process_search_data(rates_df, search_users_query, final_searched_output_path, total_search_results)
 
 
-    repo_df, repo_join_df, user_df, user_join_df = combine_search_df(initial_repo_output_path, repo_output_path, repo_join_output_path, initial_user_output_path, user_output_path, user_join_output_path, overwrite_existing_temp_files)
+    repo_df, repo_join_df, user_df, user_join_df, org_df = combine_search_df(initial_repo_output_path, repo_output_path, repo_join_output_path, initial_user_output_path, user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files)
     join_unique_field = 'search_query'
     repo_join_df = check_for_joins_in_older_queries(repo_df, repo_join_output_path, repo_join_df, join_unique_field)
     user_join_df = check_for_joins_in_older_queries(user_df, user_join_output_path, user_join_df, join_unique_field)
-    return repo_df, repo_join_df, user_df, user_join_df
+    return repo_df, repo_join_df, user_df, user_join_df, org_df
         
-def get_initial_search_datasets(rates_df, initial_repo_output_path,  repo_output_path, repo_join_output_path, initial_user_output_path,  user_output_path, user_join_output_path, overwrite_existing_temp_files, load_existing_data):
+def get_initial_search_datasets(rates_df, initial_repo_output_path,  repo_output_path, repo_join_output_path, initial_user_output_path,  user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files, load_existing_data):
     """Gets the search repo data from Github API and stores it in a dataframe
     :param final_output_path: path to store final dataframe
     :param initial_output_path: path to store initial dataframes
@@ -291,11 +306,26 @@ def get_initial_search_datasets(rates_df, initial_repo_output_path,  repo_output
             join_df = pd.read_csv(repo_join_output_path)
             user_df = pd.read_csv(user_output_path)
             user_join_df = pd.read_csv(user_join_output_path)
+            org_df = pd.read_csv(org_output_path)
         else:
-            repo_df, join_df, user_df, user_join_df = generate_initial_search_datasets(rates_df, initial_repo_output_path,  repo_output_path, repo_join_output_path, initial_user_output_path,  user_output_path, user_join_output_path, overwrite_existing_temp_files)
+            repo_df, join_df, user_df, user_join_df = generate_initial_search_datasets(rates_df, initial_repo_output_path,  repo_output_path, repo_join_output_path, initial_user_output_path,  user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files)
     else:
-        repo_df, join_df, user_df, user_join_df  = generate_initial_search_datasets(rates_df, initial_repo_output_path,  repo_output_path, repo_join_output_path, initial_user_output_path,  user_output_path, user_join_output_path, overwrite_existing_temp_files)
-    return repo_df, join_df, user_df, user_join_df 
+        repo_df, join_df, user_df, user_join_df  = generate_initial_search_datasets(rates_df, initial_repo_output_path,  repo_output_path, repo_join_output_path, initial_user_output_path,  user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files)
+    return repo_df, join_df, user_df, user_join_df, org_df 
 
 
+if __name__ == '__main__':
+    rates_df = check_rate_limit()
 
+    initial_repo_output_path = "../data/repo_data/"
+    repo_output_path = "../data/large_files/entity_files/repos_dataset.csv"
+    repo_join_output_path = "../data/join_files/search_queries_repo_join_dataset.csv"
+
+    initial_user_output_path = "../data/user_data/"
+    user_output_path = "../data/entity_files/users_dataset.csv"
+    user_join_output_path = "../data/join_files/search_queries_user_join_dataset.csv"
+    load_existing_data = False
+    overwrite_existing_temp_files = False
+    org_output_path = "../data/entity_files/orgs_dataset.csv"
+
+    combine_search_df(initial_repo_output_path, repo_output_path, repo_join_output_path, initial_user_output_path, user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files)

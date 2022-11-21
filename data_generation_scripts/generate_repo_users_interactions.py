@@ -1,5 +1,4 @@
 import time
-from urllib.parse import parse_qs
 import pandas as pd
 import requests
 import os
@@ -234,18 +233,8 @@ def get_repos_user_actors(repo_df,repo_actors_output_path, users_output_path, ge
         repo_actors_df['repo_query_time'] = datetime.now().strftime("%Y-%m-%d")
         repo_actors_df.to_csv(repo_actors_output_path, index=False)
         # Finally, get the unique users which is updated in the get_actors code and return it
-        clean_write_error_file(error_file_path, 'full_name')
+        clean_write_error_file(error_file_path, 'repo_full_name')
         join_unique_field = 'repo_query'
         check_for_joins_in_older_queries(repo_df, repo_actors_output_path, repo_actors_df, join_unique_field)
         users_df = get_user_df(users_output_path)
     return repo_actors_df, users_df
-
-if __name__ == '__main__':
-    # Get the data
-    subset_repo_df = pd.read_csv('../data/entity_files/subset_repos_dataset_with_commits.csv', low_memory=False)
-    print(len(subset_repo_df))
-    get_url_field = 'commits_url'
-    load_existing_files = False
-    overwrite_existing_temp_files = False
-    commits_df, users_df = get_repos_user_actors(subset_repo_df, '../data/large_files/join_files/repo_commits_join_dataset.csv', '../data/entity_files/users_dataset.csv', get_url_field, load_existing_files, overwrite_existing_temp_files)
-    commits_errors_df = check_return_error_file('../data/error_logs/repo_commits_join_dataset_errors.csv')

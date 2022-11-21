@@ -168,10 +168,19 @@ def get_user_users_activities(user_df,user_users_output_path, users_output_path,
 if __name__ == '__main__':
     # Get the data
     core_users, core_repos = get_core_users_repos()
-    user_users_output_path = "../data/join_files/user_following_join_dataset.csv"
+    user_users_output_path = "../data/join_files/user_followers_join_dataset.csv"
+    users_output_path = "../data/entity_files/users_dataset.csv"
+    get_url_field = "followers_url"
+    load_existing_files = False
+    overwrite_existing_temp_files = False
+
+    users_followers_df, user_df = get_user_users_activities(core_users,user_users_output_path, users_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files)
+
+    core_users, core_repos = get_core_users_repos()
+    user_users_output_path = "../data/large_files/join_files/user_following_join_dataset.csv"
     users_output_path = "../data/entity_files/users_dataset.csv"
     get_url_field = "following_url"
     load_existing_files = False
     overwrite_existing_temp_files = False
 
-    users_starred_df, user_df = get_user_users_activities(core_users,user_users_output_path, users_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files)
+    users_following_df, user_df = get_user_users_activities(core_users,user_users_output_path, users_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files)

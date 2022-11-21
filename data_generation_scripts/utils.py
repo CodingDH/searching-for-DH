@@ -204,6 +204,22 @@ def check_for_entity_in_older_queries(entity_path, entity_df):
             entity_df.to_csv(entity_path, index=False)
     return entity_df
 
+def check_file_size_and_move(file_dir):
+    """Function to check if file size is too large and move it
+    :param file_dir: path to file directory"""
+    for dir, _, files in os.walk(file_dir):
+        for file in files:
+            file_path = os.path.join(dir, file)
+            size = os.path.getsize(file_path)
+            size = round(size/(1024*1024), 2)
+            if size > 50:
+            
+                new_file_path = file_path.replace('data/', 'data/large_files/')
+            
+                if not os.path.exists(new_file_path):
+                    shutil.copy2(file_path, new_file_path)
+                    os.remove(file_path)
+
 """User Functions
 1. Get new users data
 2. Check add user
@@ -430,6 +446,97 @@ def get_repo_df(output_path):
     repo_df = pd.read_csv(output_path, low_memory=False)
     return repo_df
 
+"""Org Functions"""
+
+def get_orgs(org_df, org_output_path, error_file_path, overwrite_existing_temp_files):
+    temp_org_dir = f"../data/temp/{org_output_path.split('/')[-1].split('.csv')[0]}/"
+
+    # Delete existing temporary directory and create it again
+    
+    if (os.path.exists(temp_org_dir) )and (overwrite_existing_temp_files):
+        shutil.rmtree(temp_org_dir)
+    
+    if not os.path.exists(temp_org_dir):
+        os.makedirs(temp_org_dir)
+    org_progress_bar = tqdm(total=len(org_df), desc="Cleaning Orgs", position=0)
+    for _, row in org_df.iterrows():
+        try:
+            # Create the temporary directory path to store the data
+            temp_org_path =  F"{row.login.replace('/','')}_org.csv"
+
+            # Check if the org_df has already been saved to the temporary directory
+            if os.path.exists(temp_org_dir + temp_org_path):
+                org_progress_bar.update(1)
+                continue
+            # Create the url to get the org
+            url = row.url.replace('/users/', '/orgs/')
+
+            # Make the first request
+            response = requests.get(url, headers=auth_headers)
+            response_data = get_response_data(response, url)
+            if len(response_data) == 0:
+                response_df = pd.read_csv('../data/metadata_files/org_headers.csv')
+            else:
+                response_df = pd.json_normalize(response_data)
+            response_df.to_csv(temp_org_dir + temp_org_path, index=False)
+            org_progress_bar.update(1)
+        except:
+            org_progress_bar.total = org_progress_bar.total - 1
+            # print(f"Error on getting orgs for {row.login}")
+            error_df = pd.DataFrame([{'login': row.login, 'error_time': time.time(), 'error_url': url}])
+            
+            if os.path.exists(error_file_path):
+                error_df.to_csv(error_file_path, mode='a', header=False, index=False)
+            else:
+                error_df.to_csv(error_file_path, index=False)
+            org_progress_bar.update(1)
+            continue
+    org_df = read_combine_files(temp_org_dir)
+    if overwrite_existing_temp_files:
+        # Delete the temporary directory
+        shutil.rmtree(temp_org_dir)
+    # Close the progress bars
+    org_progress_bar.close()
+    return org_df
+
+def check_add_orgs(potential_new_org_df, org_output_path, return_df, overwrite_existing_temp_files):
+    """Function to check if orgs are already in the org file and add them if not 
+    :param org_df: dataframe of orgs
+    :param org_output_path: path to org file
+    :param return_df: boolean to return dataframe or not
+    :return: org dataframe
+    """
+    error_file_path = '../data/error_logs/org_errors.csv'
+    # org_headers = pd.read_csv('../data/metadata_files/org_headers.csv')
+    if os.path.exists(org_output_path):
+        org_df = pd.read_csv(org_output_path)
+        new_org_df = potential_new_org_df[~potential_new_org_df.id.isin(org_df.id)]
+        error_df = check_return_error_file(error_file_path)
+        if len(error_df) > 0:
+            new_org_df = new_org_df[~new_org_df.login.isin(error_df.login)]
+        if len(new_org_df) > 0:
+            # new_org_df = new_org_df[org_headers.columns]
+            cleaned_orgs = get_orgs(new_org_df, org_output_path, error_file_path, overwrite_existing_temp_files)
+            org_df = pd.concat([org_df, cleaned_orgs])
+            org_df = org_df.drop_duplicates(subset=['id'])
+    else:
+        org_df = get_orgs(potential_new_org_df, org_output_path, error_file_path, overwrite_existing_temp_files)
+
+    check_if_older_file_exists(org_output_path)
+    org_df['org_query_time'] = datetime.now().strftime("%Y-%m-%d")
+    org_df.to_csv(org_output_path, index=False)
+    check_for_entity_in_older_queries(org_output_path, org_df)
+    if return_df:
+        org_df = get_org_df(org_output_path)
+        return org_df
+
+def get_org_df(output_path):
+    """Function to get org dataframe
+    :param output_path: path to output file
+    :return: org dataframe"""
+    org_df = pd.read_csv(output_path, low_memory=False)
+    return org_df
+
 """Join Functions
 1. Check if older join entities exist and add them to our latest join"""
 
@@ -474,13 +581,8 @@ def get_core_users_repos():
     """Function to get core users and repos
     :return: core users and repos
     """
-    user_df = pd.read_csv("../data/entity_files/users_dataset.csv")
     repo_df = pd.read_csv("../data/large_files/entity_files/repos_dataset.csv", low_memory=False)
     search_queries_repo_join_df = pd.read_csv("../data/join_files/search_queries_repo_join_dataset.csv")
-    search_queries_user_join_df = pd.read_csv("../data/join_files/search_queries_user_join_dataset.csv")
-    contributors_df = pd.read_csv('../data/join_files/repo_contributors_join_dataset.csv')
-    contributors_counts = contributors_df.groupby(['login']).size().reset_index(name='counts')
-    top_contributors = contributors_counts[contributors_counts.counts > 1]
     core_repos = repo_df[repo_df["id"].isin(search_queries_repo_join_df["id"].unique())]
-    core_users = user_df[(user_df.login.isin(top_contributors.login)) | (user_df.login.isin(search_queries_user_join_df.login)) | (user_df.login.isin(core_repos['owner.login']))].drop_duplicates(subset=['login'])
+    core_users = pd.read_csv("../data/derived_files/core_users.csv")
     return core_users, core_repos
