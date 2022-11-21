@@ -172,3 +172,14 @@ def get_user_org_activities(user_df,user_orgs_output_path, orgs_output_path, get
         check_for_joins_in_older_queries(user_df, user_orgs_output_path, user_orgs_df, join_unique_field)
         orgs_df = get_org_df(orgs_output_path)
     return user_orgs_df, orgs_df
+
+if __name__ == '__main__':
+    # Get the data
+    core_users, core_repos = get_core_users_repos()
+    user_orgs_output_path = "../data/large_files/join_files/user_org_join_dataset.csv"
+    orgs_output_path = "../data/large_files/entity_files/orgs_dataset.csv"
+    get_url_field = "organizations_url"
+    load_existing_files = False
+    overwrite_existing_temp_files = False
+
+    user_orgs_df, org_df = get_user_org_activities(core_users,user_orgs_output_path, orgs_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files)
