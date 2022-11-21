@@ -102,6 +102,7 @@ def get_response_data(response, query):
 def read_combine_files(dir_path, file_path_contains=None):
     """Function to get combined users dataframe. Run this after all users have been added to the temp directory
     :param dir_path: path to users temp folder
+    :param file_path_contains: string to search for in file path (useful for join files that all exist in same repo)
     :return: combined users dataframe"""
     rows = []
     for subdir, _, files in os.walk(dir_path):
@@ -142,9 +143,8 @@ def clean_write_error_file(error_file_path, drop_field):
         print('no error file to clean')
 
 def check_if_older_file_exists(file_path):
-    """Function to check if older file exists
-    :param file_path: path to file
-    :param file_name: name of file"""
+    """Function to check if older file exists and move it to older_files folder
+    :param file_path: path to file"""
     if os.path.exists(file_path):
         src = file_path 
         new_file_path = file_path.replace('/data/','/data/older_files/')
@@ -160,6 +160,9 @@ def check_if_older_file_exists(file_path):
 
 
 def check_for_entity_in_older_queries(entity_path, entity_df):
+    """Function to check if entity exists in older queries and add it to our most recent version of the file
+    :param entity_path: path to entity file
+    :param entity_df: entity dataframe"""
     entity_type = entity_path.split('/')[-1].split('_dataset')[0]
 
     older_entity_file_path = entity_path.replace('data/', 'data/older_files/')
@@ -180,9 +183,6 @@ def check_for_entity_in_older_queries(entity_path, entity_df):
                 error_df = error_df[error_df.time_since_error > 7]
                 missing_entities = missing_entities[~missing_entities.login.isin(error_df.login)]
                 missing_entities = missing_entities[user_headers.columns]
-                # if len(missing_entities) > 0:
-                #     cleaned_missing_entities = get_new_users(missing_entities, temp_users_dir, users_progress_bar, error_file_path, overwrite_existing_temp_files)
-                #     clean_write_error_file(error_file_path, 'login')
         if entity_type == 'repos':
             repo_headers = pd.read_csv('../data/metadata_files/repo_headers.csv')
             if set(missing_entities.columns) != set(repo_headers.columns):
@@ -194,10 +194,6 @@ def check_for_entity_in_older_queries(entity_path, entity_df):
                 error_df = error_df[error_df.time_since_error > 7]
                 missing_entities = missing_entities[~missing_entities.full_name.isin(error_df.full_name)]
                 missing_entities = missing_entities[repo_headers.columns]
-                # if len(missing_entities) > 0:
-                #     repo_df = pd.concat([entity_df, missing_entities])
-                #     repo_df = repo_df.drop_duplicates(subset=['id', 'full_name'], keep='last')
-                #     repo_df.to_csv(entity_path, index=False)
         if len(missing_entities) > 0:
             missing_entities = missing_entities[missing_entities.id.notna()]
             entity_df = pd.concat([entity_df, missing_entities])
@@ -282,11 +278,9 @@ def get_new_users(potential_new_users_df, temp_users_dir, users_progress_bar,  e
 
 
 def check_add_users(potential_new_users_df, users_output_path, return_df, overwrite_existing_temp_files):
-    """Function to check if users are already in the users file and add them if not (Might need to add this to utils.py)
+    """Function to check if users are already in the users file and add them if not
     :param potential_new_users_df: dataframe of new identified users
     :param users_output_path: path to users file
-    :param temp_users_dir: path to temp users directory to store initial files
-    :param users_progress_bar: progress bar for users (Not sure this is working though)
     :param return_df: boolean to return the dataframe or not
     :param overwrite_existing_temp_files: boolean to overwrite existing temp files or not
     """
@@ -334,10 +328,11 @@ def get_user_df(output_path):
 3. Get repo dataset"""
     
 def get_new_repos(potential_new_repos_df, temp_repos_dir, repos_progress_bar,  error_file_path, overwrite_existing_temp_files=True):
-    """Function to get new repos from the repos file
+    """Function to get new repos from the repos file (currently not using anywhere but keeping just in case we need it)
     :param potential_new_repos_df: dataframe of new identified repos
     :param temp_repos_dir: path to temp repos directory
     :param repos_progress_bar: progress bar for repos 
+    :param error_file_path: path to error file
     :param overwrite_existing_temp_files: boolean to overwrite existing temp files or not
     :return: new repos dataframe
     """
@@ -402,7 +397,6 @@ def check_add_repos(potential_new_repo_df, repo_output_path, return_df):
     """Function to check if repo are already in the repo file and add them if not 
     :param potential_new_repo_df: dataframe of contributors
     :param repo_output_path: path to repo file
-    :param overwrite_existing_temp_files: boolean to overwrite existing temp files or not
     :param return_df: boolean to return dataframe or not
     :return: repo dataframe
     """
@@ -440,6 +434,13 @@ def get_repo_df(output_path):
 1. Check if older join entities exist and add them to our latest join"""
 
 def check_for_joins_in_older_queries(entity_df, join_file_path, join_files_df, join_unique_field):
+    """Function to check if older join entities exist and add them to our latest join
+    :param entity_df: dataframe of entities
+    :param join_file_path: path to join file
+    :param join_files_df: dataframe of join files
+    :param join_unique_field: unique field for join
+    :return: None
+    """
     # Needs to check if older repos exist and then find their values in older join_files_df
     join_type = join_file_path.split('/')[-1].split('_dataset')[0]
 
@@ -468,3 +469,18 @@ def check_for_joins_in_older_queries(entity_df, join_file_path, join_files_df, j
 
             
     return join_files_df
+
+def get_core_users_repos():
+    """Function to get core users and repos
+    :return: core users and repos
+    """
+    user_df = pd.read_csv("../data/entity_files/users_dataset.csv")
+    repo_df = pd.read_csv("../data/large_files/entity_files/repos_dataset.csv", low_memory=False)
+    search_queries_repo_join_df = pd.read_csv("../data/join_files/search_queries_repo_join_dataset.csv")
+    search_queries_user_join_df = pd.read_csv("../data/join_files/search_queries_user_join_dataset.csv")
+    contributors_df = pd.read_csv('../data/join_files/repo_contributors_join_dataset.csv')
+    contributors_counts = contributors_df.groupby(['login']).size().reset_index(name='counts')
+    top_contributors = contributors_counts[contributors_counts.counts > 1]
+    core_repos = repo_df[repo_df["id"].isin(search_queries_repo_join_df["id"].unique())]
+    core_users = user_df[(user_df.login.isin(top_contributors.login)) | (user_df.login.isin(search_queries_user_join_df.login)) | (user_df.login.isin(core_repos['owner.login']))].drop_duplicates(subset=['login'])
+    return core_users, core_repos

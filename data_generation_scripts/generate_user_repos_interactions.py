@@ -180,6 +180,8 @@ def get_user_repo_activities(user_df,user_repos_output_path, repos_output_path, 
 
 if __name__ == '__main__':
     # Get the data
+    
+    ## Original
     # user_df = pd.read_csv("../data/entity_files/users_dataset.csv", low_memory=False)
     # repo_df = pd.read_csv("../data/large_files/entity_files/repos_dataset.csv", low_memory=False)
     # search_queries_df = pd.read_csv('../data/join_files/search_queries_join_dataset.csv', low_memory=False)
@@ -192,22 +194,23 @@ if __name__ == '__main__':
     # overwrite_existing_temp_files = False
 
     # users_starred_df, repo_df = get_user_repo_activities(original_owners,user_repos_output_path, repos_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files)
+    
+    ## Get repos of core Users
+    # user_df = pd.read_csv("../data/entity_files/users_dataset.csv", low_memory=False)
+    # repo_df = pd.read_csv("../data/large_files/entity_files/repos_dataset.csv", low_memory=False)
+    # search_queries_repo_join_df = pd.read_csv("../data/join_files/search_queries_repo_join_dataset.csv")
+    # search_queries_user_join_df = pd.read_csv("../data/join_files/search_queries_user_join_dataset.csv")
+    # contributors_df = pd.read_csv('../data/join_files/repo_contributors_join_dataset.csv')
+    # contributors_counts = contributors_df.groupby(['login']).size().reset_index(name='counts')
+    # top_contributors = contributors_counts[contributors_counts.counts > 1]
+    # core_repos = repo_df[repo_df["id"].isin(search_queries_repo_join_df["id"].unique())]
+    # core_users = user_df[(user_df.login.isin(top_contributors.login)) | (user_df.login.isin(search_queries_user_join_df.login)) | (user_df.login.isin(core_repos['owner.login']))].drop_duplicates(subset=['login'])
 
-    user_df = pd.read_csv("../data/entity_files/users_dataset.csv", low_memory=False)
-    repo_df = pd.read_csv("../data/large_files/entity_files/repos_dataset.csv", low_memory=False)
-    search_queries_repo_join_df = pd.read_csv("../data/join_files/search_queries_repo_join_dataset.csv")
-    search_queries_user_join_df = pd.read_csv("../data/join_files/search_queries_user_join_dataset.csv")
-    contributors_df = pd.read_csv('../data/join_files/repo_contributors_join_dataset.csv')
-    contributors_counts = contributors_df.groupby(['login']).size().reset_index(name='counts')
-    top_contributors = contributors_counts[contributors_counts.counts > 1]
-    core_repos = repo_df[repo_df["id"].isin(search_queries_repo_join_df["id"].unique())]
-    core_users = user_df[(user_df.login.isin(top_contributors.login)) | (user_df.login.isin(search_queries_user_join_df.login)) | (user_df.login.isin(core_repos['owner.login']))].drop_duplicates(subset=['login'])
+    # user_repos_output_path = '../data/join_files/user_repos_join_dataset.csv'
+    # repos_output_path = '../data/large_files/entity_files/repos_dataset.csv'
+    # get_url_field = "repos_url"
+    # error_file_path = "../data/error_files/user_repos_join_dataset_errors.csv"
+    # overwrite_existing_temp_files = False
+    # load_existing_files = False
 
-    user_repos_output_path = '../data/join_files/user_repos_join_dataset.csv'
-    repos_output_path = '../data/large_files/entity_files/repos_dataset.csv'
-    get_url_field = "repos_url"
-    error_file_path = "../data/error_files/user_repos_join_dataset_errors.csv"
-    overwrite_existing_temp_files = False
-    load_existing_files = False
-
-    user_repos_df, repos_df = get_user_repo_activities(core_users, user_repos_output_path, repos_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files)
+    # user_repos_df, repos_df = get_user_repo_activities(core_users, user_repos_output_path, repos_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files)
