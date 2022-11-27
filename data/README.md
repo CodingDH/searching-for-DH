@@ -116,6 +116,7 @@ Currently, the directory structure is as follows:
 │   └── user_data (original user data)
 │   └── temp (where you can store temp files)
 │   └── error_logs (where you can store error logs)
+│   └── derived_files
 │   └── large_files (where you can store large datasets that will not get pushed up and live in Google Drive)
 │       └── entity_files
 │       └── join_files
