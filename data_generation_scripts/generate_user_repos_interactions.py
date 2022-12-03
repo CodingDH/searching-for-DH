@@ -16,6 +16,7 @@ import shutil
 import warnings
 
 from data_generation_scripts.utils import *
+from data_generation_scripts.generate_user_metadata import check_total_stars
 
 warnings.filterwarnings('ignore')
 
@@ -28,6 +29,8 @@ def get_user_repos(user_df, user_repos_output_path, repos_output_path, get_url_f
     # Create the temporary directory path to store the data
     temp_user_repos_dir = f"../data/temp/{user_repos_output_path.split('/')[-1].split('.csv')[0]}/"
 
+    too_many_results = f"../data/error_logs/{user_repos_output_path.split('/')[-1].split('.csv')[0]}_{get_url_field}_too_many_results.csv"
+
     # Delete existing temporary directory and create it again
     
     if (os.path.exists(temp_user_repos_dir) )and (overwrite_existing_temp_files):
@@ -38,7 +41,8 @@ def get_user_repos(user_df, user_repos_output_path, repos_output_path, get_url_f
 
     # Create our progress bars for getting Repo Contributors and Users (not sure the user one works properly in Jupyter though)
     user_progress_bar = tqdm(total=len(user_df), desc="Getting User's Repos", position=0)
-
+    threshold_check = 'star_count' if 'starred' in get_url_field else 'public_repos'
+    threshold = 2500 if 'starred' in get_url_field else 1000
     for _, row in user_df.iterrows():
         try:
 
@@ -51,6 +55,16 @@ def get_user_repos(user_df, user_repos_output_path, repos_output_path, get_url_f
             # Check if the user_repos_df has already been saved to the temporary directory
             if os.path.exists(temp_user_repos_dir + temp_user_repos_path):
                 user_progress_bar.update(1)
+                continue
+
+            if row[threshold_check] > threshold:
+                print(f"Skipping {row.login} due to {threshold_check} > {threshold}")
+                user_progress_bar.update(1)
+                over_threshold_df = pd.DataFrame([row])
+                if os.path.exists(too_many_results):
+                    over_threshold_df.to_csv(too_many_results, mode='a', header=False, index=False)
+                else:
+                    over_threshold_df.to_csv(too_many_results, index=False)
                 continue
 
             # Create the url to get the repo actors
@@ -180,6 +194,9 @@ def get_user_repo_activities(user_df,user_repos_output_path, repos_output_path, 
 if __name__ == '__main__':
     # Get the data
     core_users, core_repos = get_core_users_repos()
+    if 'star_count' not in core_users.columns:
+        core_users = check_total_stars(core_users)
+        core_users.to_csv('../data/derived_files/core_users.csv', index=False)
     user_repos_output_path = "../data/large_files/join_files/user_starred_join_dataset.csv"
     repos_output_path = "../data/large_files/entity_files/repos_dataset.csv"
     get_url_field = "starred_url"
