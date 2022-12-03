@@ -1,7 +1,8 @@
-# - get starred
-# - get user repos
-# OR get subscribers which gets both
-
+# pylint: disable=missing-module-docstring
+# pylint: disable=missing-class-docstring
+# pylint: disable=missing-function-docstring
+# pylint: disable=wildcard-import
+# pylint: disable=W0614
 import os
 import sys
 import time
@@ -32,10 +33,8 @@ def get_user_repos(user_df, user_repos_output_path, repos_output_path, get_url_f
     too_many_results = f"../data/error_logs/{user_repos_output_path.split('/')[-1].split('.csv')[0]}_{get_url_field}_too_many_results.csv"
 
     # Delete existing temporary directory and create it again
-    
     if (os.path.exists(temp_user_repos_dir) )and (overwrite_existing_temp_files):
         shutil.rmtree(temp_user_repos_dir)
-    
     if not os.path.exists(temp_user_repos_dir):
         os.makedirs(temp_user_repos_dir)
 
@@ -71,7 +70,7 @@ def get_user_repos(user_df, user_repos_output_path, repos_output_path, get_url_f
             url = row[get_url_field].split('{')[0] + '?per_page=100&page=1' if '{' in row[get_url_field] else row[get_url_field] + '?per_page=100&page=1'
 
             # Make the first request
-            response = requests.get(url, headers=auth_headers)
+            response = requests.get(url, headers=auth_headers, timeout=10)
             response_data = get_response_data(response, url)
 
             # If the response is empty, skip to the next repo
@@ -86,7 +85,7 @@ def get_user_repos(user_df, user_repos_output_path, repos_output_path, get_url_f
             while "next" in response.links.keys():
                 time.sleep(120)
                 query = response.links['next']['url']
-                response = requests.get(query, headers=auth_headers)
+                response = requests.get(query, headers=auth_headers, timeout=5)
                 response_data = get_response_data(response, query)
                 if len(response_data) == 0:
                     user_progress_bar.update(1)
@@ -197,9 +196,9 @@ if __name__ == '__main__':
     if 'star_count' not in core_users.columns:
         core_users = check_total_stars(core_users)
         core_users.to_csv('../data/derived_files/core_users.csv', index=False)
-    user_repos_output_path = "../data/large_files/join_files/user_starred_join_dataset.csv"
+    user_repos_output_path = "../data/large_files/join_files/user_repos_join_dataset.csv"
     repos_output_path = "../data/large_files/entity_files/repos_dataset.csv"
-    get_url_field = "starred_url"
+    get_url_field = "repos_url"
     load_existing_files = False
     overwrite_existing_temp_files = False
 

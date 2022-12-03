@@ -1,7 +1,5 @@
-from hashlib import new
 import re
 import time
-from time import sleep
 import pandas as pd
 import requests
 import apikey
@@ -27,17 +25,17 @@ def check_rate_limit():
     :return: data from rate limit api call"""
     # Checks for rate limit so that you don't hit issues with Github API. Mostly for search API that has a 30 requests per minute https://docs.github.com/en/rest/rate-limit
     url = 'https://api.github.com/rate_limit'
-    response = requests.get(url, headers=auth_headers)
+    response = requests.get(url, headers=auth_headers, timeout=10)
     rates_df = pd.json_normalize(response.json())
     return rates_df
 
 def check_total_pages(url):
     # Check total number of pages to get from search. Useful for not going over rate limit
-    response = requests.get(f'{url}?per_page=1', headers=auth_headers)
+    response = requests.get(f'{url}?per_page=1', headers=auth_headers, timeout=10)
     if response.status_code != 200:
         print('hit rate limiting. trying to sleep...')
         time.sleep(120)
-        response = requests.get(url, headers=auth_headers)
+        response = requests.get(url, headers=auth_headers, timeout=10)
         total_pages = 1 if len(response.links) == 0 else re.search('\d+$', response.links['last']['url']).group()
     else:
         total_pages = 1 if len(response.links) == 0 else re.search('\d+$', response.links['last']['url']).group()
@@ -45,11 +43,11 @@ def check_total_pages(url):
 
 def check_total_results(url):
     """Function to check total number of results from API. Useful for not going over rate limit. Differs from check_total_pages because this returns all results, not just total number of pagination."""
-    response = requests.get(url, headers=auth_headers)
+    response = requests.get(url, headers=auth_headers, timeout=10)
     if response.status_code != 200:
         print('hit rate limiting. trying to sleep...')
         time.sleep(120)
-        response = requests.get(url, headers=auth_headers)
+        response = requests.get(url, headers=auth_headers, timeout=10)
         data = response.json()
     else:
         data = response.json()
@@ -70,7 +68,7 @@ def get_response_data(response, query):
         else:
             print(f'response code: {response.status_code}. hit rate limiting. trying to sleep...')
             time.sleep(120)
-            response = requests.get(query, headers=auth_headers)
+            response = requests.get(query, headers=auth_headers, timeout=10)
 
             # Check if response is valid a second time after sleeping
             if response.status_code != 200:
@@ -81,7 +79,7 @@ def get_response_data(response, query):
                 if rates_df['resources.core.remaining'].values[0] == 0:
                     print('rate limit reached. sleeping for 1 hour')
                     time.sleep(3600)
-                    response = requests.get(query, headers=auth_headers)
+                    response = requests.get(query, headers=auth_headers, timeout=10)
                     if response.status_code != 200:
                         print(f'query failed third time with code {response.status_code}. Failing URL: {query}')
                     else:
@@ -89,8 +87,7 @@ def get_response_data(response, query):
             else:
                 response_data = response.json()
     else:
-        response_data = response.json()
-    
+        response_data = response.json() 
     return response_data
 
 """Manipulate Files Functions
@@ -301,7 +298,7 @@ def check_add_users(potential_new_users_df, users_output_path, return_df, overwr
     :param overwrite_existing_temp_files: boolean to overwrite existing temp files or not
     """
     # Also define temporary directory path for users
-    temp_users_dir = f"../data/temp/temp_users/"
+    temp_users_dir = "../data/temp/temp_users/"
     excluded_users = pd.read_csv('../data/metadata_files/excluded_users.csv')
     potential_new_users_df = potential_new_users_df[~potential_new_users_df.login.isin(excluded_users.login)]
     error_file_path = "../data/error_logs/potential_users_errors.csv"

@@ -1,6 +1,3 @@
-# - get followers
-# - get following
-
 import time
 import pandas as pd
 import requests

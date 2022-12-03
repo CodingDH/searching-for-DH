@@ -1,3 +1,8 @@
+# pylint: disable=missing-module-docstring
+# pylint: disable=missing-class-docstring
+# pylint: disable=missing-function-docstring
+# pylint: disable=wildcard-import
+# pylint: disable=W0614
 import os
 import sys
 import time
@@ -24,7 +29,6 @@ def get_org_repos(org_df, org_repos_output_path, repos_output_path, get_url_fiel
     temp_org_repos_dir = f"../data/temp/{org_repos_output_path.split('/')[-1].split('.csv')[0]}/"
 
     # Delete existing temporary directory and create it again
-    
     if (os.path.exists(temp_org_repos_dir) )and (overwrite_existing_temp_files):
         shutil.rmtree(temp_org_repos_dir)
     
@@ -52,7 +56,7 @@ def get_org_repos(org_df, org_repos_output_path, repos_output_path, get_url_fiel
             url = row[get_url_field].split('{')[0] + '?per_page=100&page=1' if '{' in row[get_url_field] else row[get_url_field] + '?per_page=100&page=1'
 
             # Make the first request
-            response = requests.get(url, headers=auth_headers)
+            response = requests.get(url, headers=auth_headers, timeout=10)
             response_data = get_response_data(response, url)
 
             # If the response is empty, skip to the next org
@@ -67,7 +71,7 @@ def get_org_repos(org_df, org_repos_output_path, repos_output_path, get_url_fiel
             while "next" in response.links.keys():
                 time.sleep(120)
                 query = response.links['next']['url']
-                response = requests.get(query, headers=auth_headers)
+                response = requests.get(query, headers=auth_headers, timeout=10)
                 response_data = get_response_data(response, query)
                 if len(response_data) == 0:
                     org_progress_bar.update(1)
@@ -161,3 +165,21 @@ def get_org_repo_activities(org_df,org_repos_output_path, repos_output_path, get
         check_for_joins_in_older_queries(org_df, org_repos_output_path, org_repos_df, join_unique_field)
         repos_df = get_repo_df(repos_output_path)
     return org_repos_df, repos_df
+
+if __name__ == '__main__':
+    # Set the path for the orgs file
+    orgs_path = "../data/entity_files/orgs_dataset.csv"
+    # Set the path for the org_repos file
+    org_repos_path = '../data/join_files/org_repos_dataset.csv'
+    # Set the path for the repos file
+    repos_path = '../data/large_files/entity_files/repos_dataset.csv'
+    # Set the field we want to use to get the url
+    get_url_field = 'repos_url'
+    # Set the flag to load existing files
+    load_existing_files = False
+    # Set the flag to overwrite existing temp files
+    overwrite_existing_temp_files = False
+    # Load the orgs file
+    orgs_df = pd.read_csv(orgs_path, low_memory=False)
+    # Run the get_org_repo_activities function
+    org_repos_df, repos_df = get_org_repo_activities(orgs_df, org_repos_path, repos_path, get_url_field, load_existing_files, overwrite_existing_temp_files)
