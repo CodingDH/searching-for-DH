@@ -6,28 +6,43 @@ I would imagine we would want things like change over time in the repos, users, 
 
 ## Global Characteristics of the datasets
 
-- Top Users
+Users
     - number of repos 
     - org affiliations
     - contributions
     - followers
 
-- Top Repos
+Repos
     - number of forks
     - subscribers
     - stargazers
-    - contributors (most collaborative)
-
-- Programming Languages Used
-
-- 
+    
 
 
 ## Annual Characteristics of the datasets
+- new users by year
+- new repos by year
+- new orgs by year
+
+- top language (programming) annually
 
 # Outliers
 
 # Repo Activity
+
+
+
+# User Characteristics
+
+
+
+# Networks 
+
+repo-contributors
+
+users - followers
+
+org - repo - contributors
 
 
 
