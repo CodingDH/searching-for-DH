@@ -1,16 +1,20 @@
-# This script is currently organized based on previous ideas of having files for each search term. We are moving away from this but for now I'm leaving the current structure and just reorganizing the files post-ad hoc generation.
+# pylint: disable=missing-class-docstring
+# pylint: disable=missing-function-docstring
+# pylint: disable=wildcard-import
+# pylint: disable=W0614
 import time
-import pandas as pd
-import requests
 import os
-from tqdm import tqdm
-import apikey
 import json
 import codecs
 from datetime import datetime
 import sys
+import pandas as pd
+import requests
 sys.path.append("..")
 from data_generation_scripts.utils import *
+from tqdm import tqdm
+import apikey
+
 
 
 auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
@@ -23,11 +27,11 @@ def get_search_api_data(query, total_pages):
     :param query: the query to be passed to the search API
     :param total_pages: the total number of pages to be queried
     :return: a dataframe of the data returned from the API"""
-    # Thanks https://stackoverflow.com/questions/33878019/how-to-get-data-from-all-pages-in-github-api-with-python 
+    # Thanks https://stackoverflow.com/questions/33878019/how-to-get-data-from-all-pages-in-github-api-with-python
     dfs = []
     pbar = tqdm(total=total_pages, desc="Getting Search API Data")
     try:
-        response = requests.get(query, headers=auth_headers)
+        response = requests.get(query, headers=auth_headers, timeout=5)
         response_data = get_response_data(response, query)
 
         response_df = pd.json_normalize(response_data['items'])
@@ -43,7 +47,7 @@ def get_search_api_data(query, total_pages):
         while "next" in response.links.keys():
             time.sleep(120)
             query = response.links['next']['url']
-            response = requests.get(query, headers=auth_headers)
+            response = requests.get(query, headers=auth_headers, timeout=5)
             response_data = get_response_data(response, query)
 
             response_df = pd.json_normalize(response_data['items'])
@@ -52,12 +56,11 @@ def get_search_api_data(query, total_pages):
             else:
                 if 'repo' in query:
                     response_df = pd.read_csv('../data/metadata_files/search_repo_headers.csv')
-                else: 
+                else:
                     response_df = pd.read_csv('../data/metadata_files/search_user_headers.csv')
             dfs.append(response_df)
             pbar.update(1)
-    
-    except:
+    except:  # pylint: disable=W0702
         print(f"Error with URL: {query}")
 
     pbar.close()
@@ -78,27 +81,27 @@ def process_search_data(rates_df, query, output_path, total_results):
     calls_remaining = rates_df['resources.search.remaining'].values[0]
     while total_pages > calls_remaining:
         time.sleep(3700)
-        rates_df = check_rate_limit()
-        calls_remaining = rates_df['resources.search.remaining'].values[0]
-    else:
-        # Check if the file already exists
-        if os.path.exists(output_path):
-            # If it does load it in
-            searched_df = pd.read_csv(output_path)
-            # Check if the number of rows is less than the total number of results
-            if searched_df.shape[0] != int(total_results):
-                # If it is not, move the older file to a backup location and then remove existing file
-                check_if_older_file_exists(output_path)
-                #Could refactor this to combine new and old data rather than removing it
-                os.remove(output_path)
-            else:
-                # If it is, return the dataframe and don't get queries from the API
-                return searched_df 
-        # If the file doesn't exist or if the numbers don't match, get the data from the API
-        searched_df = get_search_api_data(query, total_pages)
-        searched_df = searched_df.reset_index(drop=True)
-        check_if_older_file_exists(output_path)
-        searched_df.to_csv(output_path, index=False)
+        updated_rates_df = check_rate_limit()
+        calls_remaining = updated_rates_df['resources.search.remaining'].values[0]
+
+    # Check if the file already exists
+    if os.path.exists(output_path):
+        # If it does load it in
+        searched_df = pd.read_csv(output_path)
+        # Check if the number of rows is less than the total number of results
+        if searched_df.shape[0] != int(total_results):
+            # If it is not, move the older file to a backup location and then remove existing file
+            check_if_older_file_exists(output_path)
+            #Could refactor this to combine new and old data rather than removing it
+            os.remove(output_path)
+        else:
+            # If it is, return the dataframe and don't get queries from the API
+            return searched_df
+    # If the file doesn't exist or if the numbers don't match, get the data from the API
+    searched_df = get_search_api_data(query, total_pages)
+    searched_df = searched_df.reset_index(drop=True)
+    check_if_older_file_exists(output_path)
+    searched_df.to_csv(output_path, index=False)
 
 
 def process_large_search_data(rates_df, search_url, dh_term, params, initial_output_path, total_results):
@@ -118,11 +121,10 @@ def process_large_search_data(rates_df, search_url, dh_term, params, initial_out
     search_dfs = []
     for year in years:
         yearly_output_path = initial_output_path + f"_{year}.csv"
-        cleaned_dh_term = dh_term.replace(' ', '+')
         if year == current_year:
-            query = search_url + f"%22{cleaned_dh_term}%22+created%3A{year}-01-01..{year}-{current_month}-{current_day}+sort:created{params}"
+            query = search_url + f"%22{dh_term}%22+created%3A{year}-01-01..{year}-{current_month}-{current_day}+sort:created{params}"
         else:
-            query = search_url + f"%22{cleaned_dh_term}%22+created%3A{year}-01-01..{year}-12-31+sort:created{params}"
+            query = search_url + f"%22{dh_term}%22+created%3A{year}-01-01..{year}-12-31+sort:created{params}"
         print(query)
         total_pages = int(check_total_pages(query))
         print(f"Total pages: {total_pages}")
@@ -132,22 +134,20 @@ def process_large_search_data(rates_df, search_url, dh_term, params, initial_out
             time.sleep(3700)
             rates_df = check_rate_limit()
             calls_remaining = rates_df['resources.search.remaining'].values[0]
-        else:
-            if os.path.exists(yearly_output_path):
-                search_df = pd.read_csv(yearly_output_path)
-                if search_df.shape[0] != int(total_results):
-                    #Could refactor this to combine new and old data rather than removing it
-                    check_if_older_file_exists(yearly_output_path)
-                    os.remove(yearly_output_path)
-                else:
-                    search_dfs.append(search_df)
-                    return search_df
-            search_df = get_search_api_data(query, total_pages)
-            search_df = search_df.reset_index(drop=True)
-            check_if_older_file_exists(yearly_output_path)
-            search_df.to_csv(yearly_output_path, index=False)
-        
-   
+
+        if os.path.exists(yearly_output_path):
+            search_df = pd.read_csv(yearly_output_path)
+            if search_df.shape[0] != int(total_results):
+                #Could refactor this to combine new and old data rather than removing it
+                check_if_older_file_exists(yearly_output_path)
+                os.remove(yearly_output_path)
+            else:
+                search_dfs.append(search_df)
+                return search_df
+        search_df = get_search_api_data(query, total_pages)
+        search_df = search_df.reset_index(drop=True)
+        check_if_older_file_exists(yearly_output_path)
+        search_df.to_csv(yearly_output_path, index=False)
 
 def combine_search_df(initial_repo_output_path, repo_output_path, repo_join_output_path, initial_user_output_path, user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files):
     """Function to combine the dataframes of the search API data
@@ -161,7 +161,7 @@ def combine_search_df(initial_repo_output_path, repo_output_path, repo_join_outp
     :return: a dataframe of the combined data"""
     return_df = True
     repo_searched_files = read_combine_files(initial_repo_output_path, 'searched')
-    repo_tagged_files = read_combine_files(repo_output_path, 'tagged')
+    repo_tagged_files = read_combine_files(initial_repo_output_path, 'tagged')
 
     repo_join_df = pd.concat([repo_searched_files, repo_tagged_files])
     repo_join_df['search_query_time'] = datetime.now().strftime("%Y-%m-%d")
@@ -205,23 +205,23 @@ def generate_initial_search_datasets(rates_df, initial_repo_output_path,  repo_o
     #Get the list of terms to search for
     dh_df = pd.DataFrame([json.load(codecs.open('../data/metadata_files/en.Digital humanities.json', 'r', 'utf-8-sig'))])
     dh_df = dh_df.melt()
-    dh_df.columns = ['language', 'dh_term']
+    dh_df.columns = ['language', 'term']
+    dh_df.sort_values(by='language', inplace=True)
     # Combine German and English terms because of identical spelling (should maybe make this a programatic check)
-    dh_df.loc[dh_df.language == 'de', 'language'] = 'de_en'
+    dh_df = dh_df.groupby('term')['language'].apply('_'.join).reset_index()
 
-    if os.path.exists(initial_repo_output_path) == False:
+    if not os.path.exists(initial_repo_output_path):
         os.makedirs(initial_repo_output_path)
 
-    if os.path.exists(initial_user_output_path) == False:
+    if not os.path.exists(initial_user_output_path):
         os.makedirs(initial_user_output_path)
 
     for _, row in dh_df.iterrows():
-        print(f"Getting repos with this term: {row.dh_term} in this language: {row.language}")
-        
+        print(f"Getting repos with this term {row.term} in this language {row.language}")
         #Check if term exists as a topic
-        search_query = row.dh_term.replace(' ', '+')
+        search_query = row.term.replace(' ', '+')
         search_topics_query = "https://api.github.com/search/topics?q=" + search_query
-        response = requests.get(search_topics_query, headers=auth_headers)
+        response = requests.get(search_topics_query, headers=auth_headers, timeout=5)
         data = get_response_data(response, search_topics_query)
 
         # If term exists as a topic proceed
@@ -232,7 +232,7 @@ def generate_initial_search_datasets(rates_df, initial_repo_output_path,  repo_o
                 # Topics are joined by hyphens rather than plus signs in queries
                 tagged_query = item['name'].replace(' ', '-')
                 repos_tagged_query = "https://api.github.com/search/repositories?q=topic:" + tagged_query + "&per_page=100&page=1"
-                # Check how many results 
+                # Check how many results
                 total_tagged_results = check_total_results(repos_tagged_query)
                 #If results exist then proceed
                 if total_tagged_results > 0:
@@ -243,7 +243,7 @@ def generate_initial_search_datasets(rates_df, initial_repo_output_path,  repo_o
                         search_url = "https://api.github.com/search/repositories?q=topic:"
                         params = "&per_page=100&page=1"
                         initial_tagged_output_path = initial_repo_output_path + f'repos_tagged_{row.language}_{output_term}'
-                        process_large_search_data(rates_df, search_url, dh_term, params, initial_tagged_output_path, total_tagged_results)
+                        process_large_search_data(rates_df, search_url, tagged_query, params, initial_tagged_output_path, total_tagged_results)
                     else:
                         # If fewer than a 1000 proceed to normal search calls
                         final_tagged_output_path = initial_repo_output_path + f'repos_tagged_{row.language}_{output_term}.csv'
@@ -251,35 +251,33 @@ def generate_initial_search_datasets(rates_df, initial_repo_output_path,  repo_o
 
         # Now search for repos that contain query string
         search_repos_query = "https://api.github.com/search/repositories?q=" + search_query + "&per_page=100&page=1"
-        # Check how many results 
+        # Check how many results
         total_search_results = check_total_results(search_repos_query)
 
         if total_search_results > 0:
-            output_term = row.dh_term.replace(' ','+')
+            output_term = row.term.replace(' ','+')
             if total_search_results > 1000:
                 search_url = "https://api.github.com/search/repositories?q="
-                dh_term = row.dh_term
+                dh_term = search_query
                 params = "&per_page=100&page=1"
                 initial_searched_output_path = initial_repo_output_path + f'repos_searched_{row.language}_{output_term}'
                 process_large_search_data(rates_df, search_url, dh_term, params, initial_searched_output_path, total_search_results)
-                
             else:
                 final_searched_output_path = initial_repo_output_path + f'repos_searched_{row.language}_{output_term}.csv'
                 process_search_data(rates_df, search_repos_query, final_searched_output_path, total_search_results)
 
         # Now search for repos that contain query string
         search_users_query = "https://api.github.com/search/users?q=" + search_query + "&per_page=100&page=1"
-        # Check how many results 
+        # Check how many results
         total_user_search_results = check_total_results(search_users_query)
         if total_user_search_results > 0:
-            output_term = row.dh_term.replace(' ','+')
+            output_term = row.term.replace(' ','+')
             if total_user_search_results > 1000:
                 search_url = "https://api.github.com/search/users?q="
-                dh_term = row.dh_term
+                dh_term = search_query
                 params = "&per_page=100&page=1"
                 initial_searched_output_path = initial_user_output_path + f'users_searched_{row.language}_{output_term}'
                 process_large_search_data(rates_df, search_url, dh_term, params, initial_searched_output_path, total_search_results)
-                
             else:
                 final_searched_output_path = initial_user_output_path + f'users_searched_{row.language}_{output_term}.csv'
                 process_search_data(rates_df, search_users_query, final_searched_output_path, total_search_results)
@@ -290,7 +288,7 @@ def generate_initial_search_datasets(rates_df, initial_repo_output_path,  repo_o
     repo_join_df = check_for_joins_in_older_queries(repo_df, repo_join_output_path, repo_join_df, join_unique_field)
     user_join_df = check_for_joins_in_older_queries(user_df, user_join_output_path, user_join_df, join_unique_field)
     return repo_df, repo_join_df, user_df, user_join_df, org_df
-        
+
 def get_initial_search_datasets(rates_df, initial_repo_output_path,  repo_output_path, repo_join_output_path, initial_user_output_path,  user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files, load_existing_data):
     """Gets the search repo data from Github API and stores it in a dataframe
     :param final_output_path: path to store final dataframe
@@ -308,10 +306,10 @@ def get_initial_search_datasets(rates_df, initial_repo_output_path,  repo_output
             user_join_df = pd.read_csv(user_join_output_path)
             org_df = pd.read_csv(org_output_path)
         else:
-            repo_df, join_df, user_df, user_join_df = generate_initial_search_datasets(rates_df, initial_repo_output_path,  repo_output_path, repo_join_output_path, initial_user_output_path,  user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files)
+            repo_df, join_df, user_df, user_join_df, org_df = generate_initial_search_datasets(rates_df, initial_repo_output_path,  repo_output_path, repo_join_output_path, initial_user_output_path,  user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files)
     else:
-        repo_df, join_df, user_df, user_join_df  = generate_initial_search_datasets(rates_df, initial_repo_output_path,  repo_output_path, repo_join_output_path, initial_user_output_path,  user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files)
-    return repo_df, join_df, user_df, user_join_df, org_df 
+        repo_df, join_df, user_df, user_join_df, org_df  = generate_initial_search_datasets(rates_df, initial_repo_output_path,  repo_output_path, repo_join_output_path, initial_user_output_path,  user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files)
+    return repo_df, join_df, user_df, user_join_df, org_df
 
 
 if __name__ == '__main__':

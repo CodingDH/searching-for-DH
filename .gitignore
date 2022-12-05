@@ -1,9 +1,10 @@
 .gitignore
-
+.vscode/
 # Large Data Files
 data/large_files/
 data/older_files/large_files/
 data/older_files/larger_datasets
+expanded_search/data/large_files/
 
 # Temporary Files
 data/temp/

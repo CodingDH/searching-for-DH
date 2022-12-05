@@ -1,6 +1,3 @@
-# - get followers
-# - get following
-
 import time
 import pandas as pd
 import requests
@@ -19,7 +16,7 @@ auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
 
 auth_headers = {'Authorization': f'token {auth_token}','User-Agent': 'request'}
 
-def get_user_users(user_df, user_users_output_path, users_output_path, get_url_field, error_file_path, overwrite_existing_temp_files=True):
+def get_user_users(user_df: object, user_users_output_path: str, users_output_path: str, get_url_field: str, error_file_path: str, overwrite_existing_temp_files: bool =True) -> object:
     # Create the temporary directory path to store the data
     temp_user_users_dir = f"../data/temp/{user_users_output_path.split('/')[-1].split('.csv')[0]}/"
 
@@ -167,16 +164,15 @@ def get_user_users_activities(user_df,user_users_output_path, users_output_path,
 
 if __name__ == '__main__':
     # Get the data
-    core_users, core_repos = get_core_users_repos()
-    user_users_output_path = "../data/join_files/user_followers_join_dataset.csv"
-    users_output_path = "../data/entity_files/users_dataset.csv"
-    get_url_field = "followers_url"
-    load_existing_files = False
-    overwrite_existing_temp_files = False
+    core_users = pd.read_csv('../data/derived_files/initial_core_users.csv', low_memory=False)
+    # user_users_output_path = "../data/join_files/user_followers_join_dataset.csv"
+    # users_output_path = "../data/entity_files/users_dataset.csv"
+    # get_url_field = "followers_url"
+    # load_existing_files = False
+    # overwrite_existing_temp_files = False
 
-    users_followers_df, user_df = get_user_users_activities(core_users,user_users_output_path, users_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files)
+    # users_followers_df, user_df = get_user_users_activities(core_users,user_users_output_path, users_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files)
 
-    core_users, core_repos = get_core_users_repos()
     user_users_output_path = "../data/large_files/join_files/user_following_join_dataset.csv"
     users_output_path = "../data/entity_files/users_dataset.csv"
     get_url_field = "following_url"

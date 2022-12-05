@@ -131,10 +131,10 @@ def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_fiel
                 repo_actors_df['repo_id'] = row.id
                 repo_actors_df['repo_url'] = row.url
                 repo_actors_df['repo_html_url'] = row.html_url
-                if 'full_name' in repo_df.columns:
-                    repo_actors_df['repo_full_name'] = row.full_name  
+                if 'repo_full_name' in repo_df.columns:
+                    repo_actors_df['repo_full_name'] = row.repo_full_name  
                 else: 
-                    repo_actors_df['repo_full_name'] = row.repo_full_name
+                    repo_actors_df['repo_full_name'] = row.full_name
                 repo_actors_df[get_url_field] = row[get_url_field]
 
                 # Save the repo_actors_df to the temporary directory
@@ -159,7 +159,8 @@ def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_fiel
         except:
             # print(f"Error on getting actors for {row.full_name}")
             repo_progress_bar.total = repo_progress_bar.total - 1
-            error_df = pd.DataFrame([{'repo_full_name': row.full_name, 'error_time': time.time(), 'error_url': url}])
+            repo_name = 'repo_full_name' if 'repo_full_name' in repo_df.columns else 'full_name'
+            error_df = pd.DataFrame([{'repo_full_name': row.full_name, 'error_time': time.time(), 'error_url': row[repo_name]}])
             # Write errors to relevant error log
             if os.path.exists(error_file_path):
                 error_df.to_csv(error_file_path, mode='a', header=False, index=False)
@@ -238,3 +239,22 @@ def get_repos_user_actors(repo_df,repo_actors_output_path, users_output_path, ge
         check_for_joins_in_older_queries(repo_df, repo_actors_output_path, repo_actors_df, join_unique_field)
         users_df = get_user_df(users_output_path)
     return repo_actors_df, users_df
+
+if __name__ == "__main__":
+    # Load the repo dataframe
+    # repo_df = pd.read_csv(
+    #     "../data/large_files/entity_files/repos_dataset.csv", low_memory=False)
+    # search_queries_repo_join_df = pd.read_csv(
+    # "../data/join_files/search_queries_repo_join_dataset.csv")
+    # core_repos = repo_df[repo_df["id"].isin(
+    #     search_queries_repo_join_df["id"].unique())]
+    pulls_df = pd.read_csv(
+        '../data/large_files/join_files/repo_pulls_join_dataset.csv')
+    get_url_field = "review_comments_url"
+    # Get the repo actors and users
+    repo_actors_output_path = '../data/large_files/join_files/pulls_comments_join_dataset.csv'
+    users_output_path = '../data/entity_files/users_dataset.csv'
+    load_existing_files = False
+    overwrite_existing_temp_files = False
+    repo_actors_df, users_df = get_repos_user_actors(
+        pulls_df, repo_actors_output_path, users_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files)
