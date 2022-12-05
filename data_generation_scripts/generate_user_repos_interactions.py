@@ -6,6 +6,8 @@
 import os
 import sys
 import time
+import shutil
+import warnings
 
 import apikey
 import pandas as pd
@@ -13,8 +15,6 @@ import requests
 from tqdm import tqdm
 
 sys.path.append("..")
-import shutil
-import warnings
 
 from data_generation_scripts.utils import *
 from data_generation_scripts.generate_user_metadata import check_total_stars
@@ -196,9 +196,9 @@ if __name__ == '__main__':
     if 'star_count' not in core_users.columns:
         core_users = check_total_stars(core_users)
         core_users.to_csv('../data/derived_files/core_users.csv', index=False)
-    user_repos_output_path = "../data/large_files/join_files/user_repos_join_dataset.csv"
+    user_repos_output_path = "../data/large_files/join_files/user_starred_join_dataset.csv"
     repos_output_path = "../data/large_files/entity_files/repos_dataset.csv"
-    get_url_field = "repos_url"
+    get_url_field = "starred_url"
     load_existing_files = False
     overwrite_existing_temp_files = False
 

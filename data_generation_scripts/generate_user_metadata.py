@@ -38,7 +38,7 @@ def get_total_stars(response, query):
             print(
                 f'response code: {response.status_code}. hit rate limiting. trying to sleep...')
             time.sleep(120)
-            response = requests.get(query, headers=auth_headers, timeout=10)
+            response = requests.get(query, headers=auth_headers)
 
             # Check if response is valid a second time after sleeping
             if response.status_code != 200:
@@ -51,7 +51,7 @@ def get_total_stars(response, query):
                     print('rate limit reached. sleeping for 1 hour')
                     time.sleep(3600)
                     response = requests.get(
-                        query, headers=auth_headers, timeout=10)
+                        query, headers=auth_headers)
                     if response.status_code != 200:
                         print(
                             f'query failed third time with code {response.status_code}. Failing URL: {query}')
@@ -67,7 +67,7 @@ def get_total_stars(response, query):
 def get_user_stars(row):
     """Function to get total stars for each user"""
     url = f"{row.starred_url.split('{')[0]}?per_page=1"
-    response = requests.get(url, headers=auth_headers, timeout=10)
+    response = requests.get(url, headers=auth_headers)
     total_stars = get_total_stars(response, url)
     row['star_count'] = total_stars
     return row

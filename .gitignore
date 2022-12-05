@@ -1,5 +1,5 @@
 .gitignore
-
+.vscode/
 # Large Data Files
 data/large_files/
 data/older_files/large_files/
