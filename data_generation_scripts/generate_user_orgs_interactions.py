@@ -21,15 +21,13 @@ auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
 auth_headers = {'Authorization': f'token {auth_token}','User-Agent': 'request'}
 
 
-def get_user_orgs(user_df, user_orgs_output_path, orgs_output_path, get_url_field, error_file_path, overwrite_existing_temp_files=True):
+def get_user_orgs(user_df, user_orgs_output_path, orgs_output_path, get_url_field, error_file_path, overwrite_existing_temp_files):
     # Create the temporary directory path to store the data
     temp_user_orgs_dir = f"../data/temp/{user_orgs_output_path.split('/')[-1].split('.csv')[0]}/"
 
     # Delete existing temporary directory and create it again
-    
     if (os.path.exists(temp_user_orgs_dir) )and (overwrite_existing_temp_files):
-        shutil.rmtree(temp_user_orgs_dir)
-    
+        shutil.rmtree(temp_user_orgs_dir) 
     if not os.path.exists(temp_user_orgs_dir):
         os.makedirs(temp_user_orgs_dir)
 
@@ -96,9 +94,9 @@ def get_user_orgs(user_df, user_orgs_output_path, orgs_output_path, get_url_fiel
 
                 # Save the user_orgs_df to the temporary directory
                 user_orgs_df.to_csv(temp_user_orgs_dir + temp_user_orgs_path, index=False)
-
+                return_df = False
                 # Get the unique orgs from the data_df
-                check_add_orgs(data_df, orgs_output_path,  return_df=False)
+                check_add_orgs(data_df, orgs_output_path,  return_df, overwrite_existing_temp_files)
                 user_progress_bar.update(1)
         except:
             user_progress_bar.total = user_progress_bar.total - 1
@@ -176,8 +174,8 @@ def get_user_org_activities(user_df,user_orgs_output_path, orgs_output_path, get
 if __name__ == '__main__':
     # Get the data
     core_users, core_repos = get_core_users_repos()
-    user_orgs_output_path = "../data/large_files/join_files/user_org_join_dataset.csv"
-    orgs_output_path = "../data/large_files/entity_files/orgs_dataset.csv"
+    user_orgs_output_path = "../data/join_files/user_orgs_join_dataset.csv"
+    orgs_output_path = "../data/entity_files/orgs_dataset.csv"
     get_url_field = "organizations_url"
     load_existing_files = False
     overwrite_existing_temp_files = False

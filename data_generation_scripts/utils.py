@@ -507,7 +507,7 @@ def check_add_orgs(potential_new_org_df, org_output_path, return_df, overwrite_e
     # org_headers = pd.read_csv('../data/metadata_files/org_headers.csv')
     if os.path.exists(org_output_path):
         org_df = pd.read_csv(org_output_path)
-        new_org_df = potential_new_org_df[~potential_new_org_df.id.isin(org_df.id)]
+        new_org_df = potential_new_org_df[~potential_new_org_df.login.isin(org_df.login)]
         error_df = check_return_error_file(error_file_path)
         if len(error_df) > 0:
             new_org_df = new_org_df[~new_org_df.login.isin(error_df.login)]

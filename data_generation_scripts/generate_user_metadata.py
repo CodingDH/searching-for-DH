@@ -6,7 +6,7 @@ import requests
 import sys
 import warnings
 warnings.filterwarnings('ignore')
-
+import pandas as pd
 sys.path.append("..")
 from data_generation_scripts.utils import check_rate_limit, get_core_users_repos
 
@@ -70,6 +70,10 @@ def get_user_stars(row):
     response = requests.get(url, headers=auth_headers)
     total_stars = get_total_stars(response, url)
     row['star_count'] = total_stars
+    if row.name == 0:
+        pd.DataFrame(row).T.to_csv('../data/temp/star_counts.csv', header=True, index=False)
+    else:
+        pd.DataFrame(row).T.to_csv('../data/temp/star_counts.csv', mode='a', header=False, index=False)
     return row
 
 
@@ -78,6 +82,7 @@ def check_total_stars(user_df):
     :param user_df: dataframe of users
     :return: dataframe of users with total stars"""
     tqdm.pandas(desc="Getting total stars for each user")
+    user_df = user_df.reset_index(drop=True)
     user_df = user_df.progress_apply(get_user_stars, axis=1)
     return user_df
 
