@@ -12,6 +12,7 @@ import sys
 sys.path.append("..")
 from data_generation_scripts.utils import *
 
+
 auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
 
 auth_headers = {'Authorization': f'token {auth_token}','User-Agent': 'request'}
@@ -122,40 +123,71 @@ def generate_search_queries_archive(load_existing_data):
         query_df.to_csv('../data/metadata_files/search_queries_archive.csv', index=False)
     return query_df
 
-load_existing_data = True
-query_df = generate_search_queries_archive(load_existing_data)
-query_df = query_df[query_df.search_query.notna()]
-query_df.loc[query_df.term == 'Digital+Humanities', 'term'] = 'Digital Humanities'
-avoid_terms = ['มนุษยศาสตร์ดิจิทัล', 'デジタル・ヒューマニティーズ']
-double_check_queries = query_df[(query_df.term.str.contains(' ')==False) & (query_df.term.isin(avoid_terms) == False)]
-user_df = pd.read_csv("../data/entity_files/users_dataset.csv")
-repo_df = pd.read_csv("../data/large_files/entity_files/repos_dataset.csv", low_memory=False)
-search_queries_repo_join_df = pd.read_csv("../data/join_files/search_queries_repo_join_dataset.csv")
-search_queries_user_join_df = pd.read_csv("../data/join_files/search_queries_user_join_dataset.csv")
-org_members_df = pd.read_csv('../data/join_files/org_members_dataset.csv')
-filter_searched_repos = search_queries_repo_join_df.copy()
-grouped_repo_queries_df = filter_searched_repos.groupby(['id', 'full_name']).size().reset_index(name='counts')
-filter_searched_repos['keep_repo'] = False
-filter_searched_repos.loc[filter_searched_repos['id'].isin(grouped_repo_queries_df[grouped_repo_queries_df['counts'] > 1]['id']), 'keep_repo'] = True
-filter_searched_repos.loc[filter_searched_repos['owner.login'].isin(search_queries_user_join_df.login), 'keep_repo'] = True
-filter_searched_repos.loc[filter_searched_repos['owner.login'].isin(org_members_df.login), 'keep_repo'] = True
-filter_searched_repos.loc[(filter_searched_repos.search_query.isin(double_check_queries.search_query) == False) & (filter_searched_repos.keep_repo == False), 'keep_repo'] = True
+# load_existing_data = True
+# query_df = generate_search_queries_archive(load_existing_data)
+# query_df = query_df[query_df.search_query.notna()]
+# query_df.loc[query_df.term == 'Digital+Humanities', 'term'] = 'Digital Humanities'
+# avoid_terms = ['มนุษยศาสตร์ดิจิทัล', 'デジタル・ヒューマニティーズ']
+# double_check_queries = query_df[(query_df.term.str.contains(' ')==False) & (query_df.term.isin(avoid_terms) == False)]
+# user_df = pd.read_csv("../data/entity_files/users_dataset.csv")
+# repo_df = pd.read_csv("../data/large_files/entity_files/repos_dataset.csv", low_memory=False)
+# search_queries_repo_join_df = pd.read_csv("../data/join_files/search_queries_repo_join_dataset.csv")
+# search_queries_user_join_df = pd.read_csv("../data/join_files/search_queries_user_join_dataset.csv")
+# org_members_df = pd.read_csv('../data/join_files/org_members_dataset.csv')
+# filter_searched_repos = search_queries_repo_join_df.copy()
+# grouped_repo_queries_df = filter_searched_repos.groupby(['id', 'full_name']).size().reset_index(name='counts')
+# filter_searched_repos['keep_repo'] = False
+# filter_searched_repos.loc[filter_searched_repos['id'].isin(grouped_repo_queries_df[grouped_repo_queries_df['counts'] > 1]['id']), 'keep_repo'] = True
+# filter_searched_repos.loc[filter_searched_repos['owner.login'].isin(search_queries_user_join_df.login), 'keep_repo'] = True
+# filter_searched_repos.loc[filter_searched_repos['owner.login'].isin(org_members_df.login), 'keep_repo'] = True
+# filter_searched_repos.loc[(filter_searched_repos.search_query.isin(double_check_queries.search_query) == False) & (filter_searched_repos.keep_repo == False), 'keep_repo'] = True
 
 console = Console()
+search_queries_repo_df = pd.read_csv('../data/join_files/search_queries_repo_join_dataset.csv')
+search_queries_user_df = pd.read_csv('../data/join_files/search_queries_user_join_dataset.csv')
 
-# test_df['keep_repo'] = True
-for index, row in filter_searched_repos.iterrows():
-    if row.keep_repo:
-        continue
-    else:
+subset_search_queries_repo_df = search_queries_repo_df[search_queries_repo_df.natural_language != 'en']
+subset_search_queries_user_df = search_queries_user_df[search_queries_user_df.natural_language != 'en']
 
-        console.print(f"[bold cyan]{row.full_name}[/]", row.description, row.search_query)
+repo_languages = subset_search_queries_repo_df.language.unique().tolist()
+user_languages = subset_search_queries_user_df.language.unique().tolist()
+
+for language in repo_languages:
+    console.print(f"[bold red]Repo[/] [bold blue]{language}[/]")
+    for index, row in subset_search_queries_repo_df[subset_search_queries_repo_df.language == language].iterrows():
+        console.print(f"[bold cyan]{row.full_name}[/]", row.description, row.search_query, row.html_url)
         response = console.input(f"Keep repo?")
-        if response == 'y':
-            filter_searched_repos.loc[index, 'keep_repo'] = True
-            # test_df.drop(index, inplace=True)
+        if response == 'n':
+            subset_search_queries_repo_df.drop(index, inplace=True)
+        
+for language in user_languages:
+    console.print(f"[bold red]User[/] [bold blue]{language}[/]")
+    for index, row in subset_search_queries_user_df[subset_search_queries_user_df.language == language].iterrows():
+        console.print(f"[bold cyan]{row.login}[/]", row.description, row.search_query, row.html_url)
+        response = console.input(f"Keep user?")
+        if response == 'n':
+            subset_search_queries_user_df.drop(index, inplace=True)
 
-filter_searched_repos.to_csv('../data/derived_files/cleaned_search_queries_repo_join_dataset.csv', index=False)
+final_search_queries_repo_df = pd.concat([search_queries_repo_df[search_queries_repo_df.natural_language == 'en'], subset_search_queries_repo_df])
+final_search_queries_user_df = pd.concat([search_queries_user_df[search_queries_user_df.natural_language == 'en'], subset_search_queries_user_df])
+
+final_search_queries_repo_df.to_csv('../data/join_files/search_queries_repo_join_dataset.csv', index=False)
+final_search_queries_user_df.to_csv('../data/join_files/search_queries_user_join_dataset.csv', index=False)
+
+
+# # test_df['keep_repo'] = True
+# for index, row in filter_searched_repos.iterrows():
+#     if row.keep_repo:
+#         continue
+#     else:
+
+#         console.print(f"[bold cyan]{row.full_name}[/]", row.description, row.search_query)
+#         response = console.input(f"Keep repo?")
+#         if response == 'y':
+#             filter_searched_repos.loc[index, 'keep_repo'] = True
+#             # test_df.drop(index, inplace=True)
+
+# filter_searched_repos.to_csv('../data/derived_files/cleaned_search_queries_repo_join_dataset.csv', index=False)
 
 # if __name__ == "__main__":
 #     search_queries_archive_df = generate_search_queries_archive(load_existing_data=False)
