@@ -230,10 +230,11 @@ def generate_initial_search_datasets(rates_df, initial_repo_output_path,  repo_o
 
     if os.path.exists(initial_user_output_path) == False:
         os.makedirs(initial_user_output_path)
-    threshold = cleaned_dh_terms[cleaned_dh_terms.natural_language == 'ar'].index[0]
-    print(threshold)
-    threshold = 839
-    final_terms = cleaned_dh_terms[cleaned_dh_terms.index > threshold -1]
+    # threshold = cleaned_dh_terms[cleaned_dh_terms.natural_language == 'ar'].index[0]
+    # print(threshold)
+    # threshold = 839
+    # final_terms = cleaned_dh_terms[cleaned_dh_terms.index > threshold -1]
+    final_terms = cleaned_dh_terms[cleaned_dh_terms.natural_language.str.contains('zh')]
     # rtl = cleaned_dh_terms[cleaned_dh_terms.directionality == 'rtl']
     # rtl['search_term'] = rtl['search_term'].apply(lambda x: arabic_reshaper.reshape(x))
     # ltr = cleaned_dh_terms[cleaned_dh_terms.directionality == 'ltr']
@@ -270,11 +271,11 @@ def generate_initial_search_datasets(rates_df, initial_repo_output_path,  repo_o
                         search_url = "https://api.github.com/search/repositories?q=topic:"
                         params = "&per_page=100&page=1"
                         initial_tagged_output_path = initial_repo_output_path + \
-                            f'/{source_type}' + f'repos_tagged_{output_term}'
+                            f'/{source_type}/' + f'repos_tagged_{output_term}'
                         process_large_search_data(rates_df, search_url, tagged_query, params, initial_tagged_output_path, total_tagged_results, row)
                     else:
                         # If fewer than a 1000 proceed to normal search calls
-                        final_tagged_output_path = initial_repo_output_path + f'/{source_type}' + f'repos_tagged_{output_term}.csv'
+                        final_tagged_output_path = initial_repo_output_path + f'/{source_type}/' + f'repos_tagged_{output_term}.csv'
                         process_search_data(rates_df, repos_tagged_query, final_tagged_output_path, total_tagged_results, row)
 
         # Now search for repos that contain query string
@@ -288,10 +289,10 @@ def generate_initial_search_datasets(rates_df, initial_repo_output_path,  repo_o
                 search_url = "https://api.github.com/search/repositories?q="
                 dh_term = search_query
                 params = "&per_page=100&page=1"
-                initial_searched_output_path = initial_repo_output_path + f'/{source_type}' + f'repos_searched_{output_term}'
+                initial_searched_output_path = initial_repo_output_path + f'/{source_type}/' + f'repos_searched_{output_term}'
                 process_large_search_data(rates_df, search_url, dh_term, params, initial_searched_output_path, total_search_results, row)
             else:
-                final_searched_output_path = initial_repo_output_path + f'/{source_type}' + f'repos_searched_{output_term}.csv'
+                final_searched_output_path = initial_repo_output_path + f'/{source_type}/' + f'repos_searched_{output_term}.csv'
                 process_search_data(rates_df, search_repos_query, final_searched_output_path, total_search_results, row)
 
         # Now search for repos that contain query string
@@ -304,10 +305,10 @@ def generate_initial_search_datasets(rates_df, initial_repo_output_path,  repo_o
                 search_url = "https://api.github.com/search/users?q="
                 dh_term = search_query
                 params = "&per_page=100&page=1"
-                initial_searched_output_path = initial_user_output_path + f'/{source_type}' + f'users_searched_{output_term}'
+                initial_searched_output_path = initial_user_output_path + f'/{source_type}/' + f'users_searched_{output_term}'
                 process_large_search_data(rates_df, search_url, dh_term, params, initial_searched_output_path, total_search_results, row)
             else:
-                final_searched_output_path = initial_user_output_path + f'/{source_type}' + f'users_searched_{output_term}.csv'
+                final_searched_output_path = initial_user_output_path + f'/{source_type}/' + f'users_searched_{output_term}.csv'
                 process_search_data(rates_df, search_users_query, final_searched_output_path, total_search_results, row)
 
 
@@ -355,7 +356,13 @@ if __name__ == '__main__':
     org_output_path = "../data/entity_files/orgs_dataset.csv"
 
     # get_initial_search_datasets(rates_df, initial_repo_output_path,  repo_output_path, repo_join_output_path, initial_user_output_path, user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files, load_existing_data)
-    combine_search_df(initial_repo_output_path, repo_output_path, repo_join_output_path, initial_user_output_path, user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files)
+    repo_df, repo_join_df, user_df, user_join_df, org_df = combine_search_df(
+        initial_repo_output_path, repo_output_path, repo_join_output_path, initial_user_output_path, user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files)
+    join_unique_field = 'search_query'
+    repo_join_df = check_for_joins_in_older_queries(
+        repo_df, repo_join_output_path, repo_join_df, join_unique_field)
+    user_join_df = check_for_joins_in_older_queries(
+        user_df, user_join_output_path, user_join_df, join_unique_field)
 
     # console = Console()
     # cleaned_dh_terms = pd.read_csv(

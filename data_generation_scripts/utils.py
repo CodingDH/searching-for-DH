@@ -413,14 +413,14 @@ def check_add_repos(potential_new_repo_df, repo_output_path, return_df):
     :param return_df: boolean to return dataframe or not
     :return: repo dataframe
     """
-    error_file_path = '../data/error_logs/potential_repos_errors.csv'
+    # error_file_path = '../data/error_logs/potential_repos_errors.csv'
     repo_headers = pd.read_csv('../data/metadata_files/repo_headers.csv')
     if os.path.exists(repo_output_path):
         repo_df = pd.read_csv(repo_output_path)
         new_repo_df = potential_new_repo_df[~potential_new_repo_df.id.isin(repo_df.id)]
-        error_df = check_return_error_file(error_file_path)
-        if len(error_df) > 0:
-            new_repo_df = new_repo_df[~new_repo_df.full_name.isin(error_df.full_name)]
+        # error_df = check_return_error_file(error_file_path)
+        # if len(error_df) > 0:
+        #     new_repo_df = new_repo_df[~new_repo_df.full_name.isin(error_df.full_name)]
         if len(new_repo_df) > 0:
             new_repo_df = new_repo_df[repo_headers.columns]
             repo_df = pd.concat([repo_df, new_repo_df])
@@ -557,7 +557,7 @@ def check_for_joins_in_older_queries(entity_df, join_file_path, join_files_df, j
         if join_unique_field in older_join_df.columns:
             older_join_df = older_join_df[older_join_df[join_unique_field].notna()]
 
-            missing_join = older_join_df[older_join_df.id.isin(entity_df.id)] if 'search_query' in join_unique_field else older_join_df[older_join_df.repo_id.isin(entity_df.id)]
+            missing_join = older_join_df[~older_join_df.id.isin(entity_df.id)] if 'search_query' in join_unique_field else older_join_df[~older_join_df.repo_id.isin(entity_df.id)]
 
             if len(missing_join) > 0:
                 time_field = 'search_query_time' if 'search_query' in join_unique_field else 'repo_query_time'
@@ -565,7 +565,11 @@ def check_for_joins_in_older_queries(entity_df, join_file_path, join_files_df, j
                 missing_join[cleaned_field] = None
                 missing_join.loc[missing_join[time_field].isna(), cleaned_field] = '2022-10-10'
                 missing_join[cleaned_field] = pd.to_datetime(missing_join[time_field], errors='coerce')
-                missing_join = missing_join.sort_values(by=[cleaned_field]).drop_duplicates(subset=['id'], keep='first').drop(columns=[cleaned_field])
+                if 'search_query' in join_unique_field:
+                    missing_join['cleaned_search_query'] = missing_join['search_query'].str.replace('%22', '"').str.replace('%3A', ':').str.split('&page').str[0]
+                    missing_join = missing_join.sort_values(by=[cleaned_field]).drop_duplicates(subset=['id', 'cleaned_search_query'], keep='first').drop(columns=[cleaned_field, 'cleaned_search_query'])
+                else:
+                    missing_join = missing_join.sort_values(by=[cleaned_field]).drop_duplicates(subset=['id'], keep='first').drop(columns=[cleaned_field])
 
                 join_files_df = pd.concat([join_files_df, missing_join])
                 join_files_df = join_files_df.drop_duplicates(subset=['id',join_unique_field])

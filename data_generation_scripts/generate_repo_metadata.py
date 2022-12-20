@@ -247,3 +247,77 @@ def get_repo_owners(repo_df, repo_output_path):
     return repo_df
 
 
+def process_response(response):
+    if len(response.links) == 0:
+        total_results = len(response.json())
+    else:
+        total_results = re.search("\d+$", response.links['last']['url']).group()
+    return total_results
+
+
+def get_total_results(response, query):
+    """Function to get response data from api call
+    :param response: response from api call
+    :param query: query used to make api call
+    :return: response data"""
+    # Check if response is valid
+    total_results = 0
+    if response.status_code != 200:
+        if response.status_code == 401:
+            print("response code 401 - unauthorized access. check api key")
+        elif response.status_code == 204:
+            print(f'No data for {query}')
+        else:
+            print(
+                f'response code: {response.status_code}. hit rate limiting. trying to sleep...')
+            time.sleep(120)
+            response = requests.get(query, headers=auth_headers)
+
+            # Check if response is valid a second time after sleeping
+            if response.status_code != 200:
+                print(
+                    f'query failed twice with code {response.status_code}. Failing URL: {query}')
+
+                # If failed again, check the rate limit and sleep for the amount of time needed to reset rate limit
+                rates_df = check_rate_limit()
+                if rates_df['resources.core.remaining'].values[0] == 0:
+                    print('rate limit reached. sleeping for 1 hour')
+                    time.sleep(3600)
+                    response = requests.get(
+                        query, headers=auth_headers)
+                    if response.status_code != 200:
+                        print(
+                            f'query failed third time with code {response.status_code}. Failing URL: {query}')
+                    else:
+                        total_results = process_response(response)
+            else:
+                total_results = process_response(response)
+    else:
+        total_results = process_response(response)
+    return total_results
+
+
+def get_repo_counts(row, url_field):
+    """Function to get total counts for each repo user interaction"""
+    url = f"{row[url_field].split('{')[0]}?per_page=1"
+    response = requests.get(url, headers=auth_headers)
+    total_results = get_total_results(response, url)
+    field_name = url_field.split('_')[0]
+    row[f'{field_name}_count'] = total_results
+    if row.name == 0:
+        pd.DataFrame(row).T.to_csv(
+            f'../data/temp/{field_name}_counts.csv', header=True, index=False)
+    else:
+        pd.DataFrame(row).T.to_csv(f'../data/temp/{field_name}_counts.csv',
+                                   mode='a', header=False, index=False)
+    return row
+
+
+def check_total_results(repo_df, url_field):
+    """Function to check total results for each repo user interaction
+    :param repo_df: dataframe of repos
+    :return: dataframe of repos with total results"""
+    tqdm.pandas(desc="Getting total results for each repo user interaction")
+    repo_df = repo_df.reset_index(drop=True)
+    repo_df = repo_df.progress_apply(get_repo_counts, axis=1, url_field=url_field)
+    return repo_df
