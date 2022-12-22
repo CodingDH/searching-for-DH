@@ -297,14 +297,14 @@ def get_total_results(response, query):
     return total_results
 
 
-def get_repo_counts(row, url_field):
+def get_repo_counts(row, url_field, overwrite_existing):
     """Function to get total counts for each repo user interaction"""
     url = f"{row[url_field].split('{')[0]}?per_page=1"
     response = requests.get(url, headers=auth_headers)
     total_results = get_total_results(response, url)
     field_name = url_field.split('_')[0]
     row[f'{field_name}_count'] = total_results
-    if row.name == 0:
+    if (row.name == 0) and (overwrite_existing == True):
         pd.DataFrame(row).T.to_csv(
             f'../data/temp/{field_name}_counts.csv', header=True, index=False)
     else:
@@ -313,11 +313,11 @@ def get_repo_counts(row, url_field):
     return row
 
 
-def check_total_results(repo_df, url_field):
+def check_total_results(repo_df, url_field, overwrite_existing):
     """Function to check total results for each repo user interaction
     :param repo_df: dataframe of repos
     :return: dataframe of repos with total results"""
     tqdm.pandas(desc="Getting total results for each repo user interaction")
     repo_df = repo_df.reset_index(drop=True)
-    repo_df = repo_df.progress_apply(get_repo_counts, axis=1, url_field=url_field)
+    repo_df = repo_df.progress_apply(get_repo_counts, axis=1, url_field=url_field, overwrite_existing=overwrite_existing)
     return repo_df
