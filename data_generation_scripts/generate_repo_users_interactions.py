@@ -45,9 +45,11 @@ def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_fiel
 
     # Create the temporary directory path to store the data
     temp_repo_actors_dir = f"../data/temp/{repo_actors_output_path.split('/')[-1].split('.csv')[0]}/"
+    print(temp_repo_actors_dir)
+
+    too_many_results = f"../data/error_logs/{repo_actors_output_path.split('/')[-1].split('.csv')[0]}_{get_url_field}_too_many_results.csv"
 
     # Delete existing temporary directory and create it again
-    print('temp overwrite', os.path.exists(temp_repo_actors_dir), overwrite_existing_temp_files)
     if (os.path.exists(temp_repo_actors_dir)) and (overwrite_existing_temp_files):
         shutil.rmtree(temp_repo_actors_dir)
         
@@ -67,17 +69,29 @@ def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_fiel
     for _, row in repo_df.iterrows():
         try:
             # Check if there is a counts value in the API and whether it is greater than 0. If 0, skip to the next repo
+            repo_name = row.repo_full_name if 'repo_full_name' in repo_df.columns else row.full_name
             counts_exist = repo_urls_metdata.count_type.values[0]
             if counts_exist != 'None':
                 if (row[counts_exist] == 0):
                     repo_progress_bar.update(1)
+                    continue
+                if (row[counts_exist] > 1000):
+                    repo_progress_bar.update(1)
+                    
+                    print(f"Skipping {repo_name} as it has over 1000 users of {counts_exist}")
+                    over_threshold_df = pd.DataFrame([row])
+                    if os.path.exists(too_many_results):
+                        over_threshold_df.to_csv(
+                            too_many_results, mode='a', header=False, index=False)
+                    else:
+                        over_threshold_df.to_csv(too_many_results, index=False)
                     continue
 
             # Create an empty list to hold all the response data
             dfs = []
 
             # Create the temporary directory path to store the data
-            temp_repo_actors_path =  F"{row.full_name.replace('/','')}_repo_actors_{get_url_field}.csv" if 'full_name' in repo_df.columns else F"id_{str(row.id)}_repo_actors_{get_url_field}.csv"
+            temp_repo_actors_path =  F"{row.full_name.replace('/','')}_repo_actors_{get_url_field}.csv" if 'repo_full_name' not in repo_df.columns else F"id_{str(row.id)}_repo_actors_{get_url_field}.csv"
 
             # Check if the repo_actors_df has already been saved to the temporary directory
             if os.path.exists(temp_repo_actors_dir + temp_repo_actors_path):
