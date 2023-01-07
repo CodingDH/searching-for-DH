@@ -45,6 +45,7 @@ def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_fiel
 
     # Create the temporary directory path to store the data
     temp_repo_actors_dir = f"../data/temp/{repo_actors_output_path.split('/')[-1].split('.csv')[0]}/"
+    print(temp_repo_actors_dir)
 
     too_many_results = f"../data/error_logs/{repo_actors_output_path.split('/')[-1].split('.csv')[0]}_{get_url_field}_too_many_results.csv"
 

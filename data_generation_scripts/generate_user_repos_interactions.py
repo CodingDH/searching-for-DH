@@ -44,7 +44,7 @@ def get_user_repos(user_df, user_repos_output_path, repos_output_path, get_url_f
     threshold = 2500 if 'starred' in get_url_field else 1000
     for _, row in user_df.iterrows():
         try:
-
+            print(f"Getting {row.login}'s repos, total {threshold_check} = {row[threshold_check]}")
             # Create an empty list to hold all the response data
             dfs = []
 
@@ -53,6 +53,11 @@ def get_user_repos(user_df, user_repos_output_path, repos_output_path, get_url_f
 
             # Check if the user_repos_df has already been saved to the temporary directory
             if os.path.exists(temp_user_repos_dir + temp_user_repos_path):
+                user_progress_bar.update(1)
+                continue
+            
+            if row[threshold_check] == 0:
+                print(f"Skipping {row.login} due to {threshold_check} == 0")
                 user_progress_bar.update(1)
                 continue
 

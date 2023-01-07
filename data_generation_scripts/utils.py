@@ -582,8 +582,13 @@ def get_core_users_repos():
     """Function to get core users and repos
     :return: core users and repos
     """
-    repo_df = pd.read_csv("../data/large_files/entity_files/repos_dataset.csv", low_memory=False)
-    search_queries_repo_join_df = pd.read_csv("../data/join_files/search_queries_repo_join_dataset.csv")
-    core_repos = repo_df[repo_df["id"].isin(search_queries_repo_join_df["id"].unique())]
+    core_repos_path = "../data/derived_files/core_repos.csv"
+    if os.path.exists(core_repos_path):
+        core_repos = pd.read_csv(core_repos_path)
+        
+    else:
+        repo_df = pd.read_csv("../data/large_files/entity_files/repos_dataset.csv", low_memory=False)
+        search_queries_repo_join_df = pd.read_csv("../data/join_files/search_queries_repo_join_dataset.csv")
+        core_repos = repo_df[repo_df["id"].isin(search_queries_repo_join_df["id"].unique())]
     core_users = pd.read_csv("../data/derived_files/core_users.csv")
     return core_users, core_repos
