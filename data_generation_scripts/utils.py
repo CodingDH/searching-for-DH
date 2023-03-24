@@ -36,6 +36,15 @@ def check_total_pages(url):
         print('hit rate limiting. trying to sleep...')
         time.sleep(120)
         response = requests.get(url, headers=auth_headers, timeout=10)
+        if response.status_code != 200:
+            rates_df = check_rate_limit()
+            if rates_df['resources.core.remaining'].values[0] == 0:
+                print('rate limit reached. sleeping for 1 hour')
+                time.sleep(3600)
+                response = requests.get(url, headers=auth_headers, timeout=10)
+                if response.status_code != 200:
+                    print(f'query failed third time with code {response.status_code}. Failing URL: {url}')
+                    total_pages = 1
         total_pages = 1 if len(response.links) == 0 else re.search('\d+$', response.links['last']['url']).group()
     else:
         total_pages = 1 if len(response.links) == 0 else re.search('\d+$', response.links['last']['url']).group()
@@ -48,6 +57,15 @@ def check_total_results(url):
         print('hit rate limiting. trying to sleep...')
         time.sleep(120)
         response = requests.get(url, headers=auth_headers, timeout=10)
+        if response.status_code != 200:
+            rates_df = check_rate_limit()
+            if rates_df['resources.core.remaining'].values[0] == 0:
+                print('rate limit reached. sleeping for 1 hour')
+                time.sleep(3600)
+                response = requests.get(url, headers=auth_headers, timeout=10)
+                if response.status_code != 200:
+                    print(f'query failed third time with code {response.status_code}. Failing URL: {url}')
+                    data = {'total_count': None}
         data = response.json()
     else:
         data = response.json()
