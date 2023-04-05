@@ -178,31 +178,36 @@ def combine_search_df(initial_repo_output_path, repo_output_path, repo_join_outp
     :param org_output_path: the path to the output file
     :return: a dataframe of the combined data"""
     return_df = True
+    print("Combining repo files")
     repo_searched_files = read_combine_files(
         initial_repo_output_path, 'searched')
     repo_tagged_files = read_combine_files(initial_repo_output_path, 'tagged')
 
     repo_join_df = pd.concat([repo_searched_files, repo_tagged_files])
     repo_join_df['search_query_time'] = datetime.now().strftime("%Y-%m-%d")
+    print("Checking if older file exists")
     check_if_older_file_exists(repo_join_output_path)
     repo_join_df.to_csv(repo_join_output_path, index=False)
     repo_df = repo_join_df.drop_duplicates(subset='id')
     repo_df = repo_df.reset_index(drop=True)
     repo_df = repo_df.drop(columns=['search_query'])
+    print("Adding repos")
     repo_df = check_add_repos(repo_df, repo_output_path, return_df=True)
 
+    print("Combining user files")
     user_join_df = read_combine_files(initial_user_output_path, 'searched')
     user_join_df['search_query_time'] = datetime.now().strftime("%Y-%m-%d")
+    print("Checking if older file exists")
     check_if_older_file_exists(user_join_output_path)
     user_join_df.to_csv(user_join_output_path, index=False)
     user_df = user_join_df.drop_duplicates(subset='id')
     user_df = user_df.reset_index(drop=True)
     user_df = user_df.drop(columns=['search_query'])
     org_df = user_df[user_df.type == "Organization"]
-
+    print("Adding users")
     user_df = check_add_users(
         user_df, user_output_path, return_df, overwrite_existing_temp_files)
-
+    print("Adding orgs")
     org_df = check_add_orgs(org_df, org_output_path,
                             return_df, overwrite_existing_temp_files)
 
@@ -363,8 +368,10 @@ if __name__ == '__main__':
     repo_df, repo_join_df, user_df, user_join_df, org_df = combine_search_df(
         initial_repo_output_path, repo_output_path, repo_join_output_path, initial_user_output_path, user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files)
     join_unique_field = 'search_query'
+    print("Checking for older repo joins")
     repo_join_df = check_for_joins_in_older_queries(
         repo_df, repo_join_output_path, repo_join_df, join_unique_field)
+    print("Checking for older user joins")
     user_join_df = check_for_joins_in_older_queries(
         user_df, user_join_output_path, user_join_df, join_unique_field)
 
