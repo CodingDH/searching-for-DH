@@ -36,6 +36,15 @@ def check_total_pages(url):
         print('hit rate limiting. trying to sleep...')
         time.sleep(120)
         response = requests.get(url, headers=auth_headers, timeout=10)
+        if response.status_code != 200:
+            rates_df = check_rate_limit()
+            if rates_df['resources.core.remaining'].values[0] == 0:
+                print('rate limit reached. sleeping for 1 hour')
+                time.sleep(3600)
+                response = requests.get(url, headers=auth_headers, timeout=10)
+                if response.status_code != 200:
+                    print(f'query failed third time with code {response.status_code}. Failing URL: {url}')
+                    total_pages = 1
         total_pages = 1 if len(response.links) == 0 else re.search('\d+$', response.links['last']['url']).group()
     else:
         total_pages = 1 if len(response.links) == 0 else re.search('\d+$', response.links['last']['url']).group()
@@ -48,6 +57,15 @@ def check_total_results(url):
         print('hit rate limiting. trying to sleep...')
         time.sleep(120)
         response = requests.get(url, headers=auth_headers, timeout=10)
+        if response.status_code != 200:
+            rates_df = check_rate_limit()
+            if rates_df['resources.core.remaining'].values[0] == 0:
+                print('rate limit reached. sleeping for 1 hour')
+                time.sleep(3600)
+                response = requests.get(url, headers=auth_headers, timeout=10)
+                if response.status_code != 200:
+                    print(f'query failed third time with code {response.status_code}. Failing URL: {url}')
+                    data = {'total_count': None}
         data = response.json()
     else:
         data = response.json()
@@ -413,18 +431,21 @@ def check_add_repos(potential_new_repo_df, repo_output_path, return_df):
     :param return_df: boolean to return dataframe or not
     :return: repo dataframe
     """
-    # error_file_path = '../data/error_logs/potential_repos_errors.csv'
+    error_file_path = '../data/error_logs/potential_repos_errors.csv'
     repo_headers = pd.read_csv('../data/metadata_files/repo_headers.csv')
     if os.path.exists(repo_output_path):
         repo_df = pd.read_csv(repo_output_path)
         new_repo_df = potential_new_repo_df[~potential_new_repo_df.id.isin(repo_df.id)]
-        # error_df = check_return_error_file(error_file_path)
-        # if len(error_df) > 0:
-        #     new_repo_df = new_repo_df[~new_repo_df.full_name.isin(error_df.full_name)]
+        error_df = check_return_error_file(error_file_path)
+        if len(error_df) > 0:
+            new_repo_df = new_repo_df[~new_repo_df.full_name.isin(error_df.full_name)]
+        print(len(new_repo_df))
         if len(new_repo_df) > 0:
             new_repo_df = new_repo_df[repo_headers.columns]
             repo_df = pd.concat([repo_df, new_repo_df])
             repo_df = repo_df.drop_duplicates(subset=['id'])
+        else:
+            repo_df = repo_df[repo_headers.columns]
     else:
         repo_df = potential_new_repo_df
 

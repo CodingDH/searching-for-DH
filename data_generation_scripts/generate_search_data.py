@@ -122,9 +122,9 @@ def process_large_search_data(rates_df, search_url, dh_term, params, initial_out
     for year in years:
         yearly_output_path = initial_output_path + f"_{year}.csv"
         if year == current_year:
-            query = search_url + f"%22{dh_term}%22+created%3A{year}-01-01..{year}-{current_month}-{current_day}+sort:created{params}"
+            query = search_url + f"{dh_term}+created%3A{year}-01-01..{year}-{current_month}-{current_day}+sort:created{params}"
         else:
-            query = search_url + f"%22{dh_term}%22+created%3A{year}-01-01..{year}-12-31+sort:created{params}"
+            query = search_url + f"{dh_term}+created%3A{year}-01-01..{year}-12-31+sort:created{params}"
         print(query)
         total_pages = int(check_total_pages(query))
         print(f"Total pages: {total_pages}")
@@ -203,12 +203,14 @@ def generate_initial_search_datasets(rates_df, initial_repo_output_path,  repo_o
     :return: a dataframe of the combined data"""
 
     #Get the list of terms to search for
-    dh_df = pd.DataFrame([json.load(codecs.open('../data/metadata_files/en.Digital humanities.json', 'r', 'utf-8-sig'))])
-    dh_df = dh_df.melt()
-    dh_df.columns = ['language', 'term']
-    dh_df.sort_values(by='language', inplace=True)
-    # Combine German and English terms because of identical spelling (should maybe make this a programatic check)
-    dh_df = dh_df.groupby('term')['language'].apply('_'.join).reset_index()
+    # dh_df = pd.DataFrame([json.load(codecs.open('../data/metadata_files/en.Digital humanities.json', 'r', 'utf-8-sig'))])
+    # dh_df = dh_df.melt()
+    # dh_df.columns = ['language', 'term']
+    # dh_df.sort_values(by='language', inplace=True)
+    # # Combine German and English terms because of identical spelling (should maybe make this a programatic check)
+    # dh_df = dh_df.groupby('term')['language'].apply('_'.join).reset_index()
+
+    dh_df = pd.read_csv("../data/derived_files/cleaned_translated_dh_terms.csv")
 
     if not os.path.exists(initial_repo_output_path):
         os.makedirs(initial_repo_output_path)
@@ -220,8 +222,11 @@ def generate_initial_search_datasets(rates_df, initial_repo_output_path,  repo_o
         print(f"Getting repos with this term {row.term} in this language {row.language}")
         #Check if term exists as a topic
         search_query = row.term.replace(' ', '+')
+        search_query = search_query if row.term_source == "Digital Humanities" else '"' + search_query + '"' 
         search_topics_query = "https://api.github.com/search/topics?q=" + search_query
-        response = requests.get(search_topics_query, headers=auth_headers, timeout=5)
+        time.sleep(5)
+        response = requests.get(search_topics_query, headers=auth_headers)
+
         data = get_response_data(response, search_topics_query)
 
         # If term exists as a topic proceed
@@ -242,11 +247,11 @@ def generate_initial_search_datasets(rates_df, initial_repo_output_path,  repo_o
                     if total_tagged_results > 1000:
                         search_url = "https://api.github.com/search/repositories?q=topic:"
                         params = "&per_page=100&page=1"
-                        initial_tagged_output_path = initial_repo_output_path + f'repos_tagged_{row.language}_{output_term}'
+                        initial_tagged_output_path = initial_repo_output_path + f'{"_".join(row.term_source.lower().split(" "))}/repos_tagged_{row.language}_{output_term}'
                         process_large_search_data(rates_df, search_url, tagged_query, params, initial_tagged_output_path, total_tagged_results)
                     else:
                         # If fewer than a 1000 proceed to normal search calls
-                        final_tagged_output_path = initial_repo_output_path + f'repos_tagged_{row.language}_{output_term}.csv'
+                        final_tagged_output_path = initial_repo_output_path + f'{"_".join(row.term_source.lower().split(" "))}/repos_tagged_{row.language}_{output_term}.csv'
                         process_search_data(rates_df, repos_tagged_query, final_tagged_output_path, total_tagged_results)
 
         # Now search for repos that contain query string
@@ -260,10 +265,10 @@ def generate_initial_search_datasets(rates_df, initial_repo_output_path,  repo_o
                 search_url = "https://api.github.com/search/repositories?q="
                 dh_term = search_query
                 params = "&per_page=100&page=1"
-                initial_searched_output_path = initial_repo_output_path + f'repos_searched_{row.language}_{output_term}'
+                initial_searched_output_path = initial_repo_output_path + f'{"_".join(row.term_source.lower().split(" "))}/repos_searched_{row.language}_{output_term}'
                 process_large_search_data(rates_df, search_url, dh_term, params, initial_searched_output_path, total_search_results)
             else:
-                final_searched_output_path = initial_repo_output_path + f'repos_searched_{row.language}_{output_term}.csv'
+                final_searched_output_path = initial_repo_output_path + f'{"_".join(row.term_source.lower().split(" "))}/repos_searched_{row.language}_{output_term}.csv'
                 process_search_data(rates_df, search_repos_query, final_searched_output_path, total_search_results)
 
         # Now search for repos that contain query string
@@ -276,10 +281,10 @@ def generate_initial_search_datasets(rates_df, initial_repo_output_path,  repo_o
                 search_url = "https://api.github.com/search/users?q="
                 dh_term = search_query
                 params = "&per_page=100&page=1"
-                initial_searched_output_path = initial_user_output_path + f'users_searched_{row.language}_{output_term}'
+                initial_searched_output_path = initial_user_output_path + f'{"_".join(row.term_source.lower().split(" "))}/users_searched_{row.language}_{output_term}'
                 process_large_search_data(rates_df, search_url, dh_term, params, initial_searched_output_path, total_search_results)
             else:
-                final_searched_output_path = initial_user_output_path + f'users_searched_{row.language}_{output_term}.csv'
+                final_searched_output_path = initial_user_output_path + f'{"_".join(row.term_source.lower().split(" "))}/users_searched_{row.language}_{output_term}.csv'
                 process_search_data(rates_df, search_users_query, final_searched_output_path, total_search_results)
 
 
@@ -325,5 +330,7 @@ if __name__ == '__main__':
     load_existing_data = False
     overwrite_existing_temp_files = False
     org_output_path = "../data/entity_files/orgs_dataset.csv"
+    rates_df = check_rate_limit()
 
-    combine_search_df(initial_repo_output_path, repo_output_path, repo_join_output_path, initial_user_output_path, user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files)
+    # combine_search_df(initial_repo_output_path, repo_output_path, repo_join_output_path, initial_user_output_path, user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files)
+    get_initial_search_datasets(rates_df, initial_repo_output_path,  repo_output_path, repo_join_output_path, initial_user_output_path,  user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files, load_existing_data)
