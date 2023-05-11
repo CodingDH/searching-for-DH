@@ -8,6 +8,11 @@ import math
 import shutil
 from tqdm import tqdm
 from datetime import datetime
+import altair as alt
+import warnings
+warnings.filterwarnings('ignore')
+import vl_convert as vlc
+
 
 
 auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
@@ -613,3 +618,28 @@ def get_core_users_repos():
         core_repos = repo_df[repo_df["id"].isin(search_queries_repo_join_df["id"].unique())]
     core_users = pd.read_csv("../data/derived_files/core_users.csv")
     return core_users, core_repos
+
+
+def save_chart(chart, filename, scale_factor=1):
+    '''
+    Save an Altair chart using vl-convert
+    
+    Parameters
+    ----------
+    chart : altair.Chart
+        Altair chart to save
+    filename : str
+        The path to save the chart to
+    scale_factor: int or float
+        The factor to scale the image resolution by.
+        E.g. A value of `2` means two times the default resolution.
+    '''
+    with alt.data_transformers.enable("default"), alt.data_transformers.disable_max_rows():
+        if filename.split('.')[-1] == 'svg':
+            with open(filename, "w") as f:
+                f.write(vlc.vegalite_to_svg(chart.to_dict()))
+        elif filename.split('.')[-1] == 'png':
+            with open(filename, "wb") as f:
+                f.write(vlc.vegalite_to_png(chart.to_dict(), scale=scale_factor))
+        else:
+            raise ValueError("Only svg and png formats are supported")
