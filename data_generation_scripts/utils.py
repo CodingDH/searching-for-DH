@@ -77,11 +77,11 @@ def check_total_results(url):
     return data['total_count']
 
 def get_response_data(response, query):
-    """Function to get response data from api call
-    :param response: response from api call
-    :param query: query used to make api call
+    """Function to get and process response data from GitHub API call
+    :param response: response from initial API call
+    :param query: query used to make initial API call
     :return: response data"""
-    # Check if response is valid
+    # First, check if response is valid
     response_data = []
     if response.status_code != 200:
         if response.status_code == 401:
@@ -120,22 +120,52 @@ def get_response_data(response, query):
 4. Check if older entity files exist and grab any missing entities to add to our most recent file"""
 
 def read_combine_files(dir_path, file_path_contains=None):
-    """Function to get combined users dataframe. Run this after all users have been added to the temp directory
-    :param dir_path: path to users temp folder
-    :param file_path_contains: string to search for in file path (useful for join files that all exist in same repo)
-    :return: combined users dataframe"""
+    """Function to combine all files. Useful because we have historic data that sometimes we want to concat and check for missing entries
+    :param dir_path: path to directory with files
+    :param file_path_contains: string to filter files by
+    :return: combined_df dataframe
+    """
     rows = []
     for subdir, _, files in os.walk(dir_path):
         for f in files:
             try:
                 if file_path_contains is not None:
                     if file_path_contains in f:
-                        rows.append(pd.read_csv(os.path.join(subdir, f), low_memory=False))
+                        rows.append(pd.read_csv(os.path.join(subdir, f), low_memory=False, encoding='utf-8'))
                 else:
-                    rows.append(pd.read_csv(os.path.join(subdir, f), low_memory=False))
+                    rows.append(pd.read_csv(os.path.join(subdir, f), low_memory=False, encoding='utf-8'))
             except pd.errors.EmptyDataError:
                 print(f'Empty dataframe for {f}')
     combined_df = pd.concat(rows) if len(rows) > 0 else pd.DataFrame()
+    return combined_df
+
+def read_combine_large_files(dir_path, file_path_contains=None):
+    """Function to combine large files. Useful because we have historic data that sometimes we want to concat and check for missing entries. Only returns top 2 files sorted by size and date.
+    :param dir_path: path to directory with files
+    :param file_path_contains: string to filter files by
+    :return: combined_df dataframe
+    """
+    relevant_files = []
+    for dir, _, files in os.walk(dir_path):
+        for file in files:
+            if (file_path_contains is None) or (file_path_contains in file):
+                file_dict = {}
+                file_name = os.path.join(dir, file)
+                # check file size
+                file_size = os.path.getsize(os.path.join(dir, file))
+                file_dict['file_name'] = file_name
+                file_dict['file_size'] = file_size
+                relevant_files.append(file_dict)  
+    files_df = pd.DataFrame(relevant_files)
+    files_df['date'] = "202" + files_df['file_name'].str.split('202').str[1].str.split('.').str[0]
+    files_df.date = files_df.date.str.replace("_", "-")
+    files_df.date = pd.to_datetime(files_df.date)
+    top_files = files_df.sort_values(by=['file_size', 'date'], ascending=[False, False]).head(2)
+    dfs = []
+    for _, row in top_files.iterrows():
+        df = pd.read_csv(row.file_name, low_memory=False)
+        dfs.append(df)
+    combined_df = pd.concat(dfs) if len(dfs) > 0 else pd.DataFrame()
     return combined_df
 
 def check_return_error_file(error_file_path):
@@ -179,7 +209,7 @@ def check_if_older_file_exists(file_path):
             shutil.copy2(src, dst)  
 
 
-def check_for_entity_in_older_queries(entity_path, entity_df):
+def check_for_entity_in_older_queries(entity_path, entity_df, is_large):
     """Function to check if entity exists in older queries and add it to our most recent version of the file
     :param entity_path: path to entity file
     :param entity_df: entity dataframe"""
@@ -188,7 +218,10 @@ def check_for_entity_in_older_queries(entity_path, entity_df):
     older_entity_file_path = entity_path.replace('data/', 'data/older_files/')
     older_entity_file_dir = os.path.dirname(older_entity_file_path) + '/'
 
-    older_entity_df = read_combine_files(older_entity_file_dir, entity_type)
+    if is_large:
+        older_entity_df = read_combine_large_files(older_entity_file_dir, entity_type)
+    else:
+        older_entity_df = read_combine_files(older_entity_file_dir, entity_type)
     if len(older_entity_df) > 0:
         missing_entities = older_entity_df[~older_entity_df.id.isin(entity_df.id)]
 
@@ -440,24 +473,29 @@ def check_add_repos(potential_new_repo_df, repo_output_path, return_df):
     repo_headers = pd.read_csv('../data/metadata_files/repo_headers.csv')
     if os.path.exists(repo_output_path):
         repo_df = pd.read_csv(repo_output_path)
+        print(f"Number of repos: {len(repo_df)}", time.time())
         new_repo_df = potential_new_repo_df[~potential_new_repo_df.id.isin(repo_df.id)]
         error_df = check_return_error_file(error_file_path)
         if len(error_df) > 0:
             new_repo_df = new_repo_df[~new_repo_df.full_name.isin(error_df.full_name)]
-        print(len(new_repo_df))
+        print(f"Number of new repos: {len(new_repo_df)}", time.time())
         if len(new_repo_df) > 0:
             new_repo_df = new_repo_df[repo_headers.columns]
             repo_df = pd.concat([repo_df, new_repo_df])
             repo_df = repo_df.drop_duplicates(subset=['id'])
+            print(f"Number of repos: {len(repo_df)}", time.time())
         else:
             repo_df = repo_df[repo_headers.columns]
+            print(f"Number of repos: {len(repo_df)}", time.time(), "inner else statement")
     else:
         repo_df = potential_new_repo_df
 
+    print(f"Number of repos: {len(repo_df)}, checking if older file exists", time.time())
     check_if_older_file_exists(repo_output_path)
     repo_df['repo_query_time'] = datetime.now().strftime("%Y-%m-%d")
     repo_df.to_csv(repo_output_path, index=False)
-    check_for_entity_in_older_queries(repo_output_path, repo_df)
+    print("Repo file updated", time.time())
+    # check_for_entity_in_older_queries(repo_output_path, repo_df)
     if return_df:
         repo_df = get_repo_df(repo_output_path)
         return repo_df
