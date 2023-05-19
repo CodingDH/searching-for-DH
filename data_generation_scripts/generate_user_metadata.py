@@ -22,13 +22,13 @@ def process_response(response):
         total_stars = re.search("\d+$", response.links['last']['url']).group()
     return total_stars
 
-def get_total_stars(response, query):
+def get_total_results(response, query):
     """Function to get response data from api call
     :param response: response from api call
     :param query: query used to make api call
     :return: response data"""
     # Check if response is valid
-    total_stars = 0
+    total_results = 0
     if response.status_code != 200:
         if response.status_code == 401:
             print("response code 401 - unauthorized access. check api key")
@@ -56,37 +56,38 @@ def get_total_stars(response, query):
                         print(
                             f'query failed third time with code {response.status_code}. Failing URL: {query}')
                     else:
-                        total_stars = process_response(response)
+                        total_results = process_response(response)
             else:
-                total_stars = process_response(response)
+                total_results = process_response(response)
     else:
-        total_stars = process_response(response)
-    return total_stars
+        total_results = process_response(response)
+    return total_results
 
 
-def get_user_stars(row):
-    """Function to get total stars for each user"""
-    url = f"{row.starred_url.split('{')[0]}?per_page=1"
+def get_user_results(row, count_field, url_field):
+    """Function to get total results for each user"""
+
+    url = f"{row[url_field].split('{')[0]}?per_page=1"
     response = requests.get(url, headers=auth_headers)
-    total_stars = get_total_stars(response, url)
-    row['star_count'] = total_stars
+    total_results = get_total_results(response, url)
+    row[count_field] = total_results
     if row.name == 0:
-        pd.DataFrame(row).T.to_csv('../data/temp/star_counts.csv', header=True, index=False)
+        pd.DataFrame(row).T.to_csv(f'../data/temp/{count_field}.csv', header=True, index=False)
     else:
-        pd.DataFrame(row).T.to_csv('../data/temp/star_counts.csv', mode='a', header=False, index=False)
+        pd.DataFrame(row).T.to_csv(f'../data/temp/{count_field}.csv', mode='a', header=False, index=False)
     return row
 
 
-def check_total_stars(user_df):
-    """Function to check total stars for each user
+def check_total_results(user_df, count_field, url_field):
+    """Function to check total results for each user
     :param user_df: dataframe of users
-    :return: dataframe of users with total stars"""
-    tqdm.pandas(desc="Getting total stars for each user")
+    :return: dataframe of users with total results"""
+    tqdm.pandas(desc="Getting total results for each user")
     user_df = user_df.reset_index(drop=True)
-    user_df = user_df.progress_apply(get_user_stars, axis=1)
+    user_df = user_df.progress_apply(get_user_results, axis=1, count_field=count_field, url_field=url_field)
     return user_df
 
 if __name__ == "__main__":
     core_users, core_repos = get_core_users_repos()
-    user_df = check_total_stars(core_users)
+    user_df = check_total_results(core_users, 'star_count')
     user_df.to_csv('../data/derived_files/core_users.csv', index=False)

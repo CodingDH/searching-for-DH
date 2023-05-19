@@ -170,10 +170,16 @@ def get_org_users_activities(org_df, org_members_output_path, users_output_path,
 
 if __name__ == '__main__':
     orgs_output_path = '../data/entity_files/orgs_dataset.csv'
-    org_df = pd.read_csv(orgs_output_path, low_memory=False)
+    core_orgs_output_path = '../data/derived_files/core_orgs.csv'
+    if os.path.exists(core_orgs_output_path):
+        core_orgs = pd.read_csv(core_orgs_output_path)
+    else:
+        core_orgs = pd.read_csv(orgs_output_path, low_memory=False)
+    core_orgs["members_url"] = core_orgs["url"].apply(lambda x: x + "/public_members")
+    core_orgs.members_url = core_orgs.members_url.str.replace('users', 'orgs')
     org_members_output_path = '../data/join_files/org_members_dataset.csv'
     users_output_path = '../data/entity_files/users_dataset.csv'
     get_url_field = 'members_url'
     load_existing_files = False
     overwrite_existing_temp_files = False
-    org_members_df, users_df = get_org_users_activities(org_df, org_members_output_path, users_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files)
+    org_members_df, users_df = get_org_users_activities(core_orgs, org_members_output_path, users_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files)

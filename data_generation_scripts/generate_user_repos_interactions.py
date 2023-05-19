@@ -13,11 +13,12 @@ import apikey
 import pandas as pd
 import requests
 from tqdm import tqdm
+from datetime import datetime
 
 sys.path.append("..")
 
 from data_generation_scripts.utils import *
-from data_generation_scripts.generate_user_metadata import check_total_stars
+from data_generation_scripts.generate_user_metadata import check_total_results
 
 warnings.filterwarnings('ignore')
 
@@ -25,6 +26,8 @@ warnings.filterwarnings('ignore')
 auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
 
 auth_headers = {'Authorization': f'token {auth_token}','User-Agent': 'request'}
+
+
 
 def get_user_repos(user_df, user_repos_output_path, repos_output_path, get_url_field, error_file_path, overwrite_existing_temp_files=True):
     # Create the temporary directory path to store the data
@@ -40,7 +43,10 @@ def get_user_repos(user_df, user_repos_output_path, repos_output_path, get_url_f
 
     # Create our progress bars for getting Repo Contributors and Users (not sure the user one works properly in Jupyter though)
     user_progress_bar = tqdm(total=len(user_df), desc="Getting User's Repos", position=0)
-    threshold_check = 'star_count' if 'starred' in get_url_field else 'public_repos'
+
+    cols_df = pd.read_csv("../data/metadata_files/user_url_cols.csv")
+    threshold_row = cols_df[cols_df['col_url'] == get_url_field]
+    threshold_check = threshold_row['col_name'].values[0]
     threshold = 2500 if 'starred' in get_url_field else 1000
     for _, row in user_df.iterrows():
         try:
@@ -75,7 +81,9 @@ def get_user_repos(user_df, user_repos_output_path, repos_output_path, get_url_f
             url = row[get_url_field].split('{')[0] + '?per_page=100&page=1' if '{' in row[get_url_field] else row[get_url_field] + '?per_page=100&page=1'
 
             # Make the first request
+            print(f"Making request to {url}", time.time())
             response = requests.get(url, headers=auth_headers, timeout=10)
+            print(f"Request to {url} complete", time.time())
             response_data = get_response_data(response, url)
 
             # If the response is empty, skip to the next repo
@@ -89,6 +97,7 @@ def get_user_repos(user_df, user_repos_output_path, repos_output_path, get_url_f
             # Check if there is a next page and if so, keep making requests until there is no next page
             while "next" in response.links.keys():
                 time.sleep(120)
+                print(f"Making request to {response.links['next']['url']}", time.time())
                 query = response.links['next']['url']
                 response = requests.get(query, headers=auth_headers, timeout=5)
                 response_data = get_response_data(response, query)
@@ -99,7 +108,7 @@ def get_user_repos(user_df, user_repos_output_path, repos_output_path, get_url_f
                 dfs.append(response_df)
             # Concatenate the list of dfs into a single dataframe
             data_df = pd.concat(dfs)
-
+            print(f"Request to {url} complete", time.time())
             # If the dataframe is empty, skip to the next user
             if len(data_df) == 0:
                 user_progress_bar.update(1)
@@ -119,6 +128,7 @@ def get_user_repos(user_df, user_repos_output_path, repos_output_path, get_url_f
                 user_repos_df.to_csv(temp_user_repos_dir + temp_user_repos_path, index=False)
 
                 # Get the unique repos from the data_df
+                print(f"Checking for unique repos for {row.login}")
                 check_add_repos(data_df, repos_output_path,  return_df=False)
                 user_progress_bar.update(1)
         except:
@@ -160,20 +170,24 @@ def get_user_repo_activities(user_df,user_repos_output_path, repos_output_path, 
         # If we want to rerun our code, first check if the join file exists
         if os.path.exists(user_repos_output_path):
             # If it does, load it
+            print("Loading existing user repos file", time.time())
             user_repos_df = pd.read_csv(user_repos_output_path, low_memory=False)
             # Then check from our repo_df which repos are missing from the join file, using either the field we are grabing (get_url_field) or the the repo id
-            
+            print("Getting unprocessed repos", time.time())
             unprocessed_repos = user_df[~user_df['login'].isin(user_repos_df['user_login'])]
 
             # Check if the error log exists
             if os.path.exists(error_file_path):
                 # If it does, load it and also add the repos that were in the error log to the unprocessed repos so that we don't keep trying to grab errored repos
                 error_df = pd.read_csv(error_file_path)
+                print("Getting unprocessed repos from error log", time.time())
                 if len(error_df) > 0:
                     unprocessed_repos = unprocessed_repos[~unprocessed_repos[get_url_field].isin(error_df.error_url)]
+                    print("Getting unprocessed repos from error log", time.time())
             
             # If there are unprocessed repos, run the get_actors code to get them or return the existing data if there are no unprocessed repos
             if len(unprocessed_repos) > 0:
+                print("Getting user repos", time.time())
                 new_repos_df = get_user_repos(unprocessed_repos, user_repos_output_path, repos_output_path, get_url_field, error_file_path, overwrite_existing_temp_files)
             else:
                 new_repos_df = unprocessed_repos
@@ -199,12 +213,12 @@ if __name__ == '__main__':
     # Get the data
     core_users, core_repos = get_core_users_repos()
     if 'star_count' not in core_users.columns:
-        core_users = check_total_stars(core_users)
+        core_users = check_total_results(core_users, 'star_count', 'starred_url')
         core_users.to_csv('../data/derived_files/core_users.csv', index=False)
-    user_repos_output_path = "../data/large_files/join_files/user_starred_join_dataset.csv"
+    user_starred_output_path = "../data/large_files/join_files/user_starred_join_dataset.csv"
     repos_output_path = "../data/large_files/entity_files/repos_dataset.csv"
     get_url_field = "starred_url"
     load_existing_files = False
     overwrite_existing_temp_files = False
 
-    users_repos_df, repo_df = get_user_repo_activities(core_users,user_repos_output_path, repos_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files)
+    users_starred_df, repo_df = get_user_repo_activities(core_users,user_starred_output_path, repos_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files)
