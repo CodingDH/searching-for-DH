@@ -119,54 +119,53 @@ def get_response_data(response, query):
 3. Check if older file exists and move it to archive
 4. Check if older entity files exist and grab any missing entities to add to our most recent file"""
 
-def read_combine_files(dir_path, file_path_contains=None):
-    """Function to combine all files. Useful because we have historic data that sometimes we want to concat and check for missing entries
-    :param dir_path: path to directory with files
-    :param file_path_contains: string to filter files by
-    :return: combined_df dataframe
-    """
+def read_combine_files(dir_path, check_all_dirs, file_path_contains=None, large_files=False):
+    excluded_dirs = ['temp', 'derived_files', 'metadata_files', 'repo_data', 'user_data', 'derived_files', 'archived_data', 'error_logs', 'archived_files']
     rows = []
-    for subdir, _, files in os.walk(dir_path):
-        for f in files:
-            try:
-                if file_path_contains is not None:
-                    if file_path_contains in f:
-                        rows.append(pd.read_csv(os.path.join(subdir, f), low_memory=False, encoding='utf-8'))
-                else:
-                    rows.append(pd.read_csv(os.path.join(subdir, f), low_memory=False, encoding='utf-8'))
-            except pd.errors.EmptyDataError:
-                print(f'Empty dataframe for {f}')
+    relevant_files = []
+    for directory, _, files in os.walk(dir_path):
+        if check_all_dirs:
+            if directory == '../data':
+                continue
+            excluded_exists = [excluded_dir for excluded_dir in excluded_dirs if excluded_dir in directory]
+            if len(excluded_exists) == 0:
+                for file_name in files:
+                    row = read_csv_file(directory, file_name, file_path_contains)
+                    if row is not None:
+                        rows.append(row)
+                    if large_files:
+                        file_dict = {}
+                        file_name = os.path.join(directory, file_name)
+                        file_size = os.path.getsize(file_name)
+                        file_dict['file_name'] = file_name
+                        file_dict['file_size'] = file_size
+                        relevant_files.append(file_dict)
+        else:
+            for file_name in files:
+                row = read_csv_file(directory, file_name, file_path_contains)
+                if row is not None:
+                    rows.append(row)
+                if large_files:
+                    file_dict = {}
+                    file_name = os.path.join(directory, file_name)
+                    file_size = os.path.getsize(file_name)
+                    file_dict['file_name'] = file_name
+                    file_dict['file_size'] = file_size
+                    relevant_files.append(file_dict)
+    if large_files:
+        files_df = pd.DataFrame(relevant_files)
+        files_df['date'] = "202" + files_df['file_name'].str.split('202').str[1].str.split('.').str[0]
+        files_df.date = files_df.date.str.replace("_", "-")
+        files_df.date = pd.to_datetime(files_df.date)
+        top_files = files_df.sort_values(by=['file_size', 'date'], ascending=[False, False]).head(2)
+        rows = []
+        for _, row in top_files.iterrows():
+            df = read_csv_file(dir_path, row.file_name, file_path_contains)
+            if df is not None:
+                rows.append(df)
     combined_df = pd.concat(rows) if len(rows) > 0 else pd.DataFrame()
     return combined_df
 
-def read_combine_large_files(dir_path, file_path_contains=None):
-    """Function to combine large files. Useful because we have historic data that sometimes we want to concat and check for missing entries. Only returns top 2 files sorted by size and date.
-    :param dir_path: path to directory with files
-    :param file_path_contains: string to filter files by
-    :return: combined_df dataframe
-    """
-    relevant_files = []
-    for dir, _, files in os.walk(dir_path):
-        for file in files:
-            if (file_path_contains is None) or (file_path_contains in file):
-                file_dict = {}
-                file_name = os.path.join(dir, file)
-                # check file size
-                file_size = os.path.getsize(os.path.join(dir, file))
-                file_dict['file_name'] = file_name
-                file_dict['file_size'] = file_size
-                relevant_files.append(file_dict)  
-    files_df = pd.DataFrame(relevant_files)
-    files_df['date'] = "202" + files_df['file_name'].str.split('202').str[1].str.split('.').str[0]
-    files_df.date = files_df.date.str.replace("_", "-")
-    files_df.date = pd.to_datetime(files_df.date)
-    top_files = files_df.sort_values(by=['file_size', 'date'], ascending=[False, False]).head(2)
-    dfs = []
-    for _, row in top_files.iterrows():
-        df = pd.read_csv(row.file_name, low_memory=False)
-        dfs.append(df)
-    combined_df = pd.concat(dfs) if len(dfs) > 0 else pd.DataFrame()
-    return combined_df
 
 def check_return_error_file(error_file_path):
     """Function to check if error file exists and return it if it does
@@ -618,6 +617,15 @@ def check_for_joins_in_older_queries(entity_df, join_file_path, join_files_df, j
     older_join_file_dir = os.path.dirname(older_join_file_path) + '/'
 
     older_join_df = read_combine_files(older_join_file_dir, join_type)
+
+    large_join_file_path = join_file_path if 'large' in join_file_path else join_file_path.replace('data/', 'data/large_files/')
+    large_join_file_path = large_join_file_path.replace('data/', 'data/older_files/')
+    large_join_file_dir = os.path.dirname(large_join_file_path) + '/'
+
+    older_large_join_df = read_combine_large_files(large_join_file_dir, join_type)
+
+    older_join_df = pd.concat([older_join_df, older_large_join_df])
+    
     
     if len(older_join_df) > 0:
         if join_unique_field in older_join_df.columns:
