@@ -209,7 +209,7 @@ def check_if_older_file_exists(file_path):
             shutil.copy2(src, dst)  
 
 
-def check_for_entity_in_older_queries(entity_path, entity_df, is_large):
+def check_for_entity_in_older_queries(entity_path, entity_df, is_large=False):
     """Function to check if entity exists in older queries and add it to our most recent version of the file
     :param entity_path: path to entity file
     :param entity_df: entity dataframe"""
@@ -362,10 +362,12 @@ def check_add_users(potential_new_users_df, users_output_path, return_df, overwr
     if os.path.exists(users_output_path):
         users_df = pd.read_csv(users_output_path)
         new_users_df = potential_new_users_df[~potential_new_users_df.login.isin(users_df.login)]
+        print(f"Number of new users: {len(new_users_df)}")
         if len(error_df) > 0:
             new_users_df = new_users_df[~new_users_df.login.isin(error_df.login)]
         if len(new_users_df) > 0:
             users_progress_bar = tqdm(total=len(new_users_df), desc='Users', position=1)
+            print(len(new_users_df))
             expanded_new_users = get_new_users(new_users_df, temp_users_dir, users_progress_bar, error_file_path, overwrite_existing_temp_files)
         else:
             expanded_new_users = new_users_df
