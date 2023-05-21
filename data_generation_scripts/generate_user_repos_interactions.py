@@ -215,10 +215,14 @@ if __name__ == '__main__':
     if 'star_count' not in core_users.columns:
         core_users = check_total_results(core_users, 'star_count', 'starred_url')
         core_users.to_csv('../data/derived_files/core_users.csv', index=False)
+    search_queries_repo_df = pd.read_csv(
+    '../data/derived_files/updated_search_queries_repo_join_subset_dh_dataset.csv')
+    search_queries_user_df = pd.read_csv('../data/derived_files/search_queries_user_join_subset_dh_dataset.csv')
     user_starred_output_path = "../data/large_files/join_files/user_starred_join_dataset.csv"
     repos_output_path = "../data/large_files/entity_files/repos_dataset.csv"
-    get_url_field = "starred_url"
+    get_url_field = "repos_url"
     load_existing_files = False
     overwrite_existing_temp_files = False
 
+    subset_core_users = core_users[core_users['login'].isin(search_queries_user_df['login'])]
     users_starred_df, repo_df = get_user_repo_activities(core_users,user_starred_output_path, repos_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files)
