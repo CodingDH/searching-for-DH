@@ -12,6 +12,7 @@ import altair as alt
 import warnings
 warnings.filterwarnings('ignore')
 import vl_convert as vlc
+from typing import Optional, List, Any
 
 
 
@@ -25,16 +26,19 @@ auth_headers = {'Authorization': f'token {auth_token}','User-Agent': 'request'}
 3. Check total results
 4. Get response data"""
 
-def check_rate_limit():
+def check_rate_limit() -> pd.DataFrame:
     """Function to check rate limit status
     :return: data from rate limit api call"""
     # Checks for rate limit so that you don't hit issues with Github API. Mostly for search API that has a 30 requests per minute https://docs.github.com/en/rest/rate-limit
     url = 'https://api.github.com/rate_limit'
     response = requests.get(url, headers=auth_headers, timeout=10)
+    if response.status_code != 200:
+        print(f'Failed to retrieve rate limit with status code: {response.status_code}')
+        return pd.DataFrame()
     rates_df = pd.json_normalize(response.json())
     return rates_df
 
-def check_total_pages(url):
+def check_total_pages(url: str) -> int:
     # Check total number of pages to get from search. Useful for not going over rate limit
     response = requests.get(f'{url}?per_page=1', headers=auth_headers, timeout=10)
     if response.status_code != 200:
@@ -55,8 +59,14 @@ def check_total_pages(url):
         total_pages = 1 if len(response.links) == 0 else re.search('\d+$', response.links['last']['url']).group()
     return total_pages
 
-def check_total_results(url):
-    """Function to check total number of results from API. Useful for not going over rate limit. Differs from check_total_pages because this returns all results, not just total number of pagination."""
+def check_total_results(url: str) -> Optional[int]:
+    """Function to check total number of results from API. Useful for not going over rate limit. Differs from check_total_pages because this returns all results, not just total number of pagination.
+
+    :param url: URL to check.
+    :type url: str
+    :return: Total count of results.
+    :rtype: int, optional
+    """
     response = requests.get(url, headers=auth_headers, timeout=10)
     if response.status_code != 200:
         print('hit rate limiting. trying to sleep...')
@@ -114,12 +124,46 @@ def get_response_data(response, query):
     return response_data
 
 """Manipulate Files Functions
-1. Read and combine files
+1. Read csv file
+2. Read and combine files
 2. Check return error file
 3. Check if older file exists and move it to archive
 4. Check if older entity files exist and grab any missing entities to add to our most recent file"""
 
-def read_combine_files(dir_path, check_all_dirs, file_path_contains=None, large_files=False):
+def read_csv_file(directory: str, file_name: str, file_path_contains: Optional[str]) -> Optional[pd.DataFrame]:
+    """Reads a CSV file into a pandas DataFrame.
+    
+    :param directory: Directory of the file.
+    :type directory: str
+    :param file_name: Name of the file.
+    :type file_name: str
+    :param file_path_contains: Only files containing this string will be read.
+    :type file_path_contains: str, optional
+    :return: Data from the file as a pandas DataFrame, or None if the file is empty or does not contain the specified string.
+    :rtype: pandas.DataFrame, optional
+    """
+    if file_path_contains is None or file_path_contains in file_name:
+        try:
+            return pd.read_csv(os.path.join(directory, file_name), low_memory=False, encoding='utf-8')
+        except pd.errors.EmptyDataError:
+            print(f'Empty dataframe for {file_name}')
+            return None
+    return None
+
+def read_combine_files(dir_path: str, check_all_dirs: bool=False, file_path_contains: Optional[str]=None, large_files: bool=False) -> pd.DataFrame:
+    """Combines all files in a directory.
+    
+    :param dir_path: Path to directory with files.
+    :type dir_path: str
+    :param check_all_dirs: Whether to check all directories.
+    :type check_all_dirs: bool
+    :param file_path_contains: Only files containing this string will be read.
+    :type file_path_contains: str, optional
+    :param large_files: Whether to treat the files as large or not.
+    :type large_files: bool, optional
+    :return: Combined data from all relevant files.
+    :rtype: pandas.DataFrame
+    """
     excluded_dirs = ['temp', 'derived_files', 'metadata_files', 'repo_data', 'user_data', 'derived_files', 'archived_data', 'error_logs', 'archived_files']
     rows = []
     relevant_files = []
@@ -217,10 +261,9 @@ def check_for_entity_in_older_queries(entity_path, entity_df, is_large=False):
     older_entity_file_path = entity_path.replace('data/', 'data/older_files/')
     older_entity_file_dir = os.path.dirname(older_entity_file_path) + '/'
 
-    if is_large:
-        older_entity_df = read_combine_large_files(older_entity_file_dir, entity_type)
-    else:
-        older_entity_df = read_combine_files(older_entity_file_dir, entity_type)
+
+    older_entity_df = read_combine_files(dir_path=older_entity_file_dir, check_all_dirs=True, file_path_contains=entity_type, large_files=is_large)
+
     if len(older_entity_df) > 0:
         missing_entities = older_entity_df[~older_entity_df.id.isin(entity_df.id)]
 
@@ -337,7 +380,7 @@ def get_new_users(potential_new_users_df, temp_users_dir, users_progress_bar,  e
             # users_progress_bar.update(1)
             continue
     # Combine all users in temp directory into one dataframe
-    new_users_df = read_combine_files(temp_users_dir)
+    new_users_df = read_combine_files(dir_path=temp_users_dir)
     users_progress_bar.close()
     # Delete temp directory
     if overwrite_existing_temp_files:
@@ -455,7 +498,7 @@ def get_new_repos(potential_new_repos_df, temp_repos_dir, repos_progress_bar,  e
                 error_df.to_csv(error_file_path, index=False)
             # repos_progress_bar.update(1)
             continue
-    new_repos_df = read_combine_files(temp_repos_dir)
+    new_repos_df = read_combine_files(dir_path =temp_repos_dir)
     new_repos_df = new_repos_df.drop_duplicates(subset=['full_name', 'id'])
     new_repos_df = new_repos_df[repo_headers.columns]
     repos_progress_bar.close()
@@ -553,7 +596,7 @@ def get_orgs(org_df, org_output_path, error_file_path, overwrite_existing_temp_f
                 error_df.to_csv(error_file_path, index=False)
             org_progress_bar.update(1)
             continue
-    org_df = read_combine_files(temp_org_dir)
+    org_df = read_combine_files(dir_path=temp_org_dir)
     if overwrite_existing_temp_files:
         # Delete the temporary directory
         shutil.rmtree(temp_org_dir)
@@ -602,7 +645,7 @@ def get_org_df(output_path):
 """Join Functions
 1. Check if older join entities exist and add them to our latest join"""
 
-def check_for_joins_in_older_queries(entity_df, join_file_path, join_files_df, join_unique_field):
+def check_for_joins_in_older_queries(entity_df, join_file_path, join_files_df, join_unique_field, is_large=False):
     """Function to check if older join entities exist and add them to our latest join
     :param entity_df: dataframe of entities
     :param join_file_path: path to join file
@@ -616,16 +659,7 @@ def check_for_joins_in_older_queries(entity_df, join_file_path, join_files_df, j
     older_join_file_path = join_file_path.replace('data/', 'data/older_files/')
     older_join_file_dir = os.path.dirname(older_join_file_path) + '/'
 
-    older_join_df = read_combine_files(older_join_file_dir, join_type)
-
-    large_join_file_path = join_file_path if 'large' in join_file_path else join_file_path.replace('data/', 'data/large_files/')
-    large_join_file_path = large_join_file_path.replace('data/', 'data/older_files/')
-    large_join_file_dir = os.path.dirname(large_join_file_path) + '/'
-
-    older_large_join_df = read_combine_large_files(large_join_file_dir, join_type)
-
-    older_join_df = pd.concat([older_join_df, older_large_join_df])
-    
+    older_join_df = read_combine_files(dir_path=older_join_file_dir, check_all_dirs=True, file_path_contains=join_type, large_files=is_large)    
     
     if len(older_join_df) > 0:
         if join_unique_field in older_join_df.columns:
