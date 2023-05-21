@@ -14,6 +14,7 @@ from google.cloud import translate_v2 as translate
 from google.oauth2 import service_account
 
 key_path = apikey.load("GOOGLE_TRANSLATE_CREDENTIALS")
+key_path = key_path.replace('/Volumes/Samsung_T5/','/Users/zleblanc/')
 credentials = service_account.Credentials.from_service_account_file(
     key_path, scopes=["https://www.googleapis.com/auth/cloud-platform"],
 )
