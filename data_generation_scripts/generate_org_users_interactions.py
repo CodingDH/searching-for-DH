@@ -84,7 +84,7 @@ def get_members(org_df, org_members_output_path, users_output_path, get_url_fiel
                 org_members_df['org_id'] = row.id
                 org_members_df['org_url'] = row.url
                 org_members_df['org_html_url'] = row.html_url
-                org_members_df['org_full_name'] = row.name
+                org_members_df['org_login'] = row.login
                 org_members_df[get_url_field] = row[get_url_field]
 
                 # Save the org_members_df to the temporary directory
@@ -97,7 +97,7 @@ def get_members(org_df, org_members_output_path, users_output_path, get_url_fiel
         except:
             # print(f"Error on getting actors for {row.full_name}")
             org_progress_bar.total = org_progress_bar.total - 1
-            error_df = pd.DataFrame([{'org_name': row.name, 'error_time': time.time(), 'error_url': url}])
+            error_df = pd.DataFrame([{'org_login': row.login, 'error_time': time.time(), 'error_url': url}])
             # Write errors to relevant error log
             if os.path.exists(error_file_path):
                 error_df.to_csv(error_file_path, mode='a', header=False, index=False)
@@ -161,9 +161,11 @@ def get_org_users_activities(org_df, org_members_output_path, users_output_path,
         org_members_df['org_query_time'] = datetime.now().strftime("%Y-%m-%d")
         org_members_df.to_csv(org_members_output_path, index=False)
         # Finally, get the unique users which is updated in the get_members code and return it
-        clean_write_error_file(error_file_path, 'org_name')
+        clean_write_error_file(error_file_path, 'org_login')
         join_unique_field = 'org_query'
-        check_for_joins_in_older_queries(org_df, org_members_output_path, org_members_df, join_unique_field)
+        filter_field = ['org_login', 'login']
+        search_subset = False
+        org_members_df = check_for_joins_in_older_queries( org_members_output_path, org_members_df, join_unique_field, filter_field, search_subset)
         users_df = get_user_df(users_output_path)
     return org_members_df, users_df
 
@@ -177,7 +179,7 @@ if __name__ == '__main__':
         core_orgs = pd.read_csv(orgs_output_path, low_memory=False)
     core_orgs["members_url"] = core_orgs["url"].apply(lambda x: x + "/public_members")
     core_orgs.members_url = core_orgs.members_url.str.replace('users', 'orgs')
-    org_members_output_path = '../data/join_files/org_members_dataset.csv'
+    org_members_output_path = '../data/join_files/org_members_join_dataset.csv'
     users_output_path = '../data/entity_files/users_dataset.csv'
     get_url_field = 'members_url'
     load_existing_files = False

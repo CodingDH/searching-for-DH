@@ -323,7 +323,7 @@ def generate_initial_search_datasets(rates_df, initial_repo_output_path,  repo_o
 
     repo_df, repo_join_df, user_df, user_join_df, org_df = combine_search_df(initial_repo_output_path, repo_output_path, repo_join_output_path, initial_user_output_path, user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files)
     join_unique_field = 'search_query'
-    filter_field = "id"
+    filter_field = ["id"]
     search_subset = True
     repo_join_df = check_for_joins_in_older_queries(repo_join_output_path, repo_join_df, join_unique_field, filter_field, search_subset)
     user_join_df = check_for_joins_in_older_queries(user_join_output_path, user_join_df, join_unique_field, filter_field, search_subset)

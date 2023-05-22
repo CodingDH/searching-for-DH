@@ -136,7 +136,8 @@ def get_org_repo_activities(org_df,org_repos_output_path, repos_output_path, get
             org_repos_df = pd.read_csv(org_repos_output_path, low_memory=False)
             # Then check from our repo_df which repos are missing from the join file, using either the field we are grabing (get_url_field) or the the repo id
             
-            unprocessed_org_repos = org_df[~org_df['login'].isin(org_repos_df['org_login'])]
+            if get_url_field in org_repos_df.columns:
+                unprocessed_org_repos = org_df[~org_df[get_url_field].isin(org_repos_df['org_login'])]
 
             # Check if the error log exists
             if os.path.exists(error_file_path):
@@ -162,7 +163,9 @@ def get_org_repo_activities(org_df,org_repos_output_path, repos_output_path, get
         org_repos_df.to_csv(org_repos_output_path, index=False)
         clean_write_error_file(error_file_path, 'login')
         join_unique_field = 'org_query'
-        check_for_joins_in_older_queries(org_df, org_repos_output_path, org_repos_df, join_unique_field)
+        filter_field = ['org_login', 'full_name']
+        subset_search = False
+        check_for_joins_in_older_queries( org_repos_output_path, org_repos_df, join_unique_field, filter_field, subset_search)
         repos_df = get_repo_df(repos_output_path)
     return org_repos_df, repos_df
 

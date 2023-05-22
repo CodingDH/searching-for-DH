@@ -14,13 +14,14 @@ def ensure_all_results_exist(initial_search_queries_repo_df, exisiting_search_qu
     if (os.path.exists(existing_search_queries_user_file_path)) and (os.path.exists(exisiting_search_queries_repo_file_path)):
         search_queries_user_df = pd.read_csv(existing_search_queries_user_file_path)
         search_queries_repo_df = pd.read_csv(exisiting_search_queries_repo_file_path)
-
-        new_dh_repos = initial_search_queries_repo_df[search_queries_repo_df.search_term_source == "Digital Humanities"]
-        new_dh_users = initial_search_queries_user_df[search_queries_user_df.search_term_source == "Digital Humanities"]
-        missing_repos = new_dh_repos[~new_dh_repos.full_name.isin(search_queries_repo_df.full_name)]
-        missing_users = new_dh_users[~new_dh_users.login.isin(search_queries_user_df.login)]
-        if len(missing_repos) > 0:
-            repo_join_df = check_for_joins_in_older_queries(search_queries_repo_df, repo_join_output_path, repo_join_df, join_unique_field)
+        repo_join_output_path = "search_queries_repo_join_dataset"
+        
+        join_unique_field = 'search_query'
+        filter_field = 'id'
+        time_field = 'search_query_time' 
+        cleaned_field = 'cleaned_search_query_time' 
+        
+        repo_join_df = check_for_joins_in_older_queries(search_queries_repo_df, repo_join_output_path, repo_join_df, join_unique_field, filter_field)
     else:
         pass
 
