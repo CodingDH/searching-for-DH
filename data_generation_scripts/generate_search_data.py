@@ -160,8 +160,8 @@ def combine_search_df(initial_repo_output_path, repo_output_path, repo_join_outp
     :param org_output_path: the path to the output file
     :return: a dataframe of the combined data"""
     return_df = True
-    repo_searched_files = read_combine_files(initial_repo_output_path, 'searched')
-    repo_tagged_files = read_combine_files(initial_repo_output_path, 'tagged')
+    repo_searched_files = read_combine_files(dir_path=initial_repo_output_path, check_all_dirs=False, file_path_contains='searched')
+    repo_tagged_files = read_combine_files(dir_path=initial_repo_output_path, check_all_dirs=False, file_path_contains='tagged')
 
     repo_join_df = pd.concat([repo_searched_files, repo_tagged_files])
     repo_join_df['search_query_time'] = datetime.now().strftime("%Y-%m-%d")
@@ -173,7 +173,7 @@ def combine_search_df(initial_repo_output_path, repo_output_path, repo_join_outp
     repo_df = check_add_repos(repo_df, repo_output_path, return_df=True)
 
 
-    user_join_df = read_combine_files(initial_user_output_path, 'searched')
+    user_join_df = read_combine_files(dir_path=initial_user_output_path, check_all_dirs=False, file_path_contains='searched')
     user_join_df['search_query_time'] = datetime.now().strftime("%Y-%m-%d")
     check_if_older_file_exists(user_join_output_path)
     user_join_df.to_csv(user_join_output_path, index=False)

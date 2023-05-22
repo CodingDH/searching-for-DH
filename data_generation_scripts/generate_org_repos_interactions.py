@@ -113,7 +113,7 @@ def get_org_repos(org_df, org_repos_output_path, repos_output_path, get_url_fiel
                 error_df.to_csv(error_file_path, index=False)
             org_progress_bar.update(1)
             continue
-    org_repos_df = read_combine_files(temp_org_repos_dir)
+    org_repos_df = read_combine_files(dir_path=temp_org_repos_dir)
     if overwrite_existing_temp_files:
         # Delete the temporary directory
         shutil.rmtree(temp_org_repos_dir)

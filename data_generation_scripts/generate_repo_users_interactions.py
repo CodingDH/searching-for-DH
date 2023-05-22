@@ -184,7 +184,7 @@ def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_fiel
             continue
 
     # Finally, merge all the temporary files into a single file
-    repo_actors_df = read_combine_files(temp_repo_actors_dir)
+    repo_actors_df = read_combine_files(dir_path=temp_repo_actors_dir)
 
     if overwrite_existing_temp_files:
         # Delete the temporary directory
