@@ -250,7 +250,9 @@ def get_repos_user_actors(repo_df,repo_actors_output_path, users_output_path, ge
         # Finally, get the unique users which is updated in the get_actors code and return it
         clean_write_error_file(error_file_path, 'repo_full_name')
         join_unique_field = 'repo_query'
-        check_for_joins_in_older_queries(repo_df, repo_actors_output_path, repo_actors_df, join_unique_field)
+        filter_field = 'full_name'
+        search_subset = False
+        check_for_joins_in_older_queries(repo_actors_output_path, repo_actors_df, join_unique_field, filter_field, search_subset)
         users_df = get_user_df(users_output_path)
     return repo_actors_df, users_df
 

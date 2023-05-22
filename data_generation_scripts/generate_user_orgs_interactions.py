@@ -167,7 +167,9 @@ def get_user_org_activities(user_df,user_orgs_output_path, orgs_output_path, get
         clean_write_error_file(error_file_path, 'login')
         # Finally, get the unique users which is updated in the get_actors code and return it
         join_unique_field = 'user_query'
-        check_for_joins_in_older_queries(user_df, user_orgs_output_path, user_orgs_df, join_unique_field)
+        filter_field = 'user_login'
+        search_subset = False
+        check_for_joins_in_older_queries( user_orgs_output_path, user_orgs_df, join_unique_field, filter_field, search_subset)
         orgs_df = get_org_df(orgs_output_path)
     return user_orgs_df, orgs_df
 

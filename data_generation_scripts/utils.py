@@ -13,6 +13,7 @@ import warnings
 warnings.filterwarnings('ignore')
 import vl_convert as vlc
 from typing import Optional, List, Any
+import numpy as np
 
 
 
@@ -645,14 +646,40 @@ def get_org_df(output_path):
 """Join Functions
 1. Check if older join entities exist and add them to our latest join"""
 
-def check_for_joins_in_older_queries(join_file_path, join_files_df, join_unique_field, filter_field, search_subset, is_large=False):
-    """Function to check if older join entities exist and add them to our latest join
-    :param entity_df: dataframe of entities
+def check_for_missing_entries(df: pd.DataFrame, older_df: pd.DataFrame, subset_fields: List) -> pd.DataFrame:
+    """Function to check for missing entries in a dataframe
+    :param df: dataframe
+    :param older_df: older dataframe
+    :param subset_fields: fields to subset on
+    :return: missing values dataframe"""
+    newer_counts = df.groupby(subset_fields).size().reset_index(name='new_counts')
+    older_counts = older_df.groupby(subset_fields).size().reset_index(name='older_counts')
+    merged_counts = pd.merge(newer_counts, older_counts, on=subset_fields, how='left')
+    missing_values = merged_counts[(merged_counts.new_counts < merged_counts.older_counts) | (merged_counts.older_counts.isna())]
+    missing_join = pd.merge(older_df, missing_values[subset_fields], on=subset_fields, how='inner')
+    missing_join = missing_join.drop_duplicates(subset=subset_fields)
+    double_check = missing_join[subset_fields]
+    combined_condition = np.ones(len(df), dtype=bool)
+    for field in subset_fields:
+        combined_condition = combined_condition & df[field].isin(double_check[field])
+    df['double_check'] = np.where(combined_condition, 1, 0)
+    final_missing_values = df[(df.double_check == 0) & (df[subset_fields[0]].isin(double_check[subset_fields[0]]))]
+    if len(final_missing_values) > 0:
+        return missing_join
+    else:
+        return pd.DataFrame()
+
+
+
+def check_for_joins_in_older_queries(join_file_path: str, join_files_df: pd.DataFrame, join_unique_field: str, filter_fields: List, search_subset: bool, is_large: bool=False) -> pd.DataFrame:
+    """Function to check if joins exist in older queries and add them to our most recent version of the file
     :param join_file_path: path to join file
-    :param join_files_df: dataframe of join files
-    :param join_unique_field: unique field for join
-    :return: None
-    """
+    :param join_files_df: join dataframe
+    :param join_unique_field: unique field to join on
+    :param filter_fields: fields to filter on
+    :param search_subset: boolean to check if we are only looking at search queries
+    :param is_large: boolean to check if file is large or not
+    :return: join dataframe"""
     # Needs to check if older repos exist and then find their values in older join_files_df
     join_type = join_file_path.split("/")[-1].split("_dataset")[0]
 
@@ -663,7 +690,10 @@ def check_for_joins_in_older_queries(join_file_path, join_files_df, join_unique_
 
     if search_subset:
         older_join_df = older_join_df[older_join_df.search_term_source == "Digital Humanities"]
-        join_files_df = join_files_df[join_files_df.search_term_source == "Digital Humanities"]   
+        older_join_df['cleaned_search_query'] = older_join_df['search_query'].str.replace('%22', '"').str.replace('%3A', ':').str.split('&page').str[0]
+        join_files_df = join_files_df[join_files_df.search_term_source == "Digital Humanities"]
+        join_files_df['cleaned_search_query'] = join_files_df['search_query'].str.replace('%22', '"').str.replace('%3A', ':').str.split('&page').str[0]
+        filter_fields = filter_fields + ['cleaned_search_query']   
     
     entity_type = "" if "search" in join_file_path else "repo" if "repo" in join_file_path else "user"
 
@@ -671,17 +701,18 @@ def check_for_joins_in_older_queries(join_file_path, join_files_df, join_unique_
     if len(older_join_df) > 0:
         if join_unique_field in older_join_df.columns:
             older_join_df = older_join_df[older_join_df[join_unique_field].notna()]
+            missing_values = check_for_missing_entries(join_files_df, older_join_df, filter_fields)
 
-            missing_join = older_join_df[~older_join_df[filter_field].isin(join_files_df[filter_field])]
-
-            if len(missing_join) > 0:
+            if len(missing_values) > 0:
+                
                 time_field = 'search_query_time' if 'search_query' in join_unique_field else f'{entity_type}_query_time'
                 cleaned_field = 'cleaned_search_query_time' if 'search_query' in join_unique_field else f'cleaned_{entity_type}_query_time'
+                
+                missing_join = pd.merge(older_join_df, missing_values[filter_fields], on=filter_fields, how='inner')
                 missing_join[cleaned_field] = None
                 missing_join.loc[missing_join[time_field].isna(), cleaned_field] = '2022-10-10'
                 missing_join[cleaned_field] = pd.to_datetime(missing_join[time_field], errors='coerce')
                 if 'search_query' in join_unique_field:
-                    missing_join['cleaned_search_query'] = missing_join['search_query'].str.replace('%22', '"').str.replace('%3A', ':').str.split('&page').str[0]
                     missing_join = missing_join.sort_values(by=[cleaned_field]).drop_duplicates(subset=['id', 'cleaned_search_query'], keep='first').drop(columns=[cleaned_field, 'cleaned_search_query'])
                 else:
                     missing_join = missing_join.sort_values(by=[cleaned_field]).drop_duplicates(subset=['id'], keep='first').drop(columns=[cleaned_field])
