@@ -106,7 +106,7 @@ def get_user_users(user_df: object, user_users_output_path: str, users_output_pa
                 error_df.to_csv(error_file_path, index=False)
             user_progress_bar.update(1)
             continue
-    user_users_df = read_combine_files(temp_user_users_dir)
+    user_users_df = read_combine_files(dir_path=temp_user_users_dir)
     if overwrite_existing_temp_files:
         # Delete the temporary directory
         shutil.rmtree(temp_user_users_dir)

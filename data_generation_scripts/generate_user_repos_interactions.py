@@ -142,7 +142,7 @@ def get_user_repos(user_df, user_repos_output_path, repos_output_path, get_url_f
                 error_df.to_csv(error_file_path, index=False)
             user_progress_bar.update(1)
             continue
-    user_repos_df = read_combine_files(temp_user_repos_dir)
+    user_repos_df = read_combine_files(dir_path=temp_user_repos_dir)
     if overwrite_existing_temp_files:
         # Delete the temporary directory
         shutil.rmtree(temp_user_repos_dir)

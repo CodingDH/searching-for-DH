@@ -4,14 +4,25 @@ import pandas as pd
 import warnings
 warnings.filterwarnings('ignore')
 from tqdm import tqdm
-
+import os
 import sys
 sys.path.append('..')
 from data_generation_scripts.utils import *
 from data_generation_scripts.generate_user_metadata import check_total_results
 
-def ensure_all_results_exist(initial_search_queries_repo_df, initial_search_queries_user_df):
-    pass
+def ensure_all_results_exist(initial_search_queries_repo_df, exisiting_search_queries_repo_file_path, initial_search_queries_user_df, existing_search_queries_user_file_path):
+    if (os.path.exists(existing_search_queries_user_file_path)) and (os.path.exists(exisiting_search_queries_repo_file_path)):
+        search_queries_user_df = pd.read_csv(existing_search_queries_user_file_path)
+        search_queries_repo_df = pd.read_csv(exisiting_search_queries_repo_file_path)
+
+        new_dh_repos = initial_search_queries_repo_df[search_queries_repo_df.search_term_source == "Digital Humanities"]
+        new_dh_users = initial_search_queries_user_df[search_queries_user_df.search_term_source == "Digital Humanities"]
+        missing_repos = new_dh_repos[~new_dh_repos.full_name.isin(search_queries_repo_df.full_name)]
+        missing_users = new_dh_users[~new_dh_users.login.isin(search_queries_user_df.login)]
+        if len(missing_repos) > 0:
+            repo_join_df = check_for_joins_in_older_queries(search_queries_repo_df, repo_join_output_path, repo_join_df, join_unique_field)
+    else:
+        pass
 
 def clean_search_queries_data(search_df: object, join_field: str) -> object:
     """Clean the search queries data and try to determine as much as possible the exact language using automated language detection and natural language processing.

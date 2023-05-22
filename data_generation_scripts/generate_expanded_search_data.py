@@ -180,8 +180,8 @@ def combine_search_df(initial_repo_output_path, repo_output_path, repo_join_outp
     return_df = True
     print("Combining repo files")
     repo_searched_files = read_combine_files(
-        initial_repo_output_path, 'searched')
-    repo_tagged_files = read_combine_files(initial_repo_output_path, 'tagged')
+        dir_path=initial_repo_output_path, check_all_dirs=False, file_path_contains='searched', large_files=False)
+    repo_tagged_files = read_combine_files(dir_path=initial_repo_output_path, check_all_dirs=False, file_path_contains='tagged', large_files=False)
 
     repo_join_df = pd.concat([repo_searched_files, repo_tagged_files])
     repo_join_df['search_query_time'] = datetime.now().strftime("%Y-%m-%d")
@@ -195,7 +195,7 @@ def combine_search_df(initial_repo_output_path, repo_output_path, repo_join_outp
     repo_df = check_add_repos(repo_df, repo_output_path, return_df=True)
 
     print("Combining user files")
-    user_join_df = read_combine_files(initial_user_output_path, 'searched')
+    user_join_df = read_combine_files(dir_path=initial_user_output_path, check_all_dirs=False, file_path_contains='searched', large_files=False)
     user_join_df['search_query_time'] = datetime.now().strftime("%Y-%m-%d")
     print("Checking if older file exists")
     check_if_older_file_exists(user_join_output_path)
@@ -323,8 +323,10 @@ def generate_initial_search_datasets(rates_df, initial_repo_output_path,  repo_o
 
     repo_df, repo_join_df, user_df, user_join_df, org_df = combine_search_df(initial_repo_output_path, repo_output_path, repo_join_output_path, initial_user_output_path, user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files)
     join_unique_field = 'search_query'
-    repo_join_df = check_for_joins_in_older_queries(repo_df, repo_join_output_path, repo_join_df, join_unique_field)
-    user_join_df = check_for_joins_in_older_queries(user_df, user_join_output_path, user_join_df, join_unique_field)
+    filter_field = "id"
+    search_subset = True
+    repo_join_df = check_for_joins_in_older_queries(repo_join_output_path, repo_join_df, join_unique_field, filter_field, search_subset)
+    user_join_df = check_for_joins_in_older_queries(user_join_output_path, user_join_df, join_unique_field, filter_field, search_subset)
     return repo_df, repo_join_df, user_df, user_join_df, org_df
 
 def get_initial_search_datasets(rates_df, initial_repo_output_path,  repo_output_path, repo_join_output_path, initial_user_output_path,  user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files, load_existing_data):

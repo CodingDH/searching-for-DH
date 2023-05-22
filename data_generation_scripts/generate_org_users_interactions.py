@@ -106,7 +106,7 @@ def get_members(org_df, org_members_output_path, users_output_path, get_url_fiel
             # org_progress_bar.update(1)
             continue
     # Finally, merge all the temporary files into a single file
-    org_members_df = read_combine_files(temp_org_members_dir)
+    org_members_df = read_combine_files(dir_path=temp_org_members_dir)
 
     if overwrite_existing_temp_files:
         # Delete the temporary directory

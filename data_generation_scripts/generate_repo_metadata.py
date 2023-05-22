@@ -153,7 +153,7 @@ def get_profiles(repo_df, temp_repo_dir, error_file_path):
             else:
                 error_df.to_csv(error_file_path, index=False)
             continue
-    repo_df = read_combine_files(temp_repo_dir)
+    repo_df = read_combine_files(dir_path=temp_repo_dir)
     clean_write_error_file(error_file_path, 'repo_full_name')
     profile_bar.close()
     return repo_df

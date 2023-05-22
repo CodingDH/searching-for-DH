@@ -109,7 +109,7 @@ def get_user_orgs(user_df, user_orgs_output_path, orgs_output_path, get_url_fiel
                 error_df.to_csv(error_file_path, index=False)
             user_progress_bar.update(1)
             continue
-    user_orgs_df = read_combine_files(temp_user_orgs_dir)
+    user_orgs_df = read_combine_files(dir_path=temp_user_orgs_dir)
     if overwrite_existing_temp_files:
         # Delete the temporary directory
         shutil.rmtree(temp_user_orgs_dir)

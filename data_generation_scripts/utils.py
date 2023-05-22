@@ -645,7 +645,7 @@ def get_org_df(output_path):
 """Join Functions
 1. Check if older join entities exist and add them to our latest join"""
 
-def check_for_joins_in_older_queries(entity_df, join_file_path, join_files_df, join_unique_field, is_large=False):
+def check_for_joins_in_older_queries(join_file_path, join_files_df, join_unique_field, filter_field, search_subset, is_large=False):
     """Function to check if older join entities exist and add them to our latest join
     :param entity_df: dataframe of entities
     :param join_file_path: path to join file
@@ -654,22 +654,29 @@ def check_for_joins_in_older_queries(entity_df, join_file_path, join_files_df, j
     :return: None
     """
     # Needs to check if older repos exist and then find their values in older join_files_df
-    join_type = join_file_path.split('/')[-1].split('_dataset')[0]
+    join_type = join_file_path.split("/")[-1].split("_dataset")[0]
 
-    older_join_file_path = join_file_path.replace('data/', 'data/older_files/')
-    older_join_file_dir = os.path.dirname(older_join_file_path) + '/'
+    older_join_file_path = join_file_path.replace("data/", "data/older_files/")
+    older_join_file_dir = os.path.dirname(older_join_file_path) + "/"
 
-    older_join_df = read_combine_files(dir_path=older_join_file_dir, check_all_dirs=True, file_path_contains=join_type, large_files=is_large)    
+    older_join_df = read_combine_files(dir_path=older_join_file_dir, check_all_dirs=True, file_path_contains=join_type, large_files=is_large) 
+
+    if search_subset:
+        older_join_df = older_join_df[older_join_df.search_term_source == "Digital Humanities"]
+        join_files_df = join_files_df[join_files_df.search_term_source == "Digital Humanities"]   
     
+    entity_type = "" if "search" in join_file_path else "repo" if "repo" in join_file_path else "user"
+
+
     if len(older_join_df) > 0:
         if join_unique_field in older_join_df.columns:
             older_join_df = older_join_df[older_join_df[join_unique_field].notna()]
 
-            missing_join = older_join_df[~older_join_df.id.isin(entity_df.id)] if 'search_query' in join_unique_field else older_join_df[~older_join_df.repo_id.isin(entity_df.id)]
+            missing_join = older_join_df[~older_join_df[filter_field].isin(join_files_df[filter_field])]
 
             if len(missing_join) > 0:
-                time_field = 'search_query_time' if 'search_query' in join_unique_field else 'repo_query_time'
-                cleaned_field = 'cleaned_search_query_time' if 'search_query' in join_unique_field else 'cleaned_repo_query_time'
+                time_field = 'search_query_time' if 'search_query' in join_unique_field else f'{entity_type}_query_time'
+                cleaned_field = 'cleaned_search_query_time' if 'search_query' in join_unique_field else f'cleaned_{entity_type}_query_time'
                 missing_join[cleaned_field] = None
                 missing_join.loc[missing_join[time_field].isna(), cleaned_field] = '2022-10-10'
                 missing_join[cleaned_field] = pd.to_datetime(missing_join[time_field], errors='coerce')
