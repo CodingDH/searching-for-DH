@@ -5,41 +5,35 @@ import warnings
 warnings.filterwarnings('ignore')
 from tqdm import tqdm
 import os
+from typing import Optional, List
 import sys
 sys.path.append('..')
 from data_generation_scripts.utils import *
 from data_generation_scripts.generate_user_metadata import check_total_results
 from data_generation_scripts.generate_translations import check_detect_language
 
-def get_languages(search_queries_repo_df: pd.DataFrame, search_queries_user_df: pd.DataFrame) -> pd.DataFrame:
+def get_languages(search_df: pd.DataFrame, search_type: str) -> pd.DataFrame:
     """Get the languages for the search queries data.
-    :param search_queries_repo_df: The search queries data for repos
-    :type search_queries_repo_df: pandas.DataFrame
-    :param search_queries_user_df: The search queries data for users
-    :type search_queries_user_df: pandas.DataFrame
+    :param search_df: The search queries data for repos
+    :type search_df: pandas.DataFrame
+    :param search_type: The type of search queries data
+    :type search_type: str
     :return: The search queries data with the languages added"""
     tqdm.pandas(desc='Detecting language')
-    search_queries_repo_df.description = search_queries_repo_df.description.fillna('')
-    search_queries_repo_df = search_queries_repo_df.progress_apply(check_detect_language, axis=1, is_repo=True)
-    search_queries_user_df.bio = search_queries_user_df.bio.fillna('')
-    search_queries_user_df = search_queries_user_df.progress_apply(check_detect_language, axis=1, is_repo=False)
-    return search_queries_repo_df, search_queries_user_df
+    if 'repo' in search_type:
+        search_df.description = search_df.description.fillna('')
+    else:
+        search_df.bio = search_df.bio.fillna('')
+    search_df = search_df.progress_apply(check_detect_language, axis=1, is_repo=True)
+    return search_df
 
-def clean_search_queries_data(search_df: object, join_field: str) -> object:
-    """Clean the search queries data and try to determine as much as possible the exact language using automated language detection and natural language processing.
-    :param search_df: The search queries data
+def clean_languages(search_df: pd.DataFrame, join_field: str) -> pd.DataFrame:
+    """Clean the languages for the search queries data.
+    :param search_df: The search queries data for repos
     :type search_df: pandas.DataFrame
     :param join_field: The field to join the search queries data to the repo data
     :type join_field: str
-    :return: The cleaned search queries data
-    :rtype: pandas.DataFrame"""
-    search_df['finalized_language'] = None
-    search_df['keep_resource'] = True
-    search_df['cleaned_search_query'] = search_df['search_query'].str.replace(
-        '%22', '"').str.replace('%3A', ":").str.split('&page').str[0]
-    search_df = search_df.drop_duplicates(
-        subset=[join_field, 'cleaned_search_query'])
-    search_df['finalized_language'] = None
+    :return: The search queries data with the languages cleaned"""
     english_langs = 'en, ny, ha, ig, lb, mg, sm, sn, st, tl, yo'
     english_langs = english_langs.split(', ')
     search_df.loc[search_df.detected_language.isin(
@@ -72,6 +66,47 @@ def clean_search_queries_data(search_df: object, join_field: str) -> object:
             search_df.bio.isna()), 'finalized_language'] = None
     return search_df
 
+def clean_search_queries_data(search_df: object, join_field: str, search_type: str) -> object:
+    """Clean the search queries data and try to determine as much as possible the exact language using automated language detection and natural language processing.
+    :param search_df: The search queries data
+    :type search_df: pandas.DataFrame
+    :param join_field: The field to join the search queries data to the repo data
+    :type join_field: str
+    :param search_type: The type of search queries data
+    :type search_type: str
+    :return: The cleaned search queries data
+    :rtype: pandas.DataFrame"""
+    
+    search_df['cleaned_search_query'] = search_df['search_query'].str.replace(
+        '%22', '"').str.replace('%3A', ":").str.split('&page').str[0]
+    search_df = search_df.drop_duplicates(
+        subset=[join_field, 'cleaned_search_query'])
+    
+    if 'keep_resource' not in search_df.columns:
+        search_df['keep_resource'] = True
+    else:
+        search_df.loc[search_df.keep_resource == 'None'] = None
+    
+
+    if 'finalized_language' not in search_df.columns:
+        search_df['finalized_language'] = None
+    else:
+        search_df.loc[search_df.finalized_language == 'None'] = None
+    
+    if 'detected_language' not in search_df.columns:
+        search_df = get_languages(search_df, search_type)
+        search_df = clean_languages(search_df, join_field)
+    else:
+        subset_search_df = search_df[(search_df.detected_language.isna()) & (search_df.finalized_language.isna())]
+        if len(subset_search_df) > 0:
+            subset_search_df = get_languages(subset_search_df, search_type)
+            subset_search_df = clean_languages(subset_search_df, join_field)
+            search_df = pd.concat([search_df, subset_search_df])
+        else:
+            search_df = subset_search_df.copy()
+
+    return search_df
+
 def fix_results(search_queries_repo_df: pd.DataFrame, search_queries_user_df: pd.DataFrame) -> pd.DataFrame:
     """Fix the results of the search queries to ensure that the results are correct.
     :param search_queries_repo_df: The search queries data for repos
@@ -92,7 +127,7 @@ def fix_results(search_queries_repo_df: pd.DataFrame, search_queries_user_df: pd
     return search_queries_repo_df, search_queries_user_df
         
 
-def ensure_all_results_exist(initial_search_queries_repo_df, exisiting_search_queries_repo_file_path, initial_search_queries_user_df, existing_search_queries_user_file_path, subset_terms):
+def verify_results_exist(initial_search_queries_repo_file_path: str, exisiting_search_queries_repo_file_path: str, initial_search_queries_user_file_path: str, existing_search_queries_user_file_path: str, subset_terms: List) -> pd.DataFrame:
     repo_join_output_path = "search_queries_repo_join_dataset.csv"
     user_join_output_path = "search_queries_user_join_dataset.csv"
     join_unique_field = 'search_query'
@@ -109,8 +144,8 @@ def ensure_all_results_exist(initial_search_queries_repo_df, exisiting_search_qu
         updated_search_queries_repo_df = check_for_joins_in_older_queries(repo_join_output_path, search_queries_repo_df, join_unique_field, filter_fields)
         updated_search_queries_user_df = check_for_joins_in_older_queries(user_join_output_path, search_queries_user_df, join_unique_field, filter_fields)
 
-        initial_search_queries_repo_df = pd.read_csv(initial_search_queries_repo_df)
-        initial_search_queries_user_df  = pd.read_csv(initial_search_queries_user_df)
+        initial_search_queries_repo_df = pd.read_csv(initial_search_queries_repo_file_path)
+        initial_search_queries_user_df  = pd.read_csv(initial_search_queries_user_file_path)
 
         initial_search_queries_repo_df = initial_search_queries_repo_df[initial_search_queries_repo_df.search_term_source.isin(subset_terms)]
         initial_search_queries_user_df = initial_search_queries_user_df[initial_search_queries_user_df.search_term_source.isin(subset_terms)]
@@ -128,8 +163,11 @@ def ensure_all_results_exist(initial_search_queries_repo_df, exisiting_search_qu
         search_queries_user_df['search_query_time'] = pd.to_datetime(search_queries_user_df['search_query_time'], errors='coerce')
         search_queries_user_df = search_queries_user_df.sort_values(by=['search_query_time']).drop_duplicates(subset=['id', 'cleaned_search_query'], keep='first').drop(columns=['cleaned_search_query'])
 
+        
+        search_queries_repo_df = clean_search_queries_data(search_queries_repo_df, 'full_name', 'repo')
+        search_queries_user_df = clean_search_queries_data(search_queries_user_df, 'login', 'user')
     else:
-        initial_search_queries_repo_df = pd.read_csv(initial_search_queries_repo_df)
+        initial_search_queries_repo_df = pd.read_csv(initial_search_queries_repo_file_path)
         initial_search_queries_user_df  = pd.read_csv(initial_search_queries_user_df)
 
         initial_search_queries_repo_df = initial_search_queries_repo_df[initial_search_queries_repo_df.search_term_source.isin(subset_terms)]
@@ -140,9 +178,9 @@ def ensure_all_results_exist(initial_search_queries_repo_df, exisiting_search_qu
         initial_search_queries_repo_df, initial_search_queries_user_df = fix_results(initial_search_queries_repo_df, initial_search_queries_user_df)
         search_queries_repo_df = check_for_joins_in_older_queries(repo_join_output_path, initial_search_queries_repo_df, join_unique_field, filter_fields)
         search_queries_user_df = check_for_joins_in_older_queries(user_join_output_path, initial_search_queries_user_df, join_unique_field, filter_fields)
-        search_queries_repo_df, search_queries_user_df = get_languages(search_queries_repo_df, search_queries_user_df)
-        search_queries_repo_df = clean_search_queries_data(search_queries_repo_df, 'full_name')
-        search_queries_user_df = clean_search_queries_data(search_queries_user_df, 'login')
+        
+        search_queries_repo_df = clean_search_queries_data(search_queries_repo_df, 'full_name', 'repo')
+        search_queries_user_df = clean_search_queries_data(search_queries_user_df, 'login', 'user')
     return search_queries_repo_df, search_queries_user_df
 
 
@@ -160,27 +198,16 @@ initial_user_join_output_path = "../data/join_files/search_queries_user_join_dat
 user_join_output_path = "../data/derived_files/updated_search_queries_user_join_subset_dh_dataset.csv"
 
 
-search_queries_repo_df = pd.read_csv(repo_join_output_path)
-search_queries_user_df = pd.read_csv(user_join_output_path)
+search_queries_repo_df, search_queries_user_df = verify_results_exist(initial_repo_join_output_path, repo_join_output_path, initial_user_join_output_path, user_join_output_path, subset_terms)
 
-
-# CHECK REPOS
-repo_join_field = 'full_name'
-if 'finalized_language' not in search_queries_repo_df.columns:
-    search_queries_repo_df = clean_search_queries_data(
-        search_queries_repo_df, repo_join_field)
-missing_finalized_language = search_queries_repo_df[search_queries_repo_df.finalized_language.isna()]
-
-if len(missing_finalized_language) > 0:
-    missing_finalized_language = clean_search_queries_data(
-        missing_finalized_language, repo_join_field)
-    search_queries_repo_df = pd.concat([search_queries_repo_df, missing_finalized_language])
+search_queries_repo_df.to_csv("../data/derived_files/initial_search_queries_repo_join_subset_dh_dataset.csv", index=False)
+search_queries_user_df.to_csv("../data/derived_files/initial_search_queries_user_join_subset_dh_dataset.csv", index=False)
 
 needs_checking = search_queries_repo_df[(search_queries_repo_df['keep_resource'] == True) & (search_queries_repo_df['finalized_language'].isna())]
 needs_checking.loc[needs_checking.detected_language.isna(), 'detected_language'] = None
 needs_checking.loc[needs_checking.natural_language.isna(), 'natural_language'] = None
 needs_checking = needs_checking.reset_index(drop=True)
-print(needs_checking)
+
 for index, row in needs_checking.iterrows():
     all_rows = search_queries_repo_df[(search_queries_repo_df['full_name'] == row.full_name)]
     print(f"On {index} out of {len(needs_checking)}")
@@ -354,3 +381,6 @@ for index, row in tqdm(double_check.iterrows(), total=len(double_check), desc="D
         search_queries_user_df.loc[(search_queries_user_df.login ==
                                     row.login), 'finalized_language'] = unique_detected_languages[0]
         search_queries_user_df.to_csv(user_join_output_path, index=False)
+
+search_queries_repo_df.to_csv(repo_join_output_path, index=False)
+search_queries_user_df.to_csv(user_join_output_path, index=False)
