@@ -177,6 +177,7 @@ if __name__ == '__main__':
         core_orgs = pd.read_csv(core_orgs_output_path)
     else:
         core_orgs = pd.read_csv(orgs_output_path, low_memory=False)
+    search_queries_user_df = pd.read_csv("../data/derived_files/updated_search_queries_user_join_subset_dh_dataset.csv")
     core_orgs["members_url"] = core_orgs["url"].apply(lambda x: x + "/public_members")
     core_orgs.members_url = core_orgs.members_url.str.replace('users', 'orgs')
     org_members_output_path = '../data/join_files/org_members_join_dataset.csv'
