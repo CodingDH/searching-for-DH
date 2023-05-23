@@ -671,13 +671,12 @@ def check_for_missing_entries(df: pd.DataFrame, older_df: pd.DataFrame, subset_f
 
 
 
-def check_for_joins_in_older_queries(join_file_path: str, join_files_df: pd.DataFrame, join_unique_field: str, filter_fields: List, search_subset: bool, is_large: bool=False) -> pd.DataFrame:
+def check_for_joins_in_older_queries(join_file_path: str, join_files_df: pd.DataFrame, join_unique_field: str, filter_fields: List, is_large: bool=False) -> pd.DataFrame:
     """Function to check if joins exist in older queries and add them to our most recent version of the file
     :param join_file_path: path to join file
     :param join_files_df: join dataframe
     :param join_unique_field: unique field to join on
     :param filter_fields: fields to filter on
-    :param search_subset: boolean to check if we are only looking at search queries
     :param is_large: boolean to check if file is large or not
     :return: join dataframe"""
     # Needs to check if older repos exist and then find their values in older join_files_df
@@ -687,13 +686,6 @@ def check_for_joins_in_older_queries(join_file_path: str, join_files_df: pd.Data
     older_join_file_dir = os.path.dirname(older_join_file_path) + "/"
 
     older_join_df = read_combine_files(dir_path=older_join_file_dir, check_all_dirs=True, file_path_contains=join_type, large_files=is_large) 
-
-    if search_subset:
-        older_join_df = older_join_df[older_join_df.search_term_source == "Digital Humanities"]
-        older_join_df['cleaned_search_query'] = older_join_df['search_query'].str.replace('%22', '"').str.replace('%3A', ':').str.split('&page').str[0]
-        join_files_df = join_files_df[join_files_df.search_term_source == "Digital Humanities"]
-        join_files_df['cleaned_search_query'] = join_files_df['search_query'].str.replace('%22', '"').str.replace('%3A', ':').str.split('&page').str[0]
-        filter_fields = filter_fields + ['cleaned_search_query']   
     
     entity_type = "" if "search" in join_file_path else "repo" if "repo" in join_file_path else "user"
 

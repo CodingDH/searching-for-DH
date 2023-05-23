@@ -9,21 +9,21 @@ import sys
 sys.path.append('..')
 from data_generation_scripts.utils import *
 from data_generation_scripts.generate_user_metadata import check_total_results
+from data_generation_scripts.generate_translations import check_detect_language
 
-def ensure_all_results_exist(initial_search_queries_repo_df, exisiting_search_queries_repo_file_path, initial_search_queries_user_df, existing_search_queries_user_file_path):
-    if (os.path.exists(existing_search_queries_user_file_path)) and (os.path.exists(exisiting_search_queries_repo_file_path)):
-        search_queries_user_df = pd.read_csv(existing_search_queries_user_file_path)
-        search_queries_repo_df = pd.read_csv(exisiting_search_queries_repo_file_path)
-        repo_join_output_path = "search_queries_repo_join_dataset"
-        
-        join_unique_field = 'search_query'
-        filter_field = 'id'
-        time_field = 'search_query_time' 
-        cleaned_field = 'cleaned_search_query_time' 
-        
-        repo_join_df = check_for_joins_in_older_queries(search_queries_repo_df, repo_join_output_path, repo_join_df, join_unique_field, filter_field)
-    else:
-        pass
+def get_languages(search_queries_repo_df: pd.DataFrame, search_queries_user_df: pd.DataFrame) -> pd.DataFrame:
+    """Get the languages for the search queries data.
+    :param search_queries_repo_df: The search queries data for repos
+    :type search_queries_repo_df: pandas.DataFrame
+    :param search_queries_user_df: The search queries data for users
+    :type search_queries_user_df: pandas.DataFrame
+    :return: The search queries data with the languages added"""
+    tqdm.pandas(desc='Detecting language')
+    search_queries_repo_df.description = search_queries_repo_df.description.fillna('')
+    search_queries_repo_df = search_queries_repo_df.progress_apply(check_detect_language, axis=1, is_repo=True)
+    search_queries_user_df.bio = search_queries_user_df.bio.fillna('')
+    search_queries_user_df = search_queries_user_df.progress_apply(check_detect_language, axis=1, is_repo=False)
+    return search_queries_repo_df, search_queries_user_df
 
 def clean_search_queries_data(search_df: object, join_field: str) -> object:
     """Clean the search queries data and try to determine as much as possible the exact language using automated language detection and natural language processing.
@@ -72,7 +72,81 @@ def clean_search_queries_data(search_df: object, join_field: str) -> object:
             search_df.bio.isna()), 'finalized_language'] = None
     return search_df
 
+def fix_results(search_queries_repo_df: pd.DataFrame, search_queries_user_df: pd.DataFrame) -> pd.DataFrame:
+    """Fix the results of the search queries to ensure that the results are correct.
+    :param search_queries_repo_df: The search queries data for repos
+    :type search_queries_repo_df: pandas.DataFrame
+    :param search_queries_user_df: The search queries data for users
+    :type search_queries_user_df: pandas.DataFrame
+    :return: The fixed search queries data"""
 
+    fix_repo_queries = search_queries_repo_df[(search_queries_repo_df.cleaned_search_query.str.contains('q="Humanities"')) & (search_queries_repo_df.search_term_source == "Digital Humanities")]
+    fix_user_queries = search_queries_user_df[(search_queries_user_df.cleaned_search_query.str.contains('q="Humanities"')) & (search_queries_user_df.search_term_source == "Digital Humanities")]
+    if len(fix_repo_queries) > 0:
+        replace_repo_queries = search_queries_repo_df[(search_queries_repo_df.full_name.isin(fix_repo_queries.full_name)) & (search_queries_repo_df.search_term_source == "Digital Humanities")][['full_name', 'search_query']]
+        search_queries_repo_df.loc[search_queries_repo_df.full_name.isin(fix_repo_queries.full_name), 'cleaned_search_query'] = search_queries_repo_df.loc[search_queries_repo_df.full_name.isin(fix_repo_queries.full_name), 'full_name'].map(replace_repo_queries.set_index('full_name').to_dict()['search_query'])
+        
+    if len(fix_user_queries) > 0:
+        replace_user_queries = search_queries_user_df[(search_queries_user_df.full_name.isin(fix_user_queries.login)) & (search_queries_user_df.search_term_source == "Digital Humanities")][['login', 'search_query']]
+        search_queries_user_df.loc[search_queries_user_df.login.isin(fix_user_queries.login), 'cleaned_search_query'] = search_queries_user_df.loc[search_queries_user_df.login.isin(fix_user_queries.login), 'login'].map(replace_user_queries.set_index('login').to_dict()['search_query'])
+    return search_queries_repo_df, search_queries_user_df
+        
+
+def ensure_all_results_exist(initial_search_queries_repo_df, exisiting_search_queries_repo_file_path, initial_search_queries_user_df, existing_search_queries_user_file_path, subset_terms):
+    repo_join_output_path = "search_queries_repo_join_dataset.csv"
+    user_join_output_path = "search_queries_user_join_dataset.csv"
+    join_unique_field = 'search_query'
+    filter_fields = ['id', 'cleaned_search_query']
+    if (os.path.exists(existing_search_queries_user_file_path)) and (os.path.exists(exisiting_search_queries_repo_file_path)):
+        search_queries_user_df = pd.read_csv(existing_search_queries_user_file_path)
+        search_queries_repo_df = pd.read_csv(exisiting_search_queries_repo_file_path)
+        
+        search_queries_user_df = search_queries_user_df[search_queries_user_df.search_term_source.isin(subset_terms)]
+        search_queries_repo_df = search_queries_repo_df[search_queries_repo_df.search_term_source.isin(subset_terms)]
+        search_queries_user_df['cleaned_search_query'] = search_queries_user_df['search_query'].str.replace('%22', '"').str.replace('%3A', ':').str.split('&page').str[0]
+        search_queries_repo_df['cleaned_search_query'] = search_queries_repo_df['search_query'].str.replace('%22', '"').str.replace('%3A', ':').str.split('&page').str[0]
+        search_queries_repo_df, search_queries_user_df = fix_results(search_queries_repo_df, search_queries_user_df)
+        updated_search_queries_repo_df = check_for_joins_in_older_queries(repo_join_output_path, search_queries_repo_df, join_unique_field, filter_fields)
+        updated_search_queries_user_df = check_for_joins_in_older_queries(user_join_output_path, search_queries_user_df, join_unique_field, filter_fields)
+
+        initial_search_queries_repo_df = pd.read_csv(initial_search_queries_repo_df)
+        initial_search_queries_user_df  = pd.read_csv(initial_search_queries_user_df)
+
+        initial_search_queries_repo_df = initial_search_queries_repo_df[initial_search_queries_repo_df.search_term_source.isin(subset_terms)]
+        initial_search_queries_user_df = initial_search_queries_user_df[initial_search_queries_user_df.search_term_source.isin(subset_terms)]
+
+        
+        search_queries_repo_df = pd.concat([updated_search_queries_repo_df, initial_search_queries_repo_df])
+        search_queries_user_df = pd.concat([updated_search_queries_user_df, initial_search_queries_user_df])
+
+
+        search_queries_repo_df[search_queries_repo_df.search_query_time.isna(), 'search_query_time'] = "2022-10-10"
+        search_queries_repo_df['search_query_time'] = pd.to_datetime(search_queries_repo_df['search_query_time'], errors='coerce')
+        search_queries_repo_df = search_queries_repo_df.sort_values(by=['search_query_time']).drop_duplicates(subset=['id', 'cleaned_search_query'], keep='first').drop(columns=['cleaned_search_query'])
+
+        search_queries_user_df[search_queries_user_df.search_query_time.isna(), 'search_query_time'] = "2022-10-10"
+        search_queries_user_df['search_query_time'] = pd.to_datetime(search_queries_user_df['search_query_time'], errors='coerce')
+        search_queries_user_df = search_queries_user_df.sort_values(by=['search_query_time']).drop_duplicates(subset=['id', 'cleaned_search_query'], keep='first').drop(columns=['cleaned_search_query'])
+
+    else:
+        initial_search_queries_repo_df = pd.read_csv(initial_search_queries_repo_df)
+        initial_search_queries_user_df  = pd.read_csv(initial_search_queries_user_df)
+
+        initial_search_queries_repo_df = initial_search_queries_repo_df[initial_search_queries_repo_df.search_term_source.isin(subset_terms)]
+        initial_search_queries_user_df = initial_search_queries_user_df[initial_search_queries_user_df.search_term_source.isin(subset_terms)]
+
+        initial_search_queries_user_df['cleaned_search_query'] = initial_search_queries_user_df['search_query'].str.replace('%22', '"').str.replace('%3A', ':').str.split('&page').str[0]
+        initial_search_queries_repo_df['cleaned_search_query'] = initial_search_queries_repo_df['search_query'].str.replace('%22', '"').str.replace('%3A', ':').str.split('&page').str[0]
+        initial_search_queries_repo_df, initial_search_queries_user_df = fix_results(initial_search_queries_repo_df, initial_search_queries_user_df)
+        search_queries_repo_df = check_for_joins_in_older_queries(repo_join_output_path, initial_search_queries_repo_df, join_unique_field, filter_fields)
+        search_queries_user_df = check_for_joins_in_older_queries(user_join_output_path, initial_search_queries_user_df, join_unique_field, filter_fields)
+        search_queries_repo_df, search_queries_user_df = get_languages(search_queries_repo_df, search_queries_user_df)
+        search_queries_repo_df = clean_search_queries_data(search_queries_repo_df, 'full_name')
+        search_queries_user_df = clean_search_queries_data(search_queries_user_df, 'login')
+    return search_queries_repo_df, search_queries_user_df
+
+
+subset_terms = ["Digital Humanities"]
 console = Console()
 initial_repo_output_path = "../data/repo_data/"
 repo_output_path = "../data/large_files/entity_files/repos_dataset.csv"
@@ -81,8 +155,11 @@ repo_join_output_path = "../data/derived_files/updated_search_queries_repo_join_
 
 initial_user_output_path = "../data/user_data/"
 user_output_path = "../data/entity_files/users_dataset.csv"
+org_output_path = "../data/entity_files/orgs_dataset.csv"
 initial_user_join_output_path = "../data/join_files/search_queries_user_join_dataset.csv"
 user_join_output_path = "../data/derived_files/updated_search_queries_user_join_subset_dh_dataset.csv"
+
+
 search_queries_repo_df = pd.read_csv(repo_join_output_path)
 search_queries_user_df = pd.read_csv(user_join_output_path)
 
