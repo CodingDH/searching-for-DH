@@ -164,8 +164,7 @@ def get_org_repo_activities(org_df,org_repos_output_path, repos_output_path, get
         clean_write_error_file(error_file_path, 'login')
         join_unique_field = 'org_query'
         filter_field = ['org_login', 'full_name']
-        subset_search = False
-        check_for_joins_in_older_queries( org_repos_output_path, org_repos_df, join_unique_field, filter_field, subset_search)
+        check_for_joins_in_older_queries( org_repos_output_path, org_repos_df, join_unique_field, filter_field)
         repos_df = get_repo_df(repos_output_path)
     return org_repos_df, repos_df
 
