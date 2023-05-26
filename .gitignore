@@ -7,6 +7,7 @@ data/older_files/large_files/
 data/older_files/larger_datasets
 expanded_search/data/large_files/
 keep_for_now/
+data/private_data
 
 # Temporary Files
 data/temp/
