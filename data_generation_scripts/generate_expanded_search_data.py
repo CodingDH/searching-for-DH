@@ -323,11 +323,12 @@ def generate_initial_search_datasets(rates_df, initial_repo_output_path,  repo_o
 
     repo_df, repo_join_df, user_df, user_join_df, org_df = combine_search_df(initial_repo_output_path, repo_output_path, repo_join_output_path, initial_user_output_path, user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files)
     join_unique_field = 'search_query'
-    filter_field = ["id", "cleaned_search_query"]
-    repo_join_df["cleaned_search_query"] = repo_join_df['search_query'].str.replace('%22', '"').str.replace('%3A', ':').str.split('&page').str[0]
-    user_join_df["cleaned_search_query"] = user_join_df['search_query'].str.replace('%22', '"').str.replace('%3A', ':').str.split('&page').str[0]
-    repo_join_df = check_for_joins_in_older_queries(repo_join_output_path, repo_join_df, join_unique_field, filter_field)
-    user_join_df = check_for_joins_in_older_queries(user_join_output_path, user_join_df, join_unique_field, filter_field)
+    repo_filter_fields = ["full_name", "cleaned_search_query"]
+    user_filter_fields = ["login", "cleaned_search_query"]
+    repo_join_df["cleaned_search_query"] = repo_join_df['search_query'].str.replace('%22', '"').str.replace('"', '').str.replace('%3A', ':').str.split('&page').str[0]
+    user_join_df["cleaned_search_query"] = user_join_df['search_query'].str.replace('%22', '"').str.replace('"', '').str.replace('%3A', ':').str.split('&page').str[0]
+    repo_join_df = check_for_joins_in_older_queries(repo_join_output_path, repo_join_df, join_unique_field, repo_filter_fields)
+    user_join_df = check_for_joins_in_older_queries(user_join_output_path, user_join_df, join_unique_field, user_filter_fields)
     return repo_df, repo_join_df, user_df, user_join_df, org_df
 
 def get_initial_search_datasets(rates_df, initial_repo_output_path,  repo_output_path, repo_join_output_path, initial_user_output_path,  user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files, load_existing_data):
@@ -367,16 +368,16 @@ if __name__ == '__main__':
     overwrite_existing_temp_files = False
     org_output_path = "../data/entity_files/orgs_dataset.csv"
 
-    # get_initial_search_datasets(rates_df, initial_repo_output_path,  repo_output_path, repo_join_output_path, initial_user_output_path, user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files, load_existing_data)
-    repo_df, repo_join_df, user_df, user_join_df, org_df = combine_search_df(
-        initial_repo_output_path, repo_output_path, repo_join_output_path, initial_user_output_path, user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files)
-    join_unique_field = 'search_query'
-    print("Checking for older repo joins")
-    repo_join_df = check_for_joins_in_older_queries(
-        repo_df, repo_join_output_path, repo_join_df, join_unique_field)
-    print("Checking for older user joins")
-    user_join_df = check_for_joins_in_older_queries(
-        user_df, user_join_output_path, user_join_df, join_unique_field)
+    get_initial_search_datasets(rates_df, initial_repo_output_path,  repo_output_path, repo_join_output_path, initial_user_output_path, user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files, load_existing_data)
+    # repo_df, repo_join_df, user_df, user_join_df, org_df = combine_search_df(
+    #     initial_repo_output_path, repo_output_path, repo_join_output_path, initial_user_output_path, user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files)
+    # join_unique_field = 'search_query'
+    # print("Checking for older repo joins")
+    # repo_join_df = check_for_joins_in_older_queries(
+    #     repo_df, repo_join_output_path, repo_join_df, join_unique_field)
+    # print("Checking for older user joins")
+    # user_join_df = check_for_joins_in_older_queries(
+    #     user_df, user_join_output_path, user_join_df, join_unique_field)
 
     # console = Console()
     # cleaned_dh_terms = pd.read_csv(

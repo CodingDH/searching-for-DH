@@ -705,9 +705,9 @@ def check_for_joins_in_older_queries(join_file_path: str, join_files_df: pd.Data
                 missing_join.loc[missing_join[time_field].isna(), cleaned_field] = '2022-10-10'
                 missing_join[cleaned_field] = pd.to_datetime(missing_join[time_field], errors='coerce')
                 if 'search_query' in join_unique_field:
-                    missing_join = missing_join.sort_values(by=[cleaned_field]).drop_duplicates(subset=['id', 'cleaned_search_query'], keep='first').drop(columns=[cleaned_field])
+                    missing_join = missing_join.sort_values(by=[cleaned_field]).drop_duplicates(subset=filter_fields, keep='first').drop(columns=[cleaned_field])
                 else:
-                    missing_join = missing_join.sort_values(by=[cleaned_field]).drop_duplicates(subset=['id'], keep='first').drop(columns=[cleaned_field])
+                    missing_join = missing_join.sort_values(by=[cleaned_field]).drop_duplicates(subset=filter_fields, keep='first').drop(columns=[cleaned_field])
 
                 join_files_df = pd.concat([join_files_df, missing_join])
                 join_files_df = join_files_df.drop_duplicates(subset=['id',join_unique_field])
