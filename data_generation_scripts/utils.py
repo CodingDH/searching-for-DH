@@ -175,28 +175,33 @@ def read_combine_files(dir_path: str, check_all_dirs: bool=False, file_path_cont
             excluded_exists = [excluded_dir for excluded_dir in excluded_dirs if excluded_dir in directory]
             if len(excluded_exists) == 0:
                 for file_name in files:
+                    
+                    if large_files:
+                        file_dict = {}
+                        loaded_file = os.path.join(directory, file_name)
+                        file_size = os.path.getsize(loaded_file)
+                        file_dict['file_name'] = file_name
+                        file_dict['file_size'] = file_size
+                        file_dict['directory'] = directory
+                        relevant_files.append(file_dict)
+                    else:
+                        row = read_csv_file(directory, file_name, file_path_contains)
+                        if row is not None:
+                            rows.append(row)
+        else:
+            for file_name in files:
+                if large_files:
+                    file_dict = {}
+                    loaded_file = os.path.join(directory, file_name)
+                    file_size = os.path.getsize(loaded_file)
+                    file_dict['file_name'] = file_name
+                    file_dict['file_size'] = file_size
+                    file_dict['directory'] = directory
+                    relevant_files.append(file_dict)
+                else:
                     row = read_csv_file(directory, file_name, file_path_contains)
                     if row is not None:
                         rows.append(row)
-                    if large_files:
-                        file_dict = {}
-                        file_name = os.path.join(directory, file_name)
-                        file_size = os.path.getsize(file_name)
-                        file_dict['file_name'] = file_name
-                        file_dict['file_size'] = file_size
-                        relevant_files.append(file_dict)
-        else:
-            for file_name in files:
-                row = read_csv_file(directory, file_name, file_path_contains)
-                if row is not None:
-                    rows.append(row)
-                if large_files:
-                    file_dict = {}
-                    file_name = os.path.join(directory, file_name)
-                    file_size = os.path.getsize(file_name)
-                    file_dict['file_name'] = file_name
-                    file_dict['file_size'] = file_size
-                    relevant_files.append(file_dict)
     if large_files:
         files_df = pd.DataFrame(relevant_files)
         files_df['date'] = "202" + files_df['file_name'].str.split('202').str[1].str.split('.').str[0]
@@ -204,8 +209,9 @@ def read_combine_files(dir_path: str, check_all_dirs: bool=False, file_path_cont
         files_df.date = pd.to_datetime(files_df.date)
         top_files = files_df.sort_values(by=['file_size', 'date'], ascending=[False, False]).head(2)
         rows = []
+        print(top_files)
         for _, row in top_files.iterrows():
-            df = read_csv_file(dir_path, row.file_name, file_path_contains)
+            df = read_csv_file(row.directory, row.file_name, file_path_contains)
             if df is not None:
                 rows.append(df)
     combined_df = pd.concat(rows) if len(rows) > 0 else pd.DataFrame()
@@ -253,7 +259,7 @@ def check_if_older_file_exists(file_path):
             shutil.copy2(src, dst)  
 
 
-def check_for_entity_in_older_queries(entity_path, entity_df, is_large=False):
+def check_for_entity_in_older_queries(entity_path, entity_df, is_large=True):
     """Function to check if entity exists in older queries and add it to our most recent version of the file
     :param entity_path: path to entity file
     :param entity_df: entity dataframe"""
@@ -296,7 +302,8 @@ def check_for_entity_in_older_queries(entity_path, entity_df, is_large=False):
             cleaned_field = 'cleaned_repo_query_time' if entity_type == 'repos' else 'cleaned_user_query_time'
             time_field = 'repo_query_time' if entity_type == 'repos' else 'user_query_time'
             entity_df[cleaned_field] = pd.to_datetime(entity_df[time_field], errors='coerce')
-            entity_df = entity_df.sort_values(by=[cleaned_field]).drop_duplicates(subset=['id'], keep='first').drop(columns=[cleaned_field])
+            entity_field = 'full_name' if 'repo' in entity_type else 'login'
+            entity_df = entity_df.sort_values(by=[cleaned_field], ascending=False).drop_duplicates(subset=[entity_field], keep='first').drop(columns=[cleaned_field])
             entity_df.to_csv(entity_path, index=False)
     return entity_df
 
@@ -540,9 +547,9 @@ def check_add_repos(potential_new_repo_df, repo_output_path, return_df):
     repo_df['repo_query_time'] = datetime.now().strftime("%Y-%m-%d")
     repo_df.to_csv(repo_output_path, index=False)
     print("Repo file updated", time.time())
-    # check_for_entity_in_older_queries(repo_output_path, repo_df)
+    repo_df = check_for_entity_in_older_queries(repo_output_path, repo_df, is_large=True)
     if return_df:
-        repo_df = get_repo_df(repo_output_path)
+        # repo_df = get_repo_df(repo_output_path)
         return repo_df
 
 def get_repo_df(output_path):
