@@ -167,13 +167,13 @@ def verify_results_exist(initial_search_queries_repo_file_path: str, exisiting_s
         search_queries_user_df = pd.read_csv(existing_search_queries_user_file_path)
         search_queries_repo_df = pd.read_csv(exisiting_search_queries_repo_file_path)
         
-        search_queries_user_df = search_queries_user_df[search_queries_user_df.search_term_source.isin(subset_terms)]
-        search_queries_repo_df = search_queries_repo_df[search_queries_repo_df.search_term_source.isin(subset_terms)]
+        # search_queries_user_df = search_queries_user_df[search_queries_user_df.search_term_source.isin(subset_terms)]
+        # search_queries_repo_df = search_queries_repo_df[search_queries_repo_df.search_term_source.isin(subset_terms)]
         search_queries_user_df['cleaned_search_query'] = search_queries_user_df['search_query'].str.replace('%22', '"').str.replace('"', '').str.replace('%3A', ':').str.split('&page').str[0]
         search_queries_repo_df['cleaned_search_query'] = search_queries_repo_df['search_query'].str.replace('%22', '"').str.replace('"', '').str.replace('%3A', ':').str.split('&page').str[0]
         
-        updated_search_queries_repo_df = check_for_joins_in_older_queries(repo_join_output_path, search_queries_repo_df, join_unique_field, repo_filter_fields)
-        updated_search_queries_user_df = check_for_joins_in_older_queries(user_join_output_path, search_queries_user_df, join_unique_field, user_filter_fields)
+        updated_search_queries_repo_df = check_for_joins_in_older_queries(repo_join_output_path, search_queries_repo_df, join_unique_field, repo_filter_fields, subset_terms)
+        updated_search_queries_user_df = check_for_joins_in_older_queries(user_join_output_path, search_queries_user_df, join_unique_field, user_filter_fields, subset_terms)
 
         initial_search_queries_repo_df = pd.read_csv(initial_search_queries_repo_file_path)
         initial_search_queries_user_df  = pd.read_csv(initial_search_queries_user_file_path)
@@ -208,14 +208,14 @@ def verify_results_exist(initial_search_queries_repo_file_path: str, exisiting_s
         initial_search_queries_repo_df = pd.read_csv(initial_search_queries_repo_file_path)
         initial_search_queries_user_df  = pd.read_csv(initial_search_queries_user_df)
 
-        initial_search_queries_repo_df = initial_search_queries_repo_df[initial_search_queries_repo_df.search_term_source.isin(subset_terms)]
-        initial_search_queries_user_df = initial_search_queries_user_df[initial_search_queries_user_df.search_term_source.isin(subset_terms)]
+        # initial_search_queries_repo_df = initial_search_queries_repo_df[initial_search_queries_repo_df.search_term_source.isin(subset_terms)]
+        # initial_search_queries_user_df = initial_search_queries_user_df[initial_search_queries_user_df.search_term_source.isin(subset_terms)]
 
         initial_search_queries_user_df['cleaned_search_query'] = initial_search_queries_user_df['search_query'].str.replace('%22', '"').str.replace('"', '').str.replace('%3A', ':').str.split('&page').str[0]
         initial_search_queries_repo_df['cleaned_search_query'] = initial_search_queries_repo_df['search_query'].str.replace('%22', '"').str.replace('"', '').str.replace('%3A', ':').str.split('&page').str[0]
         
-        search_queries_repo_df = check_for_joins_in_older_queries(repo_join_output_path, initial_search_queries_repo_df, join_unique_field, repo_filter_fields)
-        search_queries_user_df = check_for_joins_in_older_queries(user_join_output_path, initial_search_queries_user_df, join_unique_field, user_filter_fields)
+        search_queries_repo_df = check_for_joins_in_older_queries(repo_join_output_path, initial_search_queries_repo_df, join_unique_field, repo_filter_fields, subset_terms)
+        search_queries_user_df = check_for_joins_in_older_queries(user_join_output_path, initial_search_queries_user_df, join_unique_field, user_filter_fields, subset_terms)
 
         tqdm.pandas(desc="Fill missing language data")
         search_queries_repo_df = search_queries_repo_df.groupby(['full_name']).progress_apply(fill_missing_language_data, is_repo=True)
