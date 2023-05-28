@@ -174,7 +174,8 @@ def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_fiel
             # print(f"Error on getting actors for {row.full_name}")
             repo_progress_bar.total = repo_progress_bar.total - 1
             repo_name = 'repo_full_name' if 'repo_full_name' in repo_df.columns else 'full_name'
-            error_df = pd.DataFrame([{'repo_full_name': row.full_name, 'error_time': time.time(), 'error_url': row[repo_name]}])
+            repo_field = 'id' if repo_name == 'repo_full_name' else 'full_name'
+            error_df = pd.DataFrame([{'repo_full_name': row[repo_field], 'error_time': time.time(), 'error_url': row[repo_name]}])
             # Write errors to relevant error log
             if os.path.exists(error_file_path):
                 error_df.to_csv(error_file_path, mode='a', header=False, index=False)
@@ -194,7 +195,7 @@ def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_fiel
     return repo_actors_df
 
 
-def get_repos_user_actors(repo_df,repo_actors_output_path, users_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files):
+def get_repos_user_actors(repo_df,repo_actors_output_path, users_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files, join_unique_field, filter_fields):
     """Function to take a list of repositories and get any user activities that are related to a repo, save that into a join table, and also update final list of users.
     :param repo_df: dataframe of repositories
     :param repo_actors_output_path: path to repo actors file (actors here could be subscribers, stargazers, etc...)
@@ -249,20 +250,26 @@ def get_repos_user_actors(repo_df,repo_actors_output_path, users_output_path, ge
         repo_actors_df.to_csv(repo_actors_output_path, index=False)
         # Finally, get the unique users which is updated in the get_actors code and return it
         clean_write_error_file(error_file_path, 'repo_full_name')
-        join_unique_field = 'repo_query'
-        filter_field = 'full_name'
-        search_subset = False
-        check_for_joins_in_older_queries(repo_actors_output_path, repo_actors_df, join_unique_field, filter_field, search_subset)
+        check_for_joins_in_older_queries(repo_actors_output_path, repo_actors_df, join_unique_field, filter_fields)
         users_df = get_user_df(users_output_path)
     return repo_actors_df, users_df
 
 if __name__ == "__main__":
     # Load the repo dataframe
     core_repos = pd.read_csv("../data/derived_files/initial_core_repos.csv", low_memory=False)
-    get_url_field = 'contributors_url'
+    get_url_field = 'pulls_url'
     load_existing_files = False
     overwrite_existing_temp_files = False
-    contributors_df, users_df = get_repos_user_actors(core_repos, '../data/join_files/repo_contributors_join_dataset.csv', '../data/entity_files/users_dataset.csv', get_url_field, load_existing_files, overwrite_existing_temp_files)
-    contributors_errors_df = check_return_error_file('../data/error_logs/repo_contributors_join_dataset_errors.csv')
+    filter_fields = ['id', 'repo_full_name', 'user.login', 'head.user.login']
+    join_unique_field = 'repo_full_name'
+    pulls_df, users_df = get_repos_user_actors(core_repos, '../data/large_files/join_files/repo_pulls_join_dataset.csv', '../data/entity_files/users_dataset.csv', get_url_field, load_existing_files, overwrite_existing_temp_files, join_unique_field, filter_fields)
+    pulls_errors_df = check_return_error_file('../data/error_logs/repo_pulls_join_dataset_errors.csv')
 
-    
+    get_url_field = 'review_comments_url'
+    load_existing_files = False
+    overwrite_existing_temp_files = False
+    filter_fields = ['repo_full_name', 'user.login', 'url']
+    join_unique_field = 'repo_full_name'
+    pulls_comments_df, users_df = get_repos_user_actors(pulls_df, '../data/large_files/join_files/pulls_comments_join_dataset.csv', '../data/entity_files/users_dataset.csv', get_url_field, load_existing_files, overwrite_existing_temp_files, join_unique_field, filter_fields)
+    pulls_comments_errors_df = check_return_error_file('../data/error_logs/pulls_comments_join_dataset_errors.csv')
+            
