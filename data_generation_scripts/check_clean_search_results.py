@@ -198,7 +198,7 @@ def verify_results_exist(initial_search_queries_repo_file_path: str, exisiting_s
         cleaned_search_queries_user_df['search_query_time'] = pd.to_datetime(cleaned_search_queries_user_df['search_query_time'], errors='coerce')
         cleaned_search_queries_user_df = cleaned_search_queries_user_df.sort_values(by=['search_query_time'], ascending=False).drop_duplicates(subset=['login','cleaned_search_query'], keep='first')
 
-        clenaed_search_queries_repo_df, clenaed_search_queries_user_df = fix_results(clenaed_search_queries_repo_df, clenaed_search_queries_user_df)
+        cleaned_search_queries_repo_df, cleaned_search_queries_user_df = fix_results(cleaned_search_queries_repo_df, cleaned_search_queries_user_df)
         search_queries_repo_df = clean_search_queries_data(cleaned_search_queries_repo_df, 'full_name', 'repo')
         search_queries_user_df = clean_search_queries_data(cleaned_search_queries_user_df, 'login', 'user')
     else:
@@ -245,16 +245,20 @@ user_join_output_path = "../data/derived_files/updated_search_queries_user_join_
 search_queries_repo_df = pd.read_csv("../data/derived_files/initial_search_queries_repo_join_subset_dh_dataset.csv")
 search_queries_user_df = pd.read_csv("../data/derived_files/initial_search_queries_user_join_subset_dh_dataset.csv")
 
-search_queries_repo_df.loc[(search_queries_repo_df.finalized_language.notna()) & (search_queries_repo_df.keep_resource == False), 'keep_resource'] = True
-search_queries_user_df.loc[(search_queries_user_df.finalized_language.notna()) & (search_queries_user_df.keep_resource == False), 'keep_resource'] = True
+needs_checking = search_queries_repo_df[(search_queries_repo_df.finalized_language.isna()) & ((search_queries_repo_df.keep_resource.isna()) | (search_queries_repo_df.keep_resource == True))]
 
-# needs_checking = search_queries_repo_df[(search_queries_repo_df['keep_resource'] == True) & (search_queries_repo_df['finalized_language'].isna())]
+if os.path.exists(repo_join_output_path):
+    existing_search_queries_repo_df = pd.read_csv(repo_join_output_path)
+    needs_checking = existing_search_queries_repo_df[(existing_search_queries_repo_df.full_name.isin(needs_checking.full_name)) & (existing_search_queries_repo_df.finalized_language.isna())]
+    if len(needs_checking) > 0:
+        search_queries_repo_df = pd.concat([existing_search_queries_repo_df, needs_checking])
+    else:
+        search_queries_repo_df = existing_search_queries_repo_df
 
 needs_checking_repos = search_queries_repo_df[(search_queries_repo_df['finalized_language'].isna())].full_name.unique().tolist()
 search_queries_repo_df.loc[search_queries_repo_df.detected_language.isna(), 'detected_language'] = None
 search_queries_repo_df.loc[search_queries_repo_df.natural_language.isna(), 'natural_language'] = None
 search_queries_repo_df = search_queries_repo_df.reset_index(drop=True)
-
 
 for index, repo in enumerate(needs_checking_repos):
     all_rows = search_queries_repo_df[(search_queries_repo_df['full_name'] == repo)]
@@ -330,12 +334,22 @@ for index, row in tqdm(double_check.iterrows(), total=len(double_check), desc="D
 
 # CHECK USER
 
-# needs_checking = search_queries_user_df[(search_queries_user_df['keep_resource'] == True) & (
-#     search_queries_user_df['finalized_language'].isna())]
+needs_checking = search_queries_user_df[(search_queries_user_df.finalized_language.isna()) & ((search_queries_user_df.keep_resource.isna()) | (search_queries_user_df.keep_resource == True))]
+
+if os.path.exists(user_join_output_path):
+    existing_search_queries_user_df = pd.read_csv(user_join_output_path)
+    needs_checking = existing_search_queries_user_df[(existing_search_queries_user_df.login.isin(needs_checking.login)) & (existing_search_queries_user_df.finalized_language.isna())]
+    if len(needs_checking) > 0:
+        search_queries_user_df = pd.concat([existing_search_queries_user_df, needs_checking])
+    else:
+        search_queries_user_df = existing_search_queries_user_df
+
 needs_checking_users = search_queries_user_df[(search_queries_user_df['finalized_language'].isna())].login.unique().tolist()
 search_queries_user_df.loc[search_queries_user_df.detected_language.isna(), 'detected_language'] = None
 search_queries_user_df.loc[search_queries_user_df.natural_language.isna(), 'natural_language'] = None
 search_queries_user_df = search_queries_user_df.reset_index(drop=True)
+
+
 for index, user in enumerate(needs_checking_users):
     all_rows = search_queries_user_df[(
         search_queries_user_df['login'] == user)]
@@ -361,17 +375,13 @@ for index, user in enumerate(needs_checking_users):
     )].detected_language.unique().tolist()
     natural_languages = all_rows[all_rows.natural_language.notna(
     )].natural_language.unique().tolist()
-
-    detected_languages = detected_languages if len(detected_languages) == 1 else str(
-        detected_languages).replace('[', '').replace(']', '')
-    natural_languages = natural_languages if len(natural_languages) == 1 else str(
+    detected_languages = detected_languages[0] if len(detected_languages) == 1 else str(detected_languages).replace('[', '').replace(']', '')
+    natural_languages = natural_languages[0] if len(natural_languages) == 1 else str(
         natural_languages).replace('[', '').replace(']', '')
-
     potential_language = detected_languages if len(
         detected_languages) != 0 else natural_languages
     potential_language = potential_language if len(
         potential_language) != 0 else 'None'
-
     if ',' in potential_language:
         if 'fr' in potential_language:
             potential_language = 'fr'
