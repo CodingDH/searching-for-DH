@@ -304,6 +304,7 @@ def check_for_entity_in_older_queries(entity_path, entity_df, is_large=True):
             entity_df[cleaned_field] = pd.to_datetime(entity_df[time_field], errors='coerce')
             entity_field = 'full_name' if 'repo' in entity_type else 'login'
             entity_df = entity_df.sort_values(by=[cleaned_field], ascending=False).drop_duplicates(subset=[entity_field], keep='first').drop(columns=[cleaned_field])
+            check_if_older_file_exists(entity_path)
             entity_df.to_csv(entity_path, index=False)
     return entity_df
 
@@ -482,8 +483,16 @@ def get_new_repos(potential_new_repos_df, temp_repos_dir, repos_progress_bar,  e
                 repos_progress_bar.update(1)
                 continue
             response_df = pd.json_normalize(response_data)
-            response_df = response_df[repo_headers.columns]
-            response_df.to_csv(temp_repos_path, index=False)
+            missing_headers = list(set(repo_headers.columns.tolist()) - set(response_df.columns.tolist()))
+            if len(missing_headers) > 0:
+                merged_df = pd.concat([response_df, repo_headers])
+                merged_df = merged_df[repo_headers.columns.tolist()]
+                merged_df = merged_df.dropna(subset=['full_name'])
+                response_df = merged_df[repo_headers.columns.tolist()]
+            else:
+                response_df = response_df[repo_headers.columns.tolist()]
+                response_df = response_df[repo_headers.columns]
+            response_df.to_csv(temp_repos_dir + temp_repos_path, index=False)
             # Only continue if sufficient rate limit
             rates_df = check_rate_limit()
             calls_remaining = rates_df['resources.core.limit']
@@ -714,7 +723,7 @@ def check_for_joins_in_older_queries(join_file_path: str, join_files_df: pd.Data
             if len(missing_values) > 0:
                 join_files_df = pd.concat([join_files_df, missing_values])
                 join_files_df.to_csv(join_file_path, index=False)
-                
+
     return join_files_df
 
 def get_core_users_repos():
