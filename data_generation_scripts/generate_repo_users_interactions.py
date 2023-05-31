@@ -234,9 +234,10 @@ def get_repos_user_actors(repo_df,repo_actors_output_path, users_output_path, ge
             repo_actors_df = pd.read_csv(repo_actors_output_path, low_memory=False)
             # Then check from our repo_df which repos are missing from the join file, using either the field we are grabing (get_url_field) or the the repo id
             if counts_exist in repo_df.columns:
-                subset_repos = repo_df[['full_name', counts_exist]]
-                subset_repo_actors_df = repo_actors_df[join_unique_field].value_counts().reset_index().rename(columns={'index': 'full_name', join_unique_field: f'new_{counts_exist}'})
-                merged_df = pd.merge(subset_repos, subset_repo_actors_df, on='full_name', how='left')
+                repo_name = 'repo_full_name' if 'comments' in repo_actors_output_path else 'full_name'
+                subset_repos = repo_df[[repo_name, counts_exist]]
+                subset_repo_actors_df = repo_actors_df[join_unique_field].value_counts().reset_index().rename(columns={'index': repo_name, join_unique_field: f'new_{counts_exist}'})
+                merged_df = pd.merge(subset_repos, subset_repo_actors_df, on=repo_name, how='left')
                 merged_df[f'new_{counts_exist}'] = merged_df[f'new_{counts_exist}'].fillna(0)
                 missing_actors = merged_df[merged_df[counts_exist] > merged_df[f'new_{counts_exist}']]
                 unprocessed_actors = repo_df[repo_df.full_name.isin(missing_actors.full_name)]
@@ -279,9 +280,11 @@ def get_repos_user_actors(repo_df,repo_actors_output_path, users_output_path, ge
 if __name__ == "__main__":
     # Load the repo dataframe
     core_repos = pd.read_csv("../data/derived_files/initial_core_repos.csv", low_memory=False)
-    get_url_field = 'stargazers_url'
+    pulls_df = pd.read_csv('../data/large_files/join_files/repo_pulls_join_dataset.csv', low_memory=False)
+    get_url_field = 'review_comments_url'
     load_existing_files = False
     overwrite_existing_temp_files = False
+    filter_fields = ['repo_full_name', 'user.login', 'url']
     join_unique_field = 'repo_full_name'
-    filter_fields = ['repo_full_name', 'user.login']
-    stargazers_df, users_df = get_repos_user_actors(core_repos, '../data/join_files/repo_stargazers_join_dataset.csv', '../data/entity_files/users_dataset.csv', get_url_field, load_existing_files, overwrite_existing_temp_files, join_unique_field, filter_fields)
+    pulls_comments_df, users_df = get_repos_user_actors(pulls_df, '../data/large_files/join_files/pulls_comments_join_dataset.csv', '../data/entity_files/users_dataset.csv', get_url_field, load_existing_files, overwrite_existing_temp_files, join_unique_field, filter_fields)
+    pulls_comments_errors_df = check_return_error_file('../data/error_logs/pulls_comments_join_dataset_errors.csv')
