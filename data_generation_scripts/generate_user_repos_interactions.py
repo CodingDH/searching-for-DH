@@ -29,7 +29,7 @@ auth_headers = {'Authorization': f'token {auth_token}','User-Agent': 'request'}
 
 
 
-def get_user_repos(user_df, user_repos_output_path, repos_output_path, get_url_field, error_file_path, overwrite_existing_temp_files=True):
+def get_user_repos(user_df, user_repos_output_path, repos_output_path, get_url_field, error_file_path, threshold_row, overwrite_existing_temp_files=True):
     # Create the temporary directory path to store the data
     temp_user_repos_dir = f"../data/temp/{user_repos_output_path.split('/')[-1].split('.csv')[0]}/"
 
@@ -44,8 +44,6 @@ def get_user_repos(user_df, user_repos_output_path, repos_output_path, get_url_f
     # Create our progress bars for getting Repo Contributors and Users (not sure the user one works properly in Jupyter though)
     user_progress_bar = tqdm(total=len(user_df), desc="Getting User's Repos", position=0)
 
-    cols_df = pd.read_csv("../data/metadata_files/user_url_cols.csv")
-    threshold_row = cols_df[cols_df['col_url'] == get_url_field]
     threshold_check = threshold_row['col_name'].values[0]
     threshold = 2500 if 'starred' in get_url_field else 1000
     for _, row in user_df.iterrows():
@@ -56,11 +54,6 @@ def get_user_repos(user_df, user_repos_output_path, repos_output_path, get_url_f
 
             # Create the temporary directory path to store the data
             temp_user_repos_path =  F"{row.login.replace('/','')}_user_repos_{get_url_field}.csv"
-
-            # Check if the user_repos_df has already been saved to the temporary directory
-            if os.path.exists(temp_user_repos_dir + temp_user_repos_path):
-                user_progress_bar.update(1)
-                continue
             
             if row[threshold_check] == 0:
                 print(f"Skipping {row.login} due to {threshold_check} == 0")
@@ -76,6 +69,15 @@ def get_user_repos(user_df, user_repos_output_path, repos_output_path, get_url_f
                 else:
                     over_threshold_df.to_csv(too_many_results, index=False)
                 continue
+
+            # Check if the user_repos_df has already been saved to the temporary directory
+            if os.path.exists(temp_user_repos_dir + temp_user_repos_path):
+                existing_df = pd.read_csv(temp_user_repos_dir + temp_user_repos_path)
+                if len(existing_df) == row[threshold_check]:
+                    user_progress_bar.update(1)
+                    continue
+            else:
+                existing_df = pd.DataFrame()
 
             # Create the url to get the repo actors
             url = row[get_url_field].split('{')[0] + '?per_page=100&page=1' if '{' in row[get_url_field] else row[get_url_field] + '?per_page=100&page=1'
@@ -124,6 +126,11 @@ def get_user_repos(user_df, user_repos_output_path, repos_output_path, get_url_f
                 user_repos_df['user_id'] = row.id
                 user_repos_df[f'user_{get_url_field}'] = row[get_url_field]
 
+                if len(existing_df) > 0:
+                    existing_df = existing_df[~existing_df['id'].isin(user_repos_df['id'])]
+                    user_repos_df = pd.concat([user_repos_df, existing_df])
+                    user_repos_df = user_repos_df.drop_duplicates()
+
                 # Save the user_repos_df to the temporary directory
                 user_repos_df.to_csv(temp_user_repos_dir + temp_user_repos_path, index=False)
 
@@ -167,6 +174,10 @@ def get_user_repo_activities(user_df,user_repos_output_path, repos_output_path, 
     else:
         # Now create the path for the error logs
         error_file_path = f"../data/error_logs/{user_repos_output_path.split('/')[-1].split('.csv')[0]}_errors.csv"
+
+        cols_df = pd.read_csv("../data/metadata_files/user_url_cols.csv")
+        threshold_row = cols_df[cols_df['col_url'] == get_url_field]
+        threshold_check = threshold_row['col_name'].values[0]
         # If we want to rerun our code, first check if the join file exists
         if os.path.exists(user_repos_output_path):
             # If it does, load it

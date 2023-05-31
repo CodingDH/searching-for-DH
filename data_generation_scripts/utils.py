@@ -701,6 +701,8 @@ def check_for_joins_in_older_queries(join_file_path: str, join_files_df: pd.Data
     older_join_df = read_combine_files(dir_path=older_join_file_dir, check_all_dirs=True, file_path_contains=join_type, large_files=is_large) 
     
     entity_type = "" if "search" in join_file_path else "repo" if "repo" in join_file_path else "user"
+    if 'comments' in join_file_path:
+        entity_type = "repo"
 
     if "search" in join_file_path:
         join_files_df = join_files_df[join_files_df.search_term_source.isin(subset_terms)]
