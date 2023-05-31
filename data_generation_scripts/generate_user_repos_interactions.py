@@ -29,7 +29,7 @@ auth_headers = {'Authorization': f'token {auth_token}','User-Agent': 'request'}
 
 
 
-def get_user_repos(user_df, user_repos_output_path, repos_output_path, get_url_field, error_file_path, threshold_row, overwrite_existing_temp_files=True):
+def get_user_repos(user_df, user_repos_output_path, repos_output_path, get_url_field, error_file_path, overwrite_existing_temp_files, threshold_row):
     # Create the temporary directory path to store the data
     temp_user_repos_dir = f"../data/temp/{user_repos_output_path.split('/')[-1].split('.csv')[0]}/"
 
@@ -157,7 +157,7 @@ def get_user_repos(user_df, user_repos_output_path, repos_output_path, get_url_f
     user_progress_bar.close()
     return user_repos_df
 
-def get_user_repo_activities(user_df,user_repos_output_path, repos_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files):
+def get_user_repo_activities(user_df,user_repos_output_path, repos_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files, join_unique_field, filter_fields):
     """Function to take a list of repositories and get any user activities that are related to a repo, save that into a join table, and also update final list of users.
     :param user_df: The dataframe of users to get the repo activities for
     :param user_repos_output_path: The path to the output file for the user_repos_df
@@ -184,8 +184,15 @@ def get_user_repo_activities(user_df,user_repos_output_path, repos_output_path, 
             print("Loading existing user repos file", time.time())
             user_repos_df = pd.read_csv(user_repos_output_path, low_memory=False)
             # Then check from our repo_df which repos are missing from the join file, using either the field we are grabing (get_url_field) or the the repo id
-            print("Getting unprocessed repos", time.time())
-            unprocessed_repos = user_df[~user_df['login'].isin(user_repos_df['user_login'])]
+            if threshold_check in user_df.columns:
+                subset_users = user_df[['login', threshold_check]]
+                subset_user_repos_df = user_repos_df[join_unique_field].value_counts().reset_index().rename(columns={'index': 'login', join_unique_field: f'new_{threshold_check}'})
+                merged_df = pd.merge(subset_users, subset_user_repos_df, on='login', how='left')
+                merged_df[f'new_{threshold_check}'] = merged_df[f'new_{threshold_check}'].fillna(0)
+                missing_actors = merged_df[merged_df[threshold_check] > merged_df[f'new_{threshold_check}']]
+                unprocessed_repos = user_df[user_df.login.isin(missing_actors.login)]
+            else:  
+                unprocessed_repos = user_df[~user_df['login'].isin(user_repos_df['user_login'])]
 
             # Check if the error log exists
             if os.path.exists(error_file_path):
@@ -199,7 +206,7 @@ def get_user_repo_activities(user_df,user_repos_output_path, repos_output_path, 
             # If there are unprocessed repos, run the get_actors code to get them or return the existing data if there are no unprocessed repos
             if len(unprocessed_repos) > 0:
                 print("Getting user repos", time.time())
-                new_repos_df = get_user_repos(unprocessed_repos, user_repos_output_path, repos_output_path, get_url_field, error_file_path, overwrite_existing_temp_files)
+                new_repos_df = get_user_repos(unprocessed_repos, user_repos_output_path, repos_output_path, get_url_field, error_file_path, overwrite_existing_temp_files, threshold_row)
             else:
                 new_repos_df = unprocessed_repos
             # Finally combine the existing join file with the new data and save it
@@ -207,16 +214,16 @@ def get_user_repo_activities(user_df,user_repos_output_path, repos_output_path, 
             
         else:
             # If the join file doesn't exist, run the get_actors code to get them
-            user_repos_df = get_user_repos(user_df, user_repos_output_path, repos_output_path, get_url_field, error_file_path, overwrite_existing_temp_files)
+            user_repos_df = get_user_repos(user_df, user_repos_output_path, repos_output_path, get_url_field, error_file_path, overwrite_existing_temp_files, threshold_row)
         
         check_if_older_file_exists(user_repos_output_path)
         user_repos_df['user_query_time'] = datetime.now().strftime("%Y-%m-%d")
         user_repos_df.to_csv(user_repos_output_path, index=False)
         clean_write_error_file(error_file_path, 'login')
         # Finally, get the unique users which is updated in the get_actors code and return it
-        join_unique_field = 'user_query'
-        filter_fields = ['user_login', 'full_name']
-        check_for_joins_in_older_queries(user_repos_output_path, user_repos_df, join_unique_field, filter_fields, is_large=False)
+
+        is_large = True if 'star' in get_url_field else False
+        check_for_joins_in_older_queries(user_repos_output_path, user_repos_df, join_unique_field, filter_fields, is_large=is_large)
         
         repos_df = get_repo_df(repos_output_path)
     return user_repos_df, repos_df
@@ -224,18 +231,14 @@ def get_user_repo_activities(user_df,user_repos_output_path, repos_output_path, 
 
 if __name__ == '__main__':
     # Get the data
-    core_users, core_repos = get_core_users_repos()
-    if 'star_count' not in core_users.columns:
-        core_users = check_total_results(core_users, 'star_count', 'starred_url')
-        core_users.to_csv('../data/derived_files/core_users.csv', index=False)
-    search_queries_repo_df = pd.read_csv(
-    '../data/derived_files/updated_search_queries_repo_join_subset_dh_dataset.csv')
-    search_queries_user_df = pd.read_csv('../data/derived_files/search_queries_user_join_subset_dh_dataset.csv')
-    user_starred_output_path = "../data/large_files/join_files/user_starred_join_dataset.csv"
-    repos_output_path = "../data/large_files/entity_files/repos_dataset.csv"
-    get_url_field = "repos_url"
+    core_users_path = "../data/derived_files/initial_core_users.csv"
+    core_users = pd.read_csv(core_users_path)
+    user_users_output_path = "../data/large_files/join_files/user_starred_join_dataset.csv"
+    users_output_path = "../data/entity_files/users_dataset.csv"
+    get_url_field = "starred_url"
     load_existing_files = False
     overwrite_existing_temp_files = False
+    join_unique_field = 'user_login'
+    filter_fields = ['user_login', 'full_name']
 
-    subset_core_users = core_users[core_users['login'].isin(search_queries_user_df['login'])]
-    users_starred_df, repo_df = get_user_repo_activities(core_users,user_starred_output_path, repos_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files)
+    users_starred_df, user_df = get_user_repo_activities(core_users,user_users_output_path, users_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files, join_unique_field, filter_fields)

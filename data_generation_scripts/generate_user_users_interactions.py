@@ -16,7 +16,7 @@ auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
 
 auth_headers = {'Authorization': f'token {auth_token}','User-Agent': 'request'}
 
-def get_user_users(user_df: object, user_users_output_path: str, users_output_path: str, get_url_field: str, error_file_path: str, overwrite_existing_temp_files: bool =True) -> object:
+def get_user_users(user_df: object, user_users_output_path: str, users_output_path: str, get_url_field: str, error_file_path: str, user_cols_metdata: pd.DataFrame, overwrite_existing_temp_files: bool =True) -> object:
     # Create the temporary directory path to store the data
     temp_user_users_dir = f"../data/temp/{user_users_output_path.split('/')[-1].split('.csv')[0]}/"
 
@@ -28,6 +28,8 @@ def get_user_users(user_df: object, user_users_output_path: str, users_output_pa
     if not os.path.exists(temp_user_users_dir):
         os.makedirs(temp_user_users_dir)
 
+    too_many_results = f"../data/error_logs/{user_users_output_path.split('/')[-1].split('.csv')[0]}_{get_url_field}_too_many_results.csv"
+
     # Create our progress bars for getting users (not sure the user one works properly in Jupyter though)
     user_progress_bar = tqdm(total=len(user_df), desc="Getting User's Interactions", position=0)
 
@@ -38,11 +40,31 @@ def get_user_users(user_df: object, user_users_output_path: str, users_output_pa
 
             # Create the temporary directory path to store the data
             temp_user_users_path =  F"{row.login.replace('/','')}_user_users_{get_url_field}.csv"
+            counts_exist = user_cols_metdata.col_name.values[0]
 
+            if counts_exist != 'None':
+                if (row[counts_exist] == 0):
+                    user_progress_bar.update(1)
+                    continue
+                if (row[counts_exist] > 1000):
+                    user_progress_bar.update(1)
+                    
+                    print(f"Skipping {row.login} as it has over 1000 users of {counts_exist}")
+                    over_threshold_df = pd.DataFrame([row])
+                    if os.path.exists(too_many_results):
+                        over_threshold_df.to_csv(
+                            too_many_results, mode='a', header=False, index=False)
+                    else:
+                        over_threshold_df.to_csv(too_many_results, index=False)
+                    continue
             # Check if the user_users_df has already been saved to the temporary directory
             if os.path.exists(temp_user_users_dir + temp_user_users_path):
-                user_progress_bar.update(1)
-                continue
+                existing_df = pd.read_csv(temp_user_users_dir + temp_user_users_path)
+                if len(existing_df) == row[counts_exist]:
+                    user_progress_bar.update(1)
+                    continue
+            else:
+                existing_df = pd.DataFrame()
 
             # Create the url to get the repo actors
             url = row[get_url_field].split('{')[0] + '?per_page=100&page=1' if '{' in row[get_url_field] else row[get_url_field] + '?per_page=100&page=1'
@@ -88,11 +110,15 @@ def get_user_users(user_df: object, user_users_output_path: str, users_output_pa
                 user_users_df['user_id'] = row.id
                 user_users_df[f'user_{get_url_field}'] = row[get_url_field]
 
+                if len(existing_df) > 0:
+                    existing_df = existing_df[~existing_df.id.isin(user_users_df.id)]
+                    user_users_df = pd.concat([existing_df, user_users_df])
+                    user_users_df = user_users_df.drop_duplicates()
                 # Save the user_users_df to the temporary directory
                 user_users_df.to_csv(temp_user_users_dir + temp_user_users_path, index=False)
 
                 # Get the unique users from the data_df
-                check_add_users(data_df, users_output_path, overwrite_existing_temp_files, return_df=False)
+                check_add_users(data_df, users_output_path, False, overwrite_existing_temp_files)
                 
                 user_progress_bar.update(1)
         except:
@@ -114,7 +140,7 @@ def get_user_users(user_df: object, user_users_output_path: str, users_output_pa
     user_progress_bar.close()
     return user_users_df
 
-def get_user_users_activities(user_df,user_users_output_path, users_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files):
+def get_user_users_activities(user_df,user_users_output_path, users_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files, join_unique_field, filter_fields):
     
     # Flag to check if we want to reload existing data or rerun our code
     if load_existing_files:
@@ -129,8 +155,18 @@ def get_user_users_activities(user_df,user_users_output_path, users_output_path,
             # If it does, load it
             user_users_df = pd.read_csv(user_users_output_path, low_memory=False)
             # Then check from our user_df which users are missing from the join file, using either the field we are grabing (get_url_field) or the the user id
-            
-            unprocessed_users = user_df[~user_df['login'].isin(user_users_df['user_login'])]
+            cols_df = pd.read_csv("../data/metadata_files/user_url_cols.csv")
+            cols_metadata = cols_df[cols_df.col_url == get_url_field]
+            counts_exist = cols_metadata.col_name.values[0]
+            if counts_exist in user_df.columns:
+                subset_user_df = user_df[['login', counts_exist]]
+                subset_user_users_df = user_users_df[join_unique_field].value_counts().reset_index().rename(columns={'index': 'login', join_unique_field: f'new_{counts_exist}'})
+                merged_df = pd.merge(subset_user_df, subset_user_users_df, on='login', how='left')
+                merged_df[f'new_{counts_exist}'] = merged_df[f'new_{counts_exist}'].fillna(0)
+                missing_actors = merged_df[merged_df[counts_exist] > merged_df[f'new_{counts_exist}']]
+                unprocessed_users = user_df[user_df.login.isin(missing_actors.login)]  
+            else:  
+                unprocessed_users = user_df[~user_df['login'].isin(user_users_df['user_login'])]
 
             # Check if the error log exists
             if os.path.exists(error_file_path):
@@ -141,7 +177,7 @@ def get_user_users_activities(user_df,user_users_output_path, users_output_path,
             
             # If there are unprocessed users, run the get_actors code to get them or return the existing data if there are no unprocessed users
             if len(unprocessed_users) > 0:
-                new_users_df = get_user_users(unprocessed_users, user_users_output_path, users_output_path, get_url_field, error_file_path, overwrite_existing_temp_files)
+                new_users_df = get_user_users(unprocessed_users, user_users_output_path, users_output_path, get_url_field, error_file_path, cols_metadata, overwrite_existing_temp_files)
             else:
                 new_users_df = unprocessed_users
             # Finally combine the existing join file with the new data and save it
@@ -149,29 +185,32 @@ def get_user_users_activities(user_df,user_users_output_path, users_output_path,
             
         else:
             # If the join file doesn't exist, run the get_actors code to get them
-            user_users_df = get_user_users(user_df, user_users_output_path, users_output_path, get_url_field, error_file_path, overwrite_existing_temp_files)
+            user_users_df = get_user_users(user_df, user_users_output_path, users_output_path, get_url_field, error_file_path, cols_metadata, overwrite_existing_temp_files)
         
         check_if_older_file_exists(user_users_output_path)
         user_users_df['user_query_time'] = datetime.now().strftime("%Y-%m-%d")
         user_users_df.to_csv(user_users_output_path, index=False)
         clean_write_error_file(error_file_path, 'login')
         # Finally, get the unique users which is updated in the get_actors code and return it
-        join_unique_field = 'user_query'
-        check_for_joins_in_older_queries(user_df, user_users_output_path, user_users_df, join_unique_field)
+
+        check_for_joins_in_older_queries(user_users_output_path, user_users_df, join_unique_field, filter_fields)
         users_df = get_user_df(users_output_path)
     return user_users_df, users_df
 
 
 if __name__ == '__main__':
     # Get the data
-    core_users = pd.read_csv('../data/derived_files/initial_core_users.csv', low_memory=False)
-    user_users_output_path = "../data/large_files/join_files/user_followers_join_dataset.csv"
+    core_user_path = "../data/derived_files/initial_core_users.csv"
+    core_users = pd.read_csv(core_user_path, low_memory=False)
+    user_users_output_path = "../data/large_files/join_files/user_following_join_dataset.csv"
     users_output_path = "../data/entity_files/users_dataset.csv"
-    get_url_field = "followers_url"
+    get_url_field = "following_url"
     load_existing_files = False
     overwrite_existing_temp_files = False
+    join_unique_field = 'user_login'
+    filter_fields = ['user_login', 'login']
 
-    users_followers_df, user_df = get_user_users_activities(core_users,user_users_output_path, users_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files)
+    users_following_df, user_df = get_user_users_activities(core_users,user_users_output_path, users_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files, join_unique_field, filter_fields)
 
     # user_users_output_path = "../data/large_files/join_files/user_following_join_dataset.csv"
     # users_output_path = "../data/entity_files/users_dataset.csv"
