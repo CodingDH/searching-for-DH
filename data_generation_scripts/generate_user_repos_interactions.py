@@ -233,12 +233,12 @@ if __name__ == '__main__':
     # Get the data
     core_users_path = "../data/derived_files/initial_core_users.csv"
     core_users = pd.read_csv(core_users_path)
-    user_users_output_path = "../data/large_files/join_files/user_starred_join_dataset.csv"
+    user_users_output_path = "../data/large_files/join_files/user_subscriptions_join_dataset.csv"
     users_output_path = "../data/entity_files/users_dataset.csv"
-    get_url_field = "starred_url"
+    get_url_field = "subscriptions_url"
     load_existing_files = False
     overwrite_existing_temp_files = False
     join_unique_field = 'user_login'
     filter_fields = ['user_login', 'full_name']
 
-    users_starred_df, user_df = get_user_repo_activities(core_users,user_users_output_path, users_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files, join_unique_field, filter_fields)
+    users_subscriptions_df, user_df = get_user_repo_activities(core_users,user_users_output_path, users_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files, join_unique_field, filter_fields)
