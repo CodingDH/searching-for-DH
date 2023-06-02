@@ -279,12 +279,11 @@ def get_repos_user_actors(repo_df,repo_actors_output_path, users_output_path, ge
 
 if __name__ == "__main__":
     # Load the repo dataframe
-    core_repos = pd.read_csv("../data/derived_files/initial_core_repos.csv", low_memory=False)
-    pulls_df = pd.read_csv('../data/large_files/join_files/repo_pulls_join_dataset.csv', low_memory=False)
-    get_url_field = 'review_comments_url'
+    core_repos = pd.read_csv("../data/derived_files/firstpass_core_repos.csv", low_memory=False)
+    get_url_field = 'contributors_url'
     load_existing_files = False
     overwrite_existing_temp_files = False
-    filter_fields = ['repo_full_name', 'user.login', 'url']
     join_unique_field = 'repo_full_name'
-    pulls_comments_df, users_df = get_repos_user_actors(pulls_df, '../data/large_files/join_files/pulls_comments_join_dataset.csv', '../data/entity_files/users_dataset.csv', get_url_field, load_existing_files, overwrite_existing_temp_files, join_unique_field, filter_fields)
-    pulls_comments_errors_df = check_return_error_file('../data/error_logs/pulls_comments_join_dataset_errors.csv')
+    filter_fields = ['repo_full_name', 'login']
+    contributors_df, users_df = get_repos_user_actors(core_repos, '../data/join_files/repo_contributors_join_dataset.csv', '../data/entity_files/users_dataset.csv', get_url_field, load_existing_files, overwrite_existing_temp_files, join_unique_field, filter_fields)
+    # contributors_errors_df = check_return_error_file('../data/error_logs/repo_contributors_join_dataset_errors.csv')
