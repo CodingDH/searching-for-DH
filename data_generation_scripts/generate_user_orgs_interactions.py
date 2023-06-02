@@ -21,7 +21,7 @@ auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
 auth_headers = {'Authorization': f'token {auth_token}','User-Agent': 'request'}
 
 
-def get_user_orgs(user_df, user_orgs_output_path, orgs_output_path, get_url_field, error_file_path, overwrite_existing_temp_files):
+def get_user_orgs(user_df, user_orgs_output_path, orgs_output_path, get_url_field, error_file_path, user_cols_metadata, overwrite_existing_temp_files):
     # Create the temporary directory path to store the data
     temp_user_orgs_dir = f"../data/temp/{user_orgs_output_path.split('/')[-1].split('.csv')[0]}/"
 
@@ -34,6 +34,8 @@ def get_user_orgs(user_df, user_orgs_output_path, orgs_output_path, get_url_fiel
     # Create our progress bars for getting org Contributors and Users (not sure the user one works properly in Jupyter though)
     user_progress_bar = tqdm(total=len(user_df), desc="Getting User's Orgs", position=0)
 
+    too_many_results = f"../data/error_logs/{user_orgs_output_path.split('/')[-1].split('.csv')[0]}_{get_url_field}_too_many_results.csv"
+
     for _, row in user_df.iterrows():
         try:
 
@@ -42,11 +44,31 @@ def get_user_orgs(user_df, user_orgs_output_path, orgs_output_path, get_url_fiel
 
             # Create the temporary directory path to store the data
             temp_user_orgs_path =  F"{row.login.replace('/','')}_user_orgs_{get_url_field}.csv"
+            counts_exist = user_cols_metadata.col_name.values[0]
 
+            if counts_exist != 'None':
+                if (row[counts_exist] == 0):
+                    user_progress_bar.update(1)
+                    continue
+                if (row[counts_exist] > 1000):
+                    user_progress_bar.update(1)
+                    
+                    print(f"Skipping {row.login} as it has over 1000 users of {counts_exist}")
+                    over_threshold_df = pd.DataFrame([row])
+                    if os.path.exists(too_many_results):
+                        over_threshold_df.to_csv(
+                            too_many_results, mode='a', header=False, index=False)
+                    else:
+                        over_threshold_df.to_csv(too_many_results, index=False)
+                    continue
             # Check if the user_orgs_df has already been saved to the temporary directory
             if os.path.exists(temp_user_orgs_dir + temp_user_orgs_path):
-                user_progress_bar.update(1)
-                continue
+                existing_df = pd.read_csv(temp_user_orgs_dir + temp_user_orgs_path)
+                if len(existing_df) == row[counts_exist]:
+                    user_progress_bar.update(1)
+                    continue
+            else:
+                existing_df = pd.DataFrame()
 
             # Create the url to get the orgs 
             url = row[get_url_field].split('{')[0] + '?per_page=100&page=1' if '{' in row[get_url_field] else row[get_url_field] + '?per_page=100&page=1'
@@ -91,7 +113,10 @@ def get_user_orgs(user_df, user_orgs_output_path, orgs_output_path, get_url_fiel
                 user_orgs_df['user_html_url'] = row.html_url
                 user_orgs_df['user_id'] = row.id
                 user_orgs_df[f'user_{get_url_field}'] = row[get_url_field]
-
+                if len(existing_df) > 0:
+                    existing_df = existing_df[~existing_df.id.isin(user_orgs_df.id)]
+                    user_orgs_df = pd.concat([existing_df, user_orgs_df])
+                    user_orgs_df = user_orgs_df.drop_duplicates()
                 # Save the user_orgs_df to the temporary directory
                 user_orgs_df.to_csv(temp_user_orgs_dir + temp_user_orgs_path, index=False)
                 return_df = False
@@ -117,7 +142,7 @@ def get_user_orgs(user_df, user_orgs_output_path, orgs_output_path, get_url_fiel
     user_progress_bar.close()
     return user_orgs_df
 
-def get_user_org_activities(user_df,user_orgs_output_path, orgs_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files):
+def get_user_org_activities(user_df,user_orgs_output_path, orgs_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files, join_unique_field, filter_fields):
     """Function to take a list of orgsitories and get any user activities that are related to a org, save that into a join table, and also update final list of users.
     :param user_df: The dataframe of users to get the org activities for
     :param user_orgs_output_path: The path to the output file for the user_orgs_df
@@ -139,8 +164,18 @@ def get_user_org_activities(user_df,user_orgs_output_path, orgs_output_path, get
             # If it does, load it
             user_orgs_df = pd.read_csv(user_orgs_output_path, low_memory=False)
             # Then check from our org_df which orgs are missing from the join file, using either the field we are grabing (get_url_field) or the the org id
-            
-            unprocessed_orgs = user_df[~user_df['login'].isin(user_orgs_df['user_login'])]
+            cols_df = pd.read_csv("../data/metadata_files/user_url_cols.csv")
+            cols_metadata = cols_df[cols_df.col_url == get_url_field]
+            counts_exist = cols_metadata.col_name.values[0]
+            if counts_exist in user_df.columns:
+                subset_user_df = user_df[['login', counts_exist]]
+                subset_user_orgs_df = user_orgs_df[join_unique_field].value_counts().reset_index().rename(columns={'index': 'login', join_unique_field: f'new_{counts_exist}'})
+                merged_df = pd.merge(subset_user_df, subset_user_orgs_df, on='login', how='left')
+                merged_df[f'new_{counts_exist}'] = merged_df[f'new_{counts_exist}'].fillna(0)
+                missing_actors = merged_df[merged_df[counts_exist] > merged_df[f'new_{counts_exist}']]
+                unprocessed_orgs = user_df[user_df.login.isin(missing_actors.login)]
+            else:
+                unprocessed_orgs = user_df[~user_df['login'].isin(user_orgs_df['user_login'])]
 
             # Check if the error log exists
             if os.path.exists(error_file_path):
@@ -151,7 +186,7 @@ def get_user_org_activities(user_df,user_orgs_output_path, orgs_output_path, get
             
             # If there are unprocessed orgs, run the get_actors code to get them or return the existing data if there are no unprocessed orgs
             if len(unprocessed_orgs) > 0:
-                new_orgs_df = get_user_orgs(unprocessed_orgs, user_orgs_output_path, orgs_output_path, get_url_field, error_file_path, overwrite_existing_temp_files)
+                new_orgs_df = get_user_orgs(unprocessed_orgs, user_orgs_output_path, orgs_output_path, get_url_field, error_file_path, cols_metadata, overwrite_existing_temp_files)
             else:
                 new_orgs_df = unprocessed_orgs
             # Finally combine the existing join file with the new data and save it
@@ -159,17 +194,15 @@ def get_user_org_activities(user_df,user_orgs_output_path, orgs_output_path, get
             
         else:
             # If the join file doesn't exist, run the get_actors code to get them
-            user_orgs_df = get_user_orgs(user_df, user_orgs_output_path, orgs_output_path, get_url_field, error_file_path, overwrite_existing_temp_files)
+            user_orgs_df = get_user_orgs(user_df, user_orgs_output_path, orgs_output_path, get_url_field, error_file_path, cols_metadata,  overwrite_existing_temp_files)
         
         check_if_older_file_exists(user_orgs_output_path)
         user_orgs_df['user_query_time'] = datetime.now().strftime("%Y-%m-%d")
         user_orgs_df.to_csv(user_orgs_output_path, index=False)
         clean_write_error_file(error_file_path, 'login')
         # Finally, get the unique users which is updated in the get_actors code and return it
-        join_unique_field = 'user_query'
-        filter_field = 'user_login'
-        search_subset = False
-        check_for_joins_in_older_queries( user_orgs_output_path, user_orgs_df, join_unique_field, filter_field, search_subset)
+
+        check_for_joins_in_older_queries(user_orgs_output_path, user_orgs_df, join_unique_field, filter_fields)
         orgs_df = get_org_df(orgs_output_path)
     return user_orgs_df, orgs_df
 
@@ -181,5 +214,7 @@ if __name__ == '__main__':
     get_url_field = "organizations_url"
     load_existing_files = False
     overwrite_existing_temp_files = False
+    join_unique_field = 'user_login'
+    filter_fields = ['user_login', 'login']
 
-    user_orgs_df, org_df = get_user_org_activities(core_users,user_orgs_output_path, orgs_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files)
+    user_orgs_df, org_df = get_user_org_activities(core_users,user_orgs_output_path, orgs_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files, join_unique_field, filter_fields)

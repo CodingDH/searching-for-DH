@@ -24,7 +24,7 @@ auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
 
 auth_headers = {'Authorization': f'token {auth_token}','User-Agent': 'request'}
 
-def get_org_repos(org_df, org_repos_output_path, repos_output_path, get_url_field, error_file_path, overwrite_existing_temp_files):
+def get_org_repos(org_df, org_repos_output_path, repos_output_path, get_url_field, error_file_path, org_cols_metadata, overwrite_existing_temp_files):
     # Create the temporary directory path to store the data
     temp_org_repos_dir = f"../data/temp/{org_repos_output_path.split('/')[-1].split('.csv')[0]}/"
 
@@ -37,7 +37,7 @@ def get_org_repos(org_df, org_repos_output_path, repos_output_path, get_url_fiel
 
     # Create our progress bars for getting Org Repos 
     org_progress_bar = tqdm(total=len(org_df), desc="Getting Org's Repos", position=0)
-
+    too_many_results = f"../data/error_logs/{org_repos_output_path.split('/')[-1].split('.csv')[0]}_{get_url_field}_too_many_results.csv"
     for _, row in org_df.iterrows():
         try:
 
@@ -46,11 +46,31 @@ def get_org_repos(org_df, org_repos_output_path, repos_output_path, get_url_fiel
 
             # Create the temporary directory path to store the data
             temp_org_repos_path =  F"{row.login.replace('/','')}_org_repos_{get_url_field}.csv"
+            counts_exist = org_cols_metadata.col_name.values[0]
 
+            if counts_exist != 'None':
+                if (row[counts_exist] == 0):
+                    org_progress_bar.update(1)
+                    continue
+                if (row[counts_exist] > 1000):
+                    org_progress_bar.update(1)
+                    
+                    print(f"Skipping {row.login} as it has over 1000 members of {counts_exist}")
+                    over_threshold_df = pd.DataFrame([row])
+                    if os.path.exists(too_many_results):
+                        over_threshold_df.to_csv(
+                            too_many_results, mode='a', header=False, index=False)
+                    else:
+                        over_threshold_df.to_csv(too_many_results, index=False)
+                    continue
             # Check if the org_repos_df has already been saved to the temporary directory
             if os.path.exists(temp_org_repos_dir + temp_org_repos_path):
-                org_progress_bar.update(1)
-                continue
+                existing_df = pd.read_csv(temp_org_repos_dir + temp_org_repos_path)
+                if len(existing_df) == row[counts_exist]:
+                    org_progress_bar.update(1)
+                    continue
+            else:
+                existing_df = pd.DataFrame()
 
             # Create the url to get the repo actors
             url = row[get_url_field].split('{')[0] + '?per_page=100&page=1' if '{' in row[get_url_field] else row[get_url_field] + '?per_page=100&page=1'
@@ -95,7 +115,10 @@ def get_org_repos(org_df, org_repos_output_path, repos_output_path, get_url_fiel
                 org_repos_df['org_html_url'] = row.html_url
                 org_repos_df['org_id'] = row.id
                 org_repos_df[f'org_{get_url_field}'] = row[get_url_field]
-
+                if len(existing_df) > 0:
+                    existing_df = existing_df[~existing_df.id.isin(org_repos_df.id)]
+                    org_repos_df = pd.concat([existing_df, org_repos_df])
+                    org_repos_df = org_repos_df.drop_duplicates()
                 # Save the org_repos_df to the temporary directory
                 org_repos_df.to_csv(temp_org_repos_dir + temp_org_repos_path, index=False)
 
@@ -121,7 +144,7 @@ def get_org_repos(org_df, org_repos_output_path, repos_output_path, get_url_fiel
     org_progress_bar.close()
     return org_repos_df
 
-def get_org_repo_activities(org_df,org_repos_output_path, repos_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files):
+def get_org_repo_activities(org_df,org_repos_output_path, repos_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files, join_unique_field, filter_fields, retry_error):
     # Flag to check if we want to reload existing data or rerun our code
     if load_existing_files:
         # Load relevant datasets and return them
@@ -130,25 +153,37 @@ def get_org_repo_activities(org_df,org_repos_output_path, repos_output_path, get
     else:
         # Now create the path for the error logs
         error_file_path = f"../data/error_logs/{org_repos_output_path.split('/')[-1].split('.csv')[0]}_errors.csv"
+        cols_df = pd.read_csv("../data/metadata_files/user_url_cols.csv")
+        add_cols = pd.DataFrame({'col_name': ['members_count'], 'col_url': ['members_url']})
+        cols_df = pd.concat([cols_df, add_cols])
+        cols_metadata = cols_df[cols_df.col_url == get_url_field]
+        counts_exist = cols_metadata.col_name.values[0]
         # If we want to rerun our code, first check if the join file exists
         if os.path.exists(org_repos_output_path):
             # If it does, load it
             org_repos_df = pd.read_csv(org_repos_output_path, low_memory=False)
             # Then check from our repo_df which repos are missing from the join file, using either the field we are grabing (get_url_field) or the the repo id
+            if counts_exist in org_df.columns:
+                subset_org_df = org_df[['login', counts_exist]]
+                subset_org_repos_df = org_repos_df[join_unique_field].value_counts().reset_index().rename(columns={'index': 'login', join_unique_field: f'new_{counts_exist}'})
+                merged_df = pd.merge(subset_org_df, subset_org_repos_df, on='login', how='left')
+                merged_df[f'new_{counts_exist}'] = merged_df[f'new_{counts_exist}'].fillna(0)
+                missing_actors = merged_df[merged_df[counts_exist] > merged_df[f'new_{counts_exist}']]
+                unprocessed_org_repos = org_df[org_df.login.isin(missing_actors.login)]
+            else:
+                unprocessed_org_repos = org_df[~org_df.login.isin(org_repos_df.org_login)] 
             
-            if get_url_field in org_repos_df.columns:
-                unprocessed_org_repos = org_df[~org_df[get_url_field].isin(org_repos_df['org_login'])]
-
-            # Check if the error log exists
-            if os.path.exists(error_file_path):
-                # If it does, load it and also add the repos that were in the error log to the unprocessed repos so that we don't keep trying to grab errored repos
-                error_df = pd.read_csv(error_file_path)
-                if len(error_df) > 0:
-                    unprocessed_org_repos = unprocessed_org_repos[~unprocessed_org_repos[get_url_field].isin(error_df.error_url)]
+            if retry_error == False:
+                # Check if the error log exists
+                if os.path.exists(error_file_path):
+                    # If it does, load it and also add the repos that were in the error log to the unprocessed repos so that we don't keep trying to grab errored repos
+                    error_df = pd.read_csv(error_file_path)
+                    if len(error_df) > 0:
+                        unprocessed_org_repos = unprocessed_org_repos[~unprocessed_org_repos[get_url_field].isin(error_df.error_url)]
             
             # If there are unprocessed repos, run the get_actors code to get them or return the existing data if there are no unprocessed repos
             if len(unprocessed_org_repos) > 0:
-                new_repos_df = get_org_repos(unprocessed_org_repos, org_repos_output_path, repos_output_path, get_url_field, error_file_path, overwrite_existing_temp_files)
+                new_repos_df = get_org_repos(unprocessed_org_repos, org_repos_output_path, repos_output_path, get_url_field, error_file_path, cols_metadata, overwrite_existing_temp_files)
             else:
                 new_repos_df = unprocessed_org_repos
             # Finally combine the existing join file with the new data and save it
@@ -156,32 +191,26 @@ def get_org_repo_activities(org_df,org_repos_output_path, repos_output_path, get
             
         else:
             # If the join file doesn't exist, run the get_actors code to get them
-            org_repos_df = get_org_repos(org_df, org_repos_output_path, repos_output_path, get_url_field, error_file_path, overwrite_existing_temp_files)
+            org_repos_df = get_org_repos(org_df, org_repos_output_path, repos_output_path, get_url_field, error_file_path, cols_metadata,overwrite_existing_temp_files)
         
         check_if_older_file_exists(org_repos_output_path)
         org_repos_df['org_query_time'] = datetime.now().strftime("%Y-%m-%d")
         org_repos_df.to_csv(org_repos_output_path, index=False)
         clean_write_error_file(error_file_path, 'login')
-        join_unique_field = 'org_query'
-        filter_field = ['org_login', 'full_name']
-        check_for_joins_in_older_queries( org_repos_output_path, org_repos_df, join_unique_field, filter_field)
+        
+        check_for_joins_in_older_queries(org_repos_output_path, org_repos_df, join_unique_field, filter_fields)
         repos_df = get_repo_df(repos_output_path)
     return org_repos_df, repos_df
 
 if __name__ == '__main__':
-    # Set the path for the orgs file
-    orgs_path = "../data/entity_files/orgs_dataset.csv"
-    # Set the path for the org_repos file
-    org_repos_path = '../data/join_files/org_repos_dataset.csv'
-    # Set the path for the repos file
-    repos_path = '../data/large_files/entity_files/repos_dataset.csv'
-    # Set the field we want to use to get the url
-    get_url_field = 'repos_url'
-    # Set the flag to load existing files
+    core_orgs_output_path = '../data/derived_files/core_orgs.csv'
+    core_orgs = pd.read_csv(core_orgs_output_path)
+    org_repos_output_path = "../data/join_files/org_repos_join_dataset.csv"
+    repo_output_path = "../data/large_files/entity_files/repo_dataset.csv"
+    get_url_field = "repos_url"
     load_existing_files = False
-    # Set the flag to overwrite existing temp files
     overwrite_existing_temp_files = False
-    # Load the orgs file
-    orgs_df = pd.read_csv(orgs_path, low_memory=False)
-    # Run the get_org_repo_activities function
-    org_repos_df, repos_df = get_org_repo_activities(orgs_df, org_repos_path, repos_path, get_url_field, load_existing_files, overwrite_existing_temp_files)
+    join_unique_field = "org_login"
+    filter_fields = ["org_login", "full_name"]
+    retry_error = True
+    org_repos_df, user_df = get_org_repo_activities(core_orgs,org_repos_output_path, repo_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files, join_unique_field, filter_fields, retry_error)

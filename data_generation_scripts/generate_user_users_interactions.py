@@ -16,7 +16,7 @@ auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
 
 auth_headers = {'Authorization': f'token {auth_token}','User-Agent': 'request'}
 
-def get_user_users(user_df: object, user_users_output_path: str, users_output_path: str, get_url_field: str, error_file_path: str, user_cols_metdata: pd.DataFrame, overwrite_existing_temp_files: bool =True) -> object:
+def get_user_users(user_df: object, user_users_output_path: str, users_output_path: str, get_url_field: str, error_file_path: str, user_cols_metadata: pd.DataFrame, overwrite_existing_temp_files: bool =True) -> object:
     # Create the temporary directory path to store the data
     temp_user_users_dir = f"../data/temp/{user_users_output_path.split('/')[-1].split('.csv')[0]}/"
 
@@ -40,7 +40,7 @@ def get_user_users(user_df: object, user_users_output_path: str, users_output_pa
 
             # Create the temporary directory path to store the data
             temp_user_users_path =  F"{row.login.replace('/','')}_user_users_{get_url_field}.csv"
-            counts_exist = user_cols_metdata.col_name.values[0]
+            counts_exist = user_cols_metadata.col_name.values[0]
 
             if counts_exist != 'None':
                 if (row[counts_exist] == 0):

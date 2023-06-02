@@ -78,6 +78,8 @@ def generate_translated_terms():
 
 def check_detect_language(row, is_repo=False):
     text = row.description if is_repo else row.bio
+    # if len(text) == 0:
+    #     text = row.name.replace('-', ' ').replace('_', ' ')
     if pd.notna(text) and len(text) > 1:  # Additional check if text is not NaN
         try:
             result = translate_client.detect_language(text)
