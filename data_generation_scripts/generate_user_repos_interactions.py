@@ -157,7 +157,7 @@ def get_user_repos(user_df, user_repos_output_path, repos_output_path, get_url_f
     user_progress_bar.close()
     return user_repos_df
 
-def get_user_repo_activities(user_df,user_repos_output_path, repos_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files, join_unique_field, filter_fields):
+def get_user_repo_activities(user_df,user_repos_output_path, repos_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files, join_unique_field, filter_fields, rety_errors):
     """Function to take a list of repositories and get any user activities that are related to a repo, save that into a join table, and also update final list of users.
     :param user_df: The dataframe of users to get the repo activities for
     :param user_repos_output_path: The path to the output file for the user_repos_df
@@ -191,17 +191,19 @@ def get_user_repo_activities(user_df,user_repos_output_path, repos_output_path, 
                 merged_df[f'new_{threshold_check}'] = merged_df[f'new_{threshold_check}'].fillna(0)
                 missing_actors = merged_df[merged_df[threshold_check] > merged_df[f'new_{threshold_check}']]
                 unprocessed_repos = user_df[user_df.login.isin(missing_actors.login)]
+                print(len(unprocessed_repos), unprocessed_repos[threshold_check].sum())
             else:  
                 unprocessed_repos = user_df[~user_df['login'].isin(user_repos_df['user_login'])]
 
-            # Check if the error log exists
-            if os.path.exists(error_file_path):
-                # If it does, load it and also add the repos that were in the error log to the unprocessed repos so that we don't keep trying to grab errored repos
-                error_df = pd.read_csv(error_file_path)
-                print("Getting unprocessed repos from error log", time.time())
-                if len(error_df) > 0:
-                    unprocessed_repos = unprocessed_repos[~unprocessed_repos[get_url_field].isin(error_df.error_url)]
+            if retry_errors == False:
+                # Check if the error log exists
+                if os.path.exists(error_file_path):
+                    # If it does, load it and also add the repos that were in the error log to the unprocessed repos so that we don't keep trying to grab errored repos
+                    error_df = pd.read_csv(error_file_path)
                     print("Getting unprocessed repos from error log", time.time())
+                    if len(error_df) > 0:
+                        unprocessed_repos = unprocessed_repos[~unprocessed_repos[get_url_field].isin(error_df.error_url)]
+                        print("Getting unprocessed repos from error log", time.time())
             
             # If there are unprocessed repos, run the get_actors code to get them or return the existing data if there are no unprocessed repos
             if len(unprocessed_repos) > 0:
@@ -231,14 +233,15 @@ def get_user_repo_activities(user_df,user_repos_output_path, repos_output_path, 
 
 if __name__ == '__main__':
     # Get the data
-    core_users_path = "../data/derived_files/initial_core_users.csv"
+    core_users_path = "../data/derived_files/filtered_users.csv"
     core_users = pd.read_csv(core_users_path)
-    user_users_output_path = "../data/large_files/join_files/user_subscriptions_join_dataset.csv"
+    user_repos_output_path = "../data/large_files/join_files/user_repos_join_dataset.csv"
     users_output_path = "../data/entity_files/users_dataset.csv"
-    get_url_field = "subscriptions_url"
+    get_url_field = "repos_url"
     load_existing_files = False
     overwrite_existing_temp_files = False
     join_unique_field = 'user_login'
     filter_fields = ['user_login', 'full_name']
+    retry_errors = True
 
-    users_subscriptions_df, user_df = get_user_repo_activities(core_users,user_users_output_path, users_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files, join_unique_field, filter_fields)
+    users_repos_df, user_df = get_user_repo_activities(core_users,user_repos_output_path, users_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files, join_unique_field, filter_fields, retry_errors)
