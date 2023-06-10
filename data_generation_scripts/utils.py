@@ -93,36 +93,36 @@ def get_response_data(response, query):
     :param query: query used to make initial API call
     :return: response data"""
     # First, check if response is valid
-    response_data = []
-    if response.status_code != 200:
-        if response.status_code == 401:
-            print("response code 401 - unauthorized access. check api key")
-        elif response.status_code == 204:
-            print(f'No data for {query}')
-        else:
-            print(f'response code: {response.status_code}. hit rate limiting. trying to sleep...')
-            time.sleep(120)
-            response = requests.get(query, headers=auth_headers, timeout=10)
-
-            # Check if response is valid a second time after sleeping
-            if response.status_code != 200:
-                print(f'query failed twice with code {response.status_code}. Failing URL: {query}')
-
-                # If failed again, check the rate limit and sleep for the amount of time needed to reset rate limit
-                rates_df = check_rate_limit()
-                if rates_df['resources.core.remaining'].values[0] == 0:
-                    print('rate limit reached. sleeping for 1 hour')
-                    time.sleep(3600)
-                    response = requests.get(query, headers=auth_headers, timeout=10)
-                    if response.status_code != 200:
-                        print(f'query failed third time with code {response.status_code}. Failing URL: {query}')
-                    else:
-                        response_data = response.json()
-            else:
-                response_data = response.json()
+    if response.status_code == 401:
+        print("response code 401 - unauthorized access. check api key")
+        return []
+    elif response.status_code == 204:
+        print(f'No data for {query}')
+        return []
+    elif response.status_code == 200:
+        return response.json()
     else:
-        response_data = response.json() 
-    return response_data
+        print(f'response code: {response.status_code}. hit rate limiting. trying to sleep...')
+        time.sleep(10)
+        response = requests.get(query, headers=auth_headers, timeout=10)
+
+        # Check if response is valid a second time after sleeping
+        if response.status_code != 200:
+            print(f'query failed twice with code {response.status_code}. Failing URL: {query}')
+
+            # If failed again, check the rate limit and sleep for the amount of time needed to reset rate limit
+            rates_df = check_rate_limit()
+            if rates_df['resources.core.remaining'].values[0] == 0:
+                print('rate limit reached. sleeping for 1 hour')
+                time.sleep(3600)
+                response = requests.get(query, headers=auth_headers, timeout=10)
+                if response.status_code != 200:
+                    print(f'query failed third time with code {response.status_code}. Failing URL: {query}')
+                    return []
+                else:
+                    return response.json()
+            else:
+                return response.json()
 
 """Manipulate Files Functions
 1. Read csv file
@@ -432,7 +432,7 @@ def check_add_users(potential_new_users_df, users_output_path, return_df, overwr
     check_if_older_file_exists(users_output_path)
     users_df['user_query_time'] = datetime.now().strftime("%Y-%m-%d")
     users_df.to_csv(users_output_path, index=False)
-    check_for_entity_in_older_queries(users_output_path, users_df)
+    # check_for_entity_in_older_queries(users_output_path, users_df)
     if return_df:
         users_df = get_user_df(users_output_path)
         return users_df
@@ -443,6 +443,17 @@ def get_user_df(output_path):
     :return: user dataframe"""
     user_df = pd.read_csv(output_path)
     return user_df
+
+def combined_updated_users(user_output_path, updated_user_output_path, overwrite_existing_temp_files):
+    if (os.path.exists(user_output_path)) and (os.path.exists(updated_user_output_path)):
+        users_df = pd.read_csv(user_output_path, low_memory=False)
+        updated_user_df = pd.read_csv(updated_user_output_path, low_memory=False)
+        new_users_df = updated_user_df[~updated_user_df.login.isin(users_df.login)]
+        users_df = pd.concat([users_df, new_users_df])
+        check_for_entity_in_older_queries(user_output_path, users_df)
+        if overwrite_existing_temp_files:
+            os.remove(updated_user_output_path)
+    
 
 """Repo Functions
 1. Get new repos data

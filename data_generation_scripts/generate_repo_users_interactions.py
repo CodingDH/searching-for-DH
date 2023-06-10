@@ -120,7 +120,7 @@ def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_fiel
             dfs.append(response_df)
             # Check if there is a next page and if so, keep making requests until there is no next page
             while "next" in response.links.keys():
-                time.sleep(120)
+                time.sleep(10)
                 query = response.links['next']['url']
                 response = requests.get(query, headers=active_auth_headers)
                 response_data = get_response_data(response, query)
@@ -178,8 +178,8 @@ def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_fiel
                     return_df=False
                     check_add_users(data_df, users_output_path, return_df, overwrite_existing_temp_files)
                 repo_progress_bar.update(1)
-        except:
-            # print(f"Error on getting actors for {row.full_name}")
+        except requests.exceptions.RequestException as e:
+            print(f"Request failed with error: {e}")
             repo_progress_bar.total = repo_progress_bar.total - 1
             repo_name = 'repo_full_name' if 'repo_full_name' in repo_df.columns else 'full_name'
             repo_field = 'id' if repo_name == 'repo_full_name' else 'full_name'
@@ -219,7 +219,7 @@ def get_repos_user_actors(repo_df,repo_actors_output_path, users_output_path, ge
         users_df = pd.read_csv(users_output_path, low_memory=False)
     else:
         # If we want to rerun our code, first check if the join file exists
-
+        updated_users_output_path = f"../data/temp/entity_files/{users_output_path.split('/')[-1].split('.csv')[0]}_updated.csv"
         # Create the path for the error logs
         error_file_path = f"../data/error_logs/{repo_actors_output_path.split('/')[-1].split('.csv')[0]}_errors.csv"
 
@@ -258,7 +258,7 @@ def get_repos_user_actors(repo_df,repo_actors_output_path, users_output_path, ge
             
             # If there are unprocessed repos, run the get_actors code to get them or return the existing data if there are no unprocessed repos
             if len(unprocessed_actors) > 0:
-                new_actors_df = get_actors(unprocessed_actors, repo_actors_output_path, users_output_path, get_url_field, error_file_path, overwrite_existing_temp_files, repo_urls_metadata)
+                new_actors_df = get_actors(unprocessed_actors, repo_actors_output_path, updated_users_output_path, get_url_field, error_file_path, overwrite_existing_temp_files, repo_urls_metadata)
             else:
                 new_actors_df = unprocessed_actors
             # Finally combine the existing join file with the new data and save it
@@ -266,7 +266,7 @@ def get_repos_user_actors(repo_df,repo_actors_output_path, users_output_path, ge
             
         else:
             # If the join file doesn't exist, run the get_actors code to get them
-            repo_actors_df = get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_field, error_file_path, overwrite_existing_temp_files, repo_urls_metadata)
+            repo_actors_df = get_actors(repo_df, repo_actors_output_path, updated_users_output_path, get_url_field, error_file_path, overwrite_existing_temp_files, repo_urls_metadata)
         
         check_if_older_file_exists(repo_actors_output_path)
         repo_actors_df['repo_query_time'] = datetime.now().strftime("%Y-%m-%d")
@@ -274,16 +274,17 @@ def get_repos_user_actors(repo_df,repo_actors_output_path, users_output_path, ge
         # Finally, get the unique users which is updated in the get_actors code and return it
         clean_write_error_file(error_file_path, 'repo_full_name')
         check_for_joins_in_older_queries(repo_actors_output_path, repo_actors_df, join_unique_field, filter_fields)
+        combined_updated_users(users_output_path)
         users_df = get_user_df(users_output_path)
     return repo_actors_df, users_df
 
 if __name__ == "__main__":
     # Load the repo dataframe
     core_repos = pd.read_csv("../data/derived_files/firstpass_core_repos.csv", low_memory=False)
-    get_url_field = 'contributors_url'
+    get_url_field = 'stargazers_url'
     load_existing_files = False
     overwrite_existing_temp_files = False
     join_unique_field = 'repo_full_name'
     filter_fields = ['repo_full_name', 'login']
-    contributors_df, users_df = get_repos_user_actors(core_repos, '../data/join_files/repo_contributors_join_dataset.csv', '../data/entity_files/users_dataset.csv', get_url_field, load_existing_files, overwrite_existing_temp_files, join_unique_field, filter_fields)
-    # contributors_errors_df = check_return_error_file('../data/error_logs/repo_contributors_join_dataset_errors.csv')
+    stargazers_df, users_df = get_repos_user_actors(core_repos, '../data/join_files/repo_stargazers_join_dataset.csv', '../data/entity_files/large_files/users_dataset.csv', get_url_field, load_existing_files, overwrite_existing_temp_files, join_unique_field, filter_fields)
+    # stargazers_errors_df = check_return_error_file('../data/error_logs/repo_stargazers_join_dataset_errors.csv')

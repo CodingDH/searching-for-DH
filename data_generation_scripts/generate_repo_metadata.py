@@ -270,7 +270,7 @@ def get_total_results(response, query):
         else:
             print(
                 f'response code: {response.status_code}. hit rate limiting. trying to sleep...')
-            time.sleep(120)
+            time.sleep(60)
             response = requests.get(query, headers=auth_headers)
 
             # Check if response is valid a second time after sleeping
@@ -351,6 +351,7 @@ if __name__ == "__main__":
             count_type = row.url_type.split("_")[0] + "_count"
             print(f"Getting {count_type} for {row['url_type']}")
             core_repos = get_counts(core_repos, row['url_type'], count_type, overwrite_existing_temp_files)
+            core_repos.to_csv(repo_file_path, index=False)
             row['count_type'] = count_type
     core_repos.to_csv(repo_file_path, index=False)
     # pulls_df = pd.read_csv('../data/large_files/join_files/repo_pulls_join_dataset.csv')
