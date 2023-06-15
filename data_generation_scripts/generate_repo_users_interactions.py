@@ -7,6 +7,7 @@ import apikey
 import sys
 sys.path.append("..")
 from data_generation_scripts.utils import *
+from data_generation_scripts.generate_repo_metadata import get_counts
 import shutil
 
 
@@ -23,6 +24,8 @@ def get_additional_commit_data(response_df):
     for _, row in response_df.iterrows():
         commit_response = requests.get(row.url, headers=auth_headers)
         commit_response_data = get_response_data(commit_response, row.url)
+        if commit_response_data is None:
+            continue
         response_commit_df = pd.json_normalize(commit_response_data)
         row['files'] = response_commit_df['files'].values[0]
         row['stats.total'] = response_commit_df['stats.total'].values[0]
@@ -33,7 +36,7 @@ def get_additional_commit_data(response_df):
     response_df = pd.concat(dfs)
     return response_df
 
-def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_field, error_file_path, overwrite_existing_temp_files, repo_urls_metadata):
+def get_actors(repo_df, repo_actors_output_path, get_url_field, error_file_path, overwrite_existing_temp_files, repo_urls_metadata, filter_fields):
     """Function to get all contributors to a list of repositories and also update final list of users.
     :param repo_df: dataframe of repositories
     :param repo_contributors_output_path: path to repo contributors file
@@ -94,7 +97,7 @@ def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_fiel
             # Check if the repo_actors_df has already been saved to the temporary directory
             if os.path.exists(temp_repo_actors_dir + temp_repo_actors_path):
                 existing_df = pd.read_csv(temp_repo_actors_dir + temp_repo_actors_path)
-                if len(existing_df) == row[counts_exist]:
+                if counts_exist != 'None' and len(existing_df) == row[counts_exist]:
                     repo_progress_bar.update(1)
                     continue
             else:
@@ -110,13 +113,17 @@ def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_fiel
             response_data = get_response_data(response, url)
 
             # If the response is empty, skip to the next repo
-            if len(response_data) == 0:
+            if response_data is None:
                 repo_progress_bar.update(1)
                 continue
             # Else append the response data to the list of dfs
             response_df = pd.json_normalize(response_data)
             if get_url_field == 'commits_url':
                 response_df = get_additional_commit_data(response_df)
+            if 'message' in response_df.columns:
+                print(response_df.message.values[0])
+                repo_progress_bar.update(1)
+                continue
             dfs.append(response_df)
             # Check if there is a next page and if so, keep making requests until there is no next page
             while "next" in response.links.keys():
@@ -124,7 +131,7 @@ def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_fiel
                 query = response.links['next']['url']
                 response = requests.get(query, headers=active_auth_headers)
                 response_data = get_response_data(response, query)
-                if len(response_data) == 0:
+                if response_data is None:
                     repo_progress_bar.update(1)
                     continue
                 response_df = pd.json_normalize(response_data)
@@ -156,27 +163,15 @@ def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_fiel
                 # Save the repo_actors_df to the temporary directory
 
                 if len(existing_df) > 0:
-                    existing_df = existing_df[~existing_df.id.isin(repo_actors_df.id)]
+                    if 'id' in existing_df.columns:
+                        existing_df = existing_df[~existing_df.id.isin(repo_actors_df.id)]
+                    else:
+                        existing_df = existing_df[~existing_df['user.id'].isin(repo_actors_df['user.id'])]
                     repo_actors_df = pd.concat([existing_df, repo_actors_df])
-                    repo_actors_df = repo_actors_df.drop_duplicates()
+                    repo_actors_df = repo_actors_df.drop_duplicates(subset=filter_fields) 
 
                 repo_actors_df.to_csv(temp_repo_actors_dir + temp_repo_actors_path, index=False)
-
-                # If 'login' is in the repo_actors_df, then we need to get the user data for each of the users
-                if 'login' in data_df.columns:
-                    # Check how the API has coded user data
-                    user_types = ['user.', 'owner.', 'author.']
-                    for user_type in user_types:
-                        if user_type in data_df.columns.tolist():
-                            # Subset the columns of the data_df to be only the user relevant columns
-                            subset_cols = data_df.columns
-                            subset_cols = [col for col in subset_cols if col.startswith(user_type.replace('.', ''))]
-                            data_df = data_df[subset_cols]
-                            data_df.columns = [col.split('.')[-1] for col in data_df.columns]
-                            break
-                    # Get the unique users from the data_df
-                    return_df=False
-                    check_add_users(data_df, users_output_path, return_df, overwrite_existing_temp_files)
+                
                 repo_progress_bar.update(1)
         except requests.exceptions.RequestException as e:
             print(f"Request failed with error: {e}")
@@ -203,7 +198,7 @@ def get_actors(repo_df, repo_actors_output_path, users_output_path, get_url_fiel
     return repo_actors_df
 
 
-def get_repos_user_actors(repo_df,repo_actors_output_path, users_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files, join_unique_field, filter_fields):
+def get_repos_user_actors(repo_df,repo_actors_output_path, users_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files, join_unique_field, filter_fields, retry_errors):
     """Function to take a list of repositories and get any user activities that are related to a repo, save that into a join table, and also update final list of users.
     :param repo_df: dataframe of repositories
     :param repo_actors_output_path: path to repo actors file (actors here could be subscribers, stargazers, etc...)
@@ -240,7 +235,7 @@ def get_repos_user_actors(repo_df,repo_actors_output_path, users_output_path, ge
                 merged_df = pd.merge(subset_repos, subset_repo_actors_df, on=repo_name, how='left')
                 merged_df[f'new_{counts_exist}'] = merged_df[f'new_{counts_exist}'].fillna(0)
                 missing_actors = merged_df[merged_df[counts_exist] > merged_df[f'new_{counts_exist}']]
-                unprocessed_actors = repo_df[repo_df.full_name.isin(missing_actors.full_name)]
+                unprocessed_actors = repo_df[repo_df[repo_name].isin(missing_actors[repo_name])]
             # if get_url_field in repo_actors_df.columns:
                 # unprocessed_actors = repo_df[~repo_df[get_url_field].isin(repo_actors_df[get_url_field])]
             else:
@@ -248,17 +243,17 @@ def get_repos_user_actors(repo_df,repo_actors_output_path, users_output_path, ge
 
             # Now create the path for the error logs
             error_file_path = f"../data/error_logs/{repo_actors_output_path.split('/')[-1].split('.csv')[0]}_errors.csv"
-
-            # Check if the error log exists
-            if os.path.exists(error_file_path):
-                # If it does, load it and also add the repos that were in the error log to the unprocessed repos so that we don't keep trying to grab errored repos
-                error_df = pd.read_csv(error_file_path)
-                if len(error_df) > 0:
-                    unprocessed_actors = unprocessed_actors[~unprocessed_actors[get_url_field].isin(error_df[get_url_field])]
+            if retry_errors == False:
+                # Check if the error log exists
+                if os.path.exists(error_file_path):
+                    # If it does, load it and also add the repos that were in the error log to the unprocessed repos so that we don't keep trying to grab errored repos
+                    error_df = pd.read_csv(error_file_path)
+                    if len(error_df) > 0:
+                        unprocessed_actors = unprocessed_actors[~unprocessed_actors[get_url_field].isin(error_df[get_url_field])]
             
             # If there are unprocessed repos, run the get_actors code to get them or return the existing data if there are no unprocessed repos
             if len(unprocessed_actors) > 0:
-                new_actors_df = get_actors(unprocessed_actors, repo_actors_output_path, updated_users_output_path, get_url_field, error_file_path, overwrite_existing_temp_files, repo_urls_metadata)
+                new_actors_df = get_actors(unprocessed_actors, repo_actors_output_path, get_url_field, error_file_path, overwrite_existing_temp_files, repo_urls_metadata, filter_fields)
             else:
                 new_actors_df = unprocessed_actors
             # Finally combine the existing join file with the new data and save it
@@ -266,25 +261,96 @@ def get_repos_user_actors(repo_df,repo_actors_output_path, users_output_path, ge
             
         else:
             # If the join file doesn't exist, run the get_actors code to get them
-            repo_actors_df = get_actors(repo_df, repo_actors_output_path, updated_users_output_path, get_url_field, error_file_path, overwrite_existing_temp_files, repo_urls_metadata)
+            repo_actors_df = get_actors(repo_df, repo_actors_output_path, get_url_field, error_file_path, overwrite_existing_temp_files, repo_urls_metadata, filter_fields)
         
-        check_if_older_file_exists(repo_actors_output_path)
-        repo_actors_df['repo_query_time'] = datetime.now().strftime("%Y-%m-%d")
-        repo_actors_df.to_csv(repo_actors_output_path, index=False)
         # Finally, get the unique users which is updated in the get_actors code and return it
         clean_write_error_file(error_file_path, 'repo_full_name')
-        check_for_joins_in_older_queries(repo_actors_output_path, repo_actors_df, join_unique_field, filter_fields)
-        combined_updated_users(users_output_path)
-        users_df = get_user_df(users_output_path)
+        check_if_older_file_exists(repo_actors_output_path)
+        repo_actors_df['repo_query_time'] = datetime.now().strftime("%Y-%m-%d")
+        repo_actors_df = check_for_joins_in_older_queries(repo_actors_output_path, repo_actors_df, join_unique_field, filter_fields)
+        repo_actors_df.to_csv(repo_actors_output_path, index=False)
+        
+        data_df = repo_actors_df.copy()
+        # If 'login' is not in the repo_actors_df, then we need to get the user data for each of the users
+        if 'login' not in data_df.columns:
+            user_types = ['user.', 'owner.', 'author.']
+            cleaned_cols = []
+            prefix_found = False
+            for user_type in user_types:
+                if prefix_found:
+                    break
+                # Check how the API has coded user data
+                all_cols = data_df.columns
+                for col in all_cols:
+                    if col.startswith(user_type):
+                        prefix_found = True
+                        col = col.split('.')[-1]
+                    cleaned_cols.append(col)
+                if not prefix_found:
+                    cleaned_cols = []
+            if cleaned_cols:   
+                data_df.columns = cleaned_cols
+        return_df=False
+        check_add_users(data_df, updated_users_output_path, return_df, overwrite_existing_temp_files)
+
+        
+        overwrite_existing_temp_files = True
+        return_df = True
+        users_df = combined_updated_users(users_output_path, updated_users_output_path, overwrite_existing_temp_files, return_df)
+        # users_df = get_user_df(users_output_path)
     return repo_actors_df, users_df
 
 if __name__ == "__main__":
     # Load the repo dataframe
     core_repos = pd.read_csv("../data/derived_files/firstpass_core_repos.csv", low_memory=False)
-    get_url_field = 'stargazers_url'
+    initial_core_repos = pd.read_csv("../data/derived_files/initial_core_repos.csv", low_memory=False)
+    core_repos = pd.concat([core_repos, initial_core_repos])
+    get_url_field = 'pulls_url'
+    load_existing_files = True
+    overwrite_existing_temp_files = False
+    filter_fields = ['id', 'repo_full_name', 'user.login', 'head.user.login']
+    join_unique_field = 'repo_full_name'
+    pulls_df, users_df = get_repos_user_actors(core_repos, '../data/large_files/join_files/repo_pulls_join_dataset.csv', '../data/large_files/entity_files/users_dataset.csv', get_url_field, load_existing_files, overwrite_existing_temp_files, join_unique_field, filter_fields, retry_errors=False)
+    # users_output_path = "../data/large_files/entity_files/users_dataset.csv"
+    # updated_users_output_path = f"../data/temp/entity_files/{users_output_path.split('/')[-1].split('.csv')[0]}_updated.csv"
+
+    # pulls_df = pulls_df[pulls_df.repo_full_name.isin(core_repos.full_name.unique())]
+
+    # url_type = "review_comments_url"
+    # count_type = "review_count"
+    # pulls_df = get_counts(pulls_df, url_type, count_type, overwrite_existing_temp_files=False)
+    # pulls_df.to_csv('../data/large_files/join_files/repo_pulls_join_dataset.csv', index=False)
+
+    get_url_field = 'review_comments_url'
     load_existing_files = False
     overwrite_existing_temp_files = False
+    filter_fields = ['repo_full_name', 'user.login', 'url']
     join_unique_field = 'repo_full_name'
-    filter_fields = ['repo_full_name', 'login']
-    stargazers_df, users_df = get_repos_user_actors(core_repos, '../data/join_files/repo_stargazers_join_dataset.csv', '../data/entity_files/large_files/users_dataset.csv', get_url_field, load_existing_files, overwrite_existing_temp_files, join_unique_field, filter_fields)
+    pulls_comments_df, users_df = get_repos_user_actors(pulls_df, '../data/large_files/join_files/pulls_comments_join_dataset.csv', '../data/large_files/entity_files/users_dataset.csv', get_url_field, load_existing_files, overwrite_existing_temp_files, join_unique_field, filter_fields, retry_errors=True)
+    # pulls_comments_errors_df = check_return_error_file('../data/error_logs/pulls_comments_join_dataset_errors.csv')
+
+
     # stargazers_errors_df = check_return_error_file('../data/error_logs/repo_stargazers_join_dataset_errors.csv')
+    # repo_actors_df = pd.read_csv("../data/large_files/join_files/repo_stargazers_join_dataset.csv")
+    # data_df = repo_actors_df.copy()
+    # users_output_path = "../data/large_files/entity_files/users_dataset.csv"
+    # updated_users_output_path = f"../data/temp/entity_files/{users_output_path.split('/')[-1].split('.csv')[0]}_updated.csv"
+    # # If 'login' is not in the repo_actors_df, then we need to get the user data for each of the users
+    # if 'login' not in data_df.columns:
+    #     # Check how the API has coded user data
+    #     all_cols = data_df.columns
+    #     core_cols = [col.split('.')[-1] for col in all_cols]
+    #     data_df.columns = core_cols
+    #     # Get the unique users from the data_df
+    # return_df=False
+    # print(updated_users_output_path)
+    # overwrite_existing_temp_files = False
+    # check_add_users(data_df, updated_users_output_path, return_df, overwrite_existing_temp_files)
+
+    # # Finally, get the unique users which is updated in the get_actors code and return it
+    # # clean_write_error_file(error_file_path, 'repo_full_name')
+    # # check_for_joins_in_older_queries(repo_actors_output_path, repo_actors_df, join_unique_field, filter_fields)
+    # overwrite_existing_temp_files = True
+    # return_df = True
+    # users_df = combined_updated_users(users_output_path, updated_users_output_path, overwrite_existing_temp_files, return_df)
+    

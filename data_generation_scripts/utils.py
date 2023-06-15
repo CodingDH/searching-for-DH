@@ -39,7 +39,7 @@ def check_rate_limit() -> pd.DataFrame:
     rates_df = pd.json_normalize(response.json())
     return rates_df
 
-def check_total_pages(url: str) -> int:
+def check_total_pages(url: str, auth_headers: dict) -> int:
     # Check total number of pages to get from search. Useful for not going over rate limit
     response = requests.get(f'{url}?per_page=1', headers=auth_headers, timeout=10)
     if response.status_code != 200:
@@ -55,10 +55,13 @@ def check_total_pages(url: str) -> int:
                 if response.status_code != 200:
                     print(f'query failed third time with code {response.status_code}. Failing URL: {url}')
                     total_pages = 1
-        total_pages = 1 if len(response.links) == 0 else re.search('\d+$', response.links['last']['url']).group()
+    if len(response.links) == 0:
+        total_pages = 1
     else:
-        total_pages = 1 if len(response.links) == 0 else re.search('\d+$', response.links['last']['url']).group()
-    return total_pages
+        match = re.search(r'\d+$', response.links['last']['url'])
+        total_pages = match.group() if match is not None else 1
+    return int(total_pages)
+
 
 def check_total_results(url: str) -> Optional[int]:
     """Function to check total number of results from API. Useful for not going over rate limit. Differs from check_total_pages because this returns all results, not just total number of pagination.
@@ -209,7 +212,6 @@ def read_combine_files(dir_path: str, check_all_dirs: bool=False, file_path_cont
         files_df.date = pd.to_datetime(files_df.date)
         top_files = files_df.sort_values(by=['file_size', 'date'], ascending=[False, False]).head(2)
         rows = []
-        print(top_files)
         for _, row in top_files.iterrows():
             df = read_csv_file(row.directory, row.file_name, file_path_contains)
             if df is not None:
@@ -270,9 +272,10 @@ def check_for_entity_in_older_queries(entity_path, entity_df, is_large=True):
 
 
     older_entity_df = read_combine_files(dir_path=older_entity_file_dir, check_all_dirs=True, file_path_contains=entity_type, large_files=is_large)
-
+    print(f'older entity df shape: {older_entity_df.shape}')
     if len(older_entity_df) > 0:
-        missing_entities = older_entity_df[~older_entity_df.id.isin(entity_df.id)]
+        entity_field = 'full_name' if entity_type == 'repos' else 'login'
+        missing_entities = older_entity_df[~older_entity_df[entity_field].isin(entity_df[entity_field])]
 
         if entity_type == 'users':
             user_headers = pd.read_csv('../data/metadata_files/users_dataset_cols.csv')
@@ -280,7 +283,8 @@ def check_for_entity_in_older_queries(entity_path, entity_df, is_large=True):
                 error_file_path = "../data/error_logs/potential_users_errors.csv"
                 error_df = check_return_error_file(error_file_path)
                 now = pd.Timestamp('now')
-                error_df['error_time'] = pd.to_datetime(error_df['error_time'])
+                error_df['error_time'] = pd.to_datetime(error_df['error_time'], errors='coerce')
+                error_df = error_df.dropna(subset=['error_time'])  # Drop any rows where 'error_time' is NaT
                 error_df['time_since_error'] = (now - error_df['error_time']).dt.days
                 error_df = error_df[error_df.time_since_error > 7]
                 missing_entities = missing_entities[~missing_entities.login.isin(error_df.login)]
@@ -291,7 +295,8 @@ def check_for_entity_in_older_queries(entity_path, entity_df, is_large=True):
                 error_file_path = "../data/error_logs/potential_repos_errors.csv"
                 error_df = check_return_error_file(error_file_path)
                 now = pd.Timestamp('now')
-                error_df['error_time'] = pd.to_datetime(error_df['error_time'])
+                error_df['error_time'] = pd.to_datetime(error_df['error_time'], errors='coerce')
+                error_df = error_df.dropna(subset=['error_time'])  # Drop any rows where 'error_time' is NaT
                 error_df['time_since_error'] = (now - error_df['error_time']).dt.days
                 error_df = error_df[error_df.time_since_error > 7]
                 missing_entities = missing_entities[~missing_entities.full_name.isin(error_df.full_name)]
@@ -304,8 +309,8 @@ def check_for_entity_in_older_queries(entity_path, entity_df, is_large=True):
             entity_df[cleaned_field] = pd.to_datetime(entity_df[time_field], errors='coerce')
             entity_field = 'full_name' if 'repo' in entity_type else 'login'
             entity_df = entity_df.sort_values(by=[cleaned_field], ascending=False).drop_duplicates(subset=[entity_field], keep='first').drop(columns=[cleaned_field])
-            check_if_older_file_exists(entity_path)
-            entity_df.to_csv(entity_path, index=False)
+    check_if_older_file_exists(entity_path)
+    entity_df.to_csv(entity_path, index=False)
     return entity_df
 
 def check_file_size_and_move(file_dir):
@@ -323,6 +328,14 @@ def check_file_size_and_move(file_dir):
                 if not os.path.exists(new_file_path):
                     shutil.copy2(file_path, new_file_path)
                     os.remove(file_path)
+
+def check_file_created(file_path, existing_df):
+    df = pd.read_csv(file_path, low_memory=False)
+    if len(df) == len(existing_df):
+        return True
+    else:
+        print(f'File {file_path} not created correctly')
+        return False
 
 """User Functions
 1. Get new users data
@@ -360,7 +373,7 @@ def get_new_users(potential_new_users_df, temp_users_dir, users_progress_bar,  e
                 continue
             expanded_response = requests.get(user_row.url, headers=auth_headers)
             expanded_response_data = get_response_data(expanded_response, user_row.url)
-            if len(expanded_response_data) == 0:
+            if expanded_response_data is None:
                 users_progress_bar.update(1)
                 continue
             expanded_df = pd.json_normalize(expanded_response_data)
@@ -425,6 +438,7 @@ def check_add_users(potential_new_users_df, users_output_path, return_df, overwr
         users_df = pd.concat([users_df, expanded_new_users])
         users_df = users_df.drop_duplicates(subset=['login', 'id'])
     else:
+        new_users_df = potential_new_users_df.copy( )
         users_progress_bar = tqdm(total=len(new_users_df), desc='Users', position=1)
         users_df = get_new_users(potential_new_users_df, temp_users_dir, users_progress_bar, error_file_path, overwrite_existing_temp_files)
     
@@ -444,15 +458,23 @@ def get_user_df(output_path):
     user_df = pd.read_csv(output_path)
     return user_df
 
-def combined_updated_users(user_output_path, updated_user_output_path, overwrite_existing_temp_files):
+def combined_updated_users(user_output_path, updated_user_output_path, overwrite_existing_temp_files, return_df):
     if (os.path.exists(user_output_path)) and (os.path.exists(updated_user_output_path)):
         users_df = pd.read_csv(user_output_path, low_memory=False)
+        check_if_older_file_exists(user_output_path)
         updated_user_df = pd.read_csv(updated_user_output_path, low_memory=False)
-        new_users_df = updated_user_df[~updated_user_df.login.isin(users_df.login)]
-        users_df = pd.concat([users_df, new_users_df])
-        check_for_entity_in_older_queries(user_output_path, users_df)
+        existing_users_df = users_df[~users_df.login.isin(updated_user_df.login)]
+        combined_users_df = pd.concat([updated_user_df, existing_users_df])
+        combined_users_df = combined_users_df[updated_user_df.columns.tolist()]
+        combined_users_df = combined_users_df.fillna(np.nan).replace([np.nan], [None])
+        combined_users_df = combined_users_df.sort_values(by=['user_query_time']).drop_duplicates(subset=['login'], keep='first')
+        cleaned_users_df = check_for_entity_in_older_queries(user_output_path, combined_users_df)
         if overwrite_existing_temp_files:
-            os.remove(updated_user_output_path)
+            double_check = check_file_created(user_output_path, cleaned_users_df)
+            if double_check:
+                os.remove(updated_user_output_path)
+        if return_df:
+            return combined_users_df
     
 
 """Repo Functions
@@ -490,7 +512,7 @@ def get_new_repos(potential_new_repos_df, temp_repos_dir, repos_progress_bar,  e
                 continue
             response = requests.get(row.url, headers=auth_headers)
             response_data = get_response_data(response, row.url)
-            if len(response_data) == 0:
+            if response_data is None:
                 repos_progress_bar.update(1)
                 continue
             response_df = pd.json_normalize(response_data)
@@ -578,6 +600,24 @@ def get_repo_df(output_path):
     :return: repo dataframe"""
     repo_df = pd.read_csv(output_path, low_memory=False)
     return repo_df
+
+def combined_updated_repos(repo_output_path, updated_repo_output_path, overwrite_existing_temp_files, return_df):
+    if (os.path.exists(repo_output_path)) and (os.path.exists(updated_repo_output_path)):
+        repos_df = pd.read_csv(repo_output_path, low_memory=False)
+        check_if_older_file_exists(repo_output_path)
+        updated_repo_df = pd.read_csv(updated_repo_output_path, low_memory=False)
+        existing_repos_df = repos_df[~repos_df.full_name.isin(updated_repo_df.full_name)]
+        combined_repos_df = pd.concat([updated_repo_df, existing_repos_df])
+        combined_repos_df = combined_repos_df[updated_repo_df.columns.tolist()]
+        combined_repos_df = combined_repos_df.fillna(np.nan).replace([np.nan], [None])
+        combined_repos_df = combined_repos_df.sort_values(by=['repo_query_time']).drop_duplicates(subset=['full_name'], keep='first')
+        cleaned_repos_df = check_for_entity_in_older_queries(repo_output_path, combined_repos_df)
+        if overwrite_existing_temp_files:
+            double_check = check_file_created(repo_output_path, cleaned_repos_df)
+            if double_check:
+                os.remove(updated_repo_output_path)
+        if return_df:
+            return combined_repos_df
 
 """Org Functions"""
 
@@ -740,7 +780,7 @@ def check_for_joins_in_older_queries(join_file_path: str, join_files_df: pd.Data
 
             if len(missing_values) > 0:
                 join_files_df = pd.concat([join_files_df, missing_values])
-                join_files_df.to_csv(join_file_path, index=False)
+                # join_files_df.to_csv(join_file_path, index=False)
 
     return join_files_df
 
