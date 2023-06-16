@@ -83,7 +83,7 @@ def get_user_users(user_df: pd.DataFrame, user_users_output_path: str, get_url_f
             dfs.append(response_df)
             # Check if there is a next page and if so, keep making requests until there is no next page
             while "next" in response.links.keys():
-                time.sleep(120)
+                time.sleep(10)
                 query = response.links['next']['url']
                 response = requests.get(query, headers=auth_headers)
                 response_data = get_response_data(response, query)
@@ -118,7 +118,8 @@ def get_user_users(user_df: pd.DataFrame, user_users_output_path: str, get_url_f
                 user_users_df.to_csv(temp_user_users_dir + temp_user_users_path, index=False)
                 
                 user_progress_bar.update(1)
-        except:
+        except requests.exceptions.RequestException as e:
+            print(f"Request failed with error: {e}")
             user_progress_bar.total = user_progress_bar.total - 1
             # print(f"Error on getting users for {row.login}")
             error_df = pd.DataFrame([{'login': row.login, 'error_time': time.time(), 'error_url': row.url}])

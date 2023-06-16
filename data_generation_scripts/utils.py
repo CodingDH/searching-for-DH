@@ -710,6 +710,24 @@ def get_org_df(output_path):
     org_df = pd.read_csv(output_path, low_memory=False)
     return org_df
 
+def combined_updated_orgs(org_output_path, updated_org_output_path, overwrite_existing_temp_files, return_df):
+    if (os.path.exists(org_output_path)) and (os.path.exists(updated_org_output_path)):
+        orgs_df = pd.read_csv(org_output_path, low_memory=False)
+        check_if_older_file_exists(org_output_path)
+        updated_org_df = pd.read_csv(updated_org_output_path, low_memory=False)
+        existing_orgs_df = orgs_df[~orgs_df.login.isin(updated_org_df.login)]
+        combined_orgs_df = pd.concat([updated_org_df, existing_orgs_df])
+        combined_orgs_df = combined_orgs_df[updated_org_df.columns.tolist()]
+        combined_orgs_df = combined_orgs_df.fillna(np.nan).replace([np.nan], [None])
+        combined_orgs_df = combined_orgs_df.sort_values(by=['org_query_time']).drop_duplicates(subset=['login'], keep='first')
+        cleaned_orgs_df = check_for_entity_in_older_queries(org_output_path, combined_orgs_df)
+        if overwrite_existing_temp_files:
+            double_check = check_file_created(org_output_path, cleaned_orgs_df)
+            if double_check:
+                os.remove(updated_org_output_path)
+        if return_df:
+            return combined_orgs_df
+
 """Join Functions
 1. Check if older join entities exist and add them to our latest join"""
 

@@ -275,7 +275,7 @@ for index, repo in enumerate(needs_checking_repos):
     keep_resource = True
     answer = console.input("stay in the dataset? (y/n)")
     if answer == 'n':
-        eep_resource = False
+        keep_resource = False
 
     detected_languages = all_rows[all_rows.detected_language.notna()].detected_language.unique().tolist()
     natural_languages = all_rows[all_rows.natural_language.notna()].natural_language.unique().tolist()
