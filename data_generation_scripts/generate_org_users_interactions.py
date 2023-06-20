@@ -15,7 +15,7 @@ auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
 
 auth_headers = {'Authorization': f'token {auth_token}','User-Agent': 'request'}
 
-def get_members(org_df, org_members_output_path, users_output_path, get_url_field, error_file_path, org_cols_metadata, overwrite_existing_temp_files):
+def get_members(org_df, org_members_output_path, get_url_field, error_file_path, org_cols_metadata, overwrite_existing_temp_files, filter_fields):
     # Create the temporary directory path to store the data
     temp_org_members_dir = f"../data/temp/{org_members_output_path.split('/')[-1].split('.csv')[0]}/"
 
@@ -72,7 +72,7 @@ def get_members(org_df, org_members_output_path, users_output_path, get_url_fiel
             response_data = get_response_data(response, url)
 
             # If the response is empty, skip to the next org
-            if len(response_data) == 0:
+            if response_data is None:
                 org_progress_bar.update(1)
                 continue
             # Else append the response data to the list of dfs
@@ -85,7 +85,7 @@ def get_members(org_df, org_members_output_path, users_output_path, get_url_fiel
                 query = response.links['next']['url']
                 response = requests.get(query, headers=auth_headers)
                 response_data = get_response_data(response, query)
-                if len(response_data) == 0:
+                if response_data is None:
                     org_progress_bar.update(1)
                     continue
                 response_df = pd.json_normalize(response_data)
@@ -111,18 +111,16 @@ def get_members(org_df, org_members_output_path, users_output_path, get_url_fiel
                 if len(existing_df) > 0:
                     existing_df = existing_df[~existing_df.id.isin(org_members_df.id)]
                     org_members_df = pd.concat([existing_df, org_members_df])
-                    org_members_df = org_members_df.drop_duplicates()
+                    org_members_df = org_members_df.drop_duplicates(subset=filter_fields)
                 # Save the org_members_df to the temporary directory
                 org_members_df.to_csv(temp_org_members_dir + temp_org_members_path, index=False)
 
                 
-                return_df=False
-                check_add_users(data_df, users_output_path, return_df, overwrite_existing_temp_files)
                 org_progress_bar.update(1)
         except:
             # print(f"Error on getting actors for {row.full_name}")
             org_progress_bar.total = org_progress_bar.total - 1
-            error_df = pd.DataFrame([{'org_login': row.login, 'error_time': time.time(), 'error_url': url}])
+            error_df = pd.DataFrame([{'org_login': row.login, 'error_time': time.time(), 'error_url': row.url}])
             # Write errors to relevant error log
             if os.path.exists(error_file_path):
                 error_df.to_csv(error_file_path, mode='a', header=False, index=False)
@@ -140,15 +138,15 @@ def get_members(org_df, org_members_output_path, users_output_path, get_url_fiel
     org_progress_bar.close()
     return org_members_df
 
-def get_org_users_activities(org_df, org_members_output_path, users_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files, join_unique_field, filter_fields, retry_errors=False):
+def get_org_users_activities(org_df, org_members_output_path, orgs_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files, join_unique_field, filter_fields, retry_errors=False):
     # Flag to check if we want to reload existing data or rerun our code
     if load_existing_files:
         # Load relevant datasets and return them
         org_members_df = pd.read_csv(org_members_output_path, low_memory=False)
-        users_df = pd.read_csv(users_output_path, low_memory=False)
+        orgs_df = pd.read_csv(orgs_output_path, low_memory=False)
     else:
         # If we want to rerun our code, first check if the join file exists
-
+        updated_orgs_output_path = f"../data/temp/entity_files/{orgs_output_path.split('/')[-1].split('.csv')[0]}_updated.csv"
         # Create the path for the error logs
         error_file_path = f"../data/error_logs/{org_members_output_path.split('/')[-1].split('.csv')[0]}_errors.csv"
         cols_df = pd.read_csv("../data/metadata_files/user_url_cols.csv")
@@ -183,7 +181,7 @@ def get_org_users_activities(org_df, org_members_output_path, users_output_path,
             
             # If there are unprocessed orgs, run the get_members code to get them or return the existing data if there are no unprocessed repos
             if len(unprocessed_org_members) > 0:
-                new_members_df = get_members(unprocessed_org_members, org_members_output_path, users_output_path, get_url_field, error_file_path, cols_metadata, overwrite_existing_temp_files)
+                new_members_df = get_members(unprocessed_org_members, org_members_output_path, get_url_field, error_file_path, cols_metadata, overwrite_existing_temp_files, filter_fields)
             else:
                 new_members_df = unprocessed_org_members
             # Finally combine the existing join file with the new data and save it
@@ -191,17 +189,24 @@ def get_org_users_activities(org_df, org_members_output_path, users_output_path,
             
         else:
             # If the join file doesn't exist, run the get_members code to get them
-            org_members_df = get_members(org_df, org_members_output_path, users_output_path, get_url_field, error_file_path, cols_metadata, overwrite_existing_temp_files)
-        
+            org_members_df = get_members(org_df, org_members_output_path, get_url_field, error_file_path, cols_metadata, overwrite_existing_temp_files, filter_fields)
+        clean_write_error_file(error_file_path, 'org_login')
         check_if_older_file_exists(org_members_output_path)
         org_members_df['org_query_time'] = datetime.now().strftime("%Y-%m-%d")
+        org_members_df = check_for_joins_in_older_queries( org_members_output_path, org_members_df, join_unique_field, filter_fields)
         org_members_df.to_csv(org_members_output_path, index=False)
         # Finally, get the unique users which is updated in the get_members code and return it
-        clean_write_error_file(error_file_path, 'org_login')
+        # users_df = get_user_df(users_output_path)
+        original_user_df = pd.read_csv("../data/large_files/entity_files/users_dataset.csv", low_memory=False)
+        data_df = org_members_df.copy()
+        data_df = data_df[(data_df.user_login.isin(org_df.login)) & (~data_df.login.isin(original_user_df.login))]
+        return_df=False
+        check_add_users(data_df, updated_orgs_output_path, return_df, overwrite_existing_temp_files)
 
-        org_members_df = check_for_joins_in_older_queries( org_members_output_path, org_members_df, join_unique_field, filter_fields)
-        users_df = get_user_df(users_output_path)
-    return org_members_df, users_df
+        overwrite_existing_temp_files = True
+        return_df = True
+        orgs_df = combined_updated_users(users_output_path, updated_users_output_path, overwrite_existing_temp_files, return_df)
+    return org_members_df, orgs_df
 
 
 if __name__ == '__main__':

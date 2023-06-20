@@ -103,7 +103,7 @@ def get_counts(user_df, url_type, count_type, overwrite_existing_temp_files = Fa
         return user_df
 
 if __name__ == "__main__":
-    core_orgs_path = "../data/derived_files/initial_core_orgs.csv"
+    core_orgs_path = "../data/derived_files/firstpass_core_orgs.csv"
     core_orgs = pd.read_csv(core_orgs_path)
 
     if os.path.exists("../data/metadata_files/user_url_cols.csv"):

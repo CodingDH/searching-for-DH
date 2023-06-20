@@ -438,7 +438,7 @@ def check_add_users(potential_new_users_df, users_output_path, return_df, overwr
         users_df = pd.concat([users_df, expanded_new_users])
         users_df = users_df.drop_duplicates(subset=['login', 'id'])
     else:
-        new_users_df = potential_new_users_df.copy( )
+        new_users_df = potential_new_users_df.copy()
         users_progress_bar = tqdm(total=len(new_users_df), desc='Users', position=1)
         users_df = get_new_users(potential_new_users_df, temp_users_dir, users_progress_bar, error_file_path, overwrite_existing_temp_files)
     
@@ -632,6 +632,7 @@ def get_orgs(org_df, org_output_path, error_file_path, overwrite_existing_temp_f
     if not os.path.exists(temp_org_dir):
         os.makedirs(temp_org_dir)
     org_progress_bar = tqdm(total=len(org_df), desc="Cleaning Orgs", position=0)
+    org_headers = pd.read_csv('../data/metadata_files/org_headers.csv')
     for _, row in org_df.iterrows():
         try:
             # Create the temporary directory path to store the data
@@ -647,16 +648,17 @@ def get_orgs(org_df, org_output_path, error_file_path, overwrite_existing_temp_f
             # Make the first request
             response = requests.get(url, headers=auth_headers)
             response_data = get_response_data(response, url)
-            if len(response_data) == 0:
+            if response_data is None:
                 response_df = pd.read_csv('../data/metadata_files/org_headers.csv')
             else:
                 response_df = pd.json_normalize(response_data)
+            response_df = response_df[org_headers.columns]
             response_df.to_csv(temp_org_dir + temp_org_path, index=False)
             org_progress_bar.update(1)
         except:
             org_progress_bar.total = org_progress_bar.total - 1
             # print(f"Error on getting orgs for {row.login}")
-            error_df = pd.DataFrame([{'login': row.login, 'error_time': time.time(), 'error_url': url}])
+            error_df = pd.DataFrame([{'login': row.login, 'error_time': time.time(), 'error_url': row.url}])
             
             if os.path.exists(error_file_path):
                 error_df.to_csv(error_file_path, mode='a', header=False, index=False)

@@ -66,29 +66,39 @@ login_dict = {
     'pull_comment': 'user.login'
 }
 
+def process_results(initial_df, top_users, output_path):
+    for _, row in initial_df[initial_df.keep_account != False].iterrows():
+        subset_top_users = top_users[top_users.login == row.login]
+
+        print(f"{row.login} has {row.followers} followers and are following {row.following} users. Their bio is: {row.bio}.") 
+        print(f"There url is {row.html_url}. They have {row.public_repos} public repos and {row.public_gists} public gists.")
+        print("The activities associated with this account include:")
+        for _, second_row in subset_top_users.iterrows():
+            print(f"{second_row.type}: {second_row.counts}")
+            df = files_dict[second_row.type]
+            login_value = login_dict[second_row.type]
+            repos = df[df[login_value] == row.login].repo_full_name.unique()
+            print(repos)
+        keep_resource = False
+        answer = console.input("stay in the dataset? (y/n)")
+        if answer == 'y':
+            keep_resource = True
+        initial_df.loc[initial_df.login == row.login, 'keep_account'] = keep_resource
+        initial_df.to_csv(output_path, index=False)
+
+    initial_df.to_csv(output_path, index=False)
+
+
 too_many_followers = pd.read_csv("../data/derived_files/too_many_followers.csv")
 if 'keep_acccount' not in too_many_followers.columns:
     too_many_followers['keep_account'] = None
 top_users = pd.read_csv("../data/derived_files/top_users.csv")
+
+
+too_many_following = pd.read_csv("../data/derived_files/too_many_following.csv")
+if 'keep_acccount' not in too_many_following.columns:
+    too_many_following['keep_account'] = None
 console = Console()
 
-for _, row in too_many_followers[too_many_followers.keep_account != False].iterrows():
-    subset_top_users = top_users[top_users.login == row.login]
-
-    print(f"{row.login} has {row.followers} followers and are following {row.following} users. Their bio is: {row.bio}.") 
-    print(f"There url is {row.html_url}. They have {row.public_repos} public repos and {row.public_gists} public gists.")
-    print("The activities associated with this account include:")
-    for _, second_row in subset_top_users.iterrows():
-        print(f"{second_row.type}: {second_row.counts}")
-        df = files_dict[second_row.type]
-        login_value = login_dict[second_row.type]
-        repos = df[df[login_value] == row.login].repo_full_name.unique()
-        print(repos)
-    keep_resource = False
-    answer = console.input("stay in the dataset? (y/n)")
-    if answer == 'y':
-        keep_resource = True
-    too_many_followers.loc[too_many_followers.login == row.login, 'keep_account'] = keep_resource
-    too_many_followers.to_csv("../data/derived_files/too_many_followers.csv", index=False)
-
-too_many_followers.to_csv("../data/derived_files/too_many_followers.csv", index=False)
+# process_results(too_many_followers, top_users, "../data/derived_files/too_many_followers.csv")
+process_results(too_many_following, top_users, "../data/derived_files/too_many_following.csv")
