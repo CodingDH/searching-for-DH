@@ -134,90 +134,59 @@ def get_response_data(response, query):
 3. Check if older file exists and move it to archive
 4. Check if older entity files exist and grab any missing entities to add to our most recent file"""
 
-def read_csv_file(directory: str, file_name: str, file_path_contains: Optional[str]) -> Optional[pd.DataFrame]:
-    """Reads a CSV file into a pandas DataFrame.
-    
-    :param directory: Directory of the file.
-    :type directory: str
-    :param file_name: Name of the file.
-    :type file_name: str
-    :param file_path_contains: Only files containing this string will be read.
-    :type file_path_contains: str, optional
-    :return: Data from the file as a pandas DataFrame, or None if the file is empty or does not contain the specified string.
-    :rtype: pandas.DataFrame, optional
-    """
-    if file_path_contains is None or file_path_contains in file_name:
-        try:
-            return pd.read_csv(os.path.join(directory, file_name), low_memory=False, encoding='utf-8')
-        except pd.errors.EmptyDataError:
-            print(f'Empty dataframe for {file_name}')
-            return None
-    return None
+def read_csv_file(directory: str, file_name: str) -> Optional[pd.DataFrame]:
+    """Reads a CSV file into a pandas DataFrame."""
+    try:
+        return pd.read_csv(os.path.join(directory, file_name), low_memory=False, encoding='utf-8')
+    except pd.errors.EmptyDataError:
+        print(f'Empty dataframe for {file_name}')
+        return None
+
+
+def create_file_dict(directory: str, file_name: str) -> dict:
+    """Create a file dictionary with name, size, and directory."""
+    file_dict = {}
+    loaded_file = os.path.join(directory, file_name)
+    file_size = os.path.getsize(loaded_file)
+    file_dict['file_name'] = file_name
+    file_dict['file_size'] = file_size
+    file_dict['directory'] = directory
+    return file_dict
 
 def read_combine_files(dir_path: str, check_all_dirs: bool=False, file_path_contains: Optional[str]=None, large_files: bool=False) -> pd.DataFrame:
-    """Combines all files in a directory.
-    
-    :param dir_path: Path to directory with files.
-    :type dir_path: str
-    :param check_all_dirs: Whether to check all directories.
-    :type check_all_dirs: bool
-    :param file_path_contains: Only files containing this string will be read.
-    :type file_path_contains: str, optional
-    :param large_files: Whether to treat the files as large or not.
-    :type large_files: bool, optional
-    :return: Combined data from all relevant files.
-    :rtype: pandas.DataFrame
-    """
+    """Combines all files in a directory."""
     excluded_dirs = ['temp', 'derived_files', 'metadata_files', 'repo_data', 'user_data', 'derived_files', 'archived_data', 'error_logs', 'archived_files']
     rows = []
     relevant_files = []
+
     for directory, _, files in os.walk(dir_path):
-        if check_all_dirs:
-            if directory == '../data':
-                continue
-            excluded_exists = [excluded_dir for excluded_dir in excluded_dirs if excluded_dir in directory]
-            if len(excluded_exists) == 0:
-                for file_name in files:
-                    
-                    if large_files:
-                        file_dict = {}
-                        loaded_file = os.path.join(directory, file_name)
-                        file_size = os.path.getsize(loaded_file)
-                        file_dict['file_name'] = file_name
-                        file_dict['file_size'] = file_size
-                        file_dict['directory'] = directory
-                        relevant_files.append(file_dict)
-                    else:
-                        row = read_csv_file(directory, file_name, file_path_contains)
-                        if row is not None:
-                            rows.append(row)
-        else:
-            for file_name in files:
+        if check_all_dirs and directory == '../data':
+            continue
+        if check_all_dirs and any(excluded_dir in directory for excluded_dir in excluded_dirs):
+            continue
+
+        for file_name in files:
+            if file_path_contains is None or file_path_contains in file_name:
                 if large_files:
-                    file_dict = {}
-                    loaded_file = os.path.join(directory, file_name)
-                    file_size = os.path.getsize(loaded_file)
-                    file_dict['file_name'] = file_name
-                    file_dict['file_size'] = file_size
-                    file_dict['directory'] = directory
-                    relevant_files.append(file_dict)
+                    relevant_files.append(create_file_dict(directory, file_name))
                 else:
-                    row = read_csv_file(directory, file_name, file_path_contains)
+                    row = read_csv_file(directory, file_name)
                     if row is not None:
                         rows.append(row)
+
     if large_files:
         files_df = pd.DataFrame(relevant_files)
+        if len(files_df) == 0:
+            return pd.DataFrame()
         files_df['date'] = "202" + files_df['file_name'].str.split('202').str[1].str.split('.').str[0]
         files_df.date = files_df.date.str.replace("_", "-")
         files_df.date = pd.to_datetime(files_df.date)
         top_files = files_df.sort_values(by=['file_size', 'date'], ascending=[False, False]).head(2)
-        rows = []
-        for _, row in top_files.iterrows():
-            df = read_csv_file(row.directory, row.file_name, file_path_contains)
-            if df is not None:
-                rows.append(df)
+        rows = [read_csv_file(row.directory, row.file_name) for _, row in top_files.iterrows() if row is not None]
+
     combined_df = pd.concat(rows) if len(rows) > 0 else pd.DataFrame()
     return combined_df
+
 
 
 def check_return_error_file(error_file_path):
@@ -633,6 +602,7 @@ def get_orgs(org_df, org_output_path, error_file_path, overwrite_existing_temp_f
         os.makedirs(temp_org_dir)
     org_progress_bar = tqdm(total=len(org_df), desc="Cleaning Orgs", position=0)
     org_headers = pd.read_csv('../data/metadata_files/org_headers.csv')
+    user_cols = ['bio', 'followers_url', 'following_url', 'gists_url', 'gravatar_id', 'hireable', 'organizations_url','received_events_url', 'site_admin', 'starred_url','subscriptions_url','user_query_time', 'login', 'url']
     for _, row in org_df.iterrows():
         try:
             # Create the temporary directory path to store the data
@@ -642,6 +612,14 @@ def get_orgs(org_df, org_output_path, error_file_path, overwrite_existing_temp_f
             if os.path.exists(temp_org_dir + temp_org_path):
                 org_progress_bar.update(1)
                 continue
+            user_url = row.url
+            user_response = requests.get(user_url, headers=auth_headers)
+            user_response_data = get_response_data(user_response, user_url)
+            if user_response_data is None:
+                user_response_df = pd.DataFrame(columns=user_cols, data=None, index=None)
+            else:
+                user_response_df = pd.json_normalize(user_response_data)
+            user_response_df = user_response_df[user_cols]
             # Create the url to get the org
             url = row.url.replace('/users/', '/orgs/')
 
@@ -653,7 +631,9 @@ def get_orgs(org_df, org_output_path, error_file_path, overwrite_existing_temp_f
             else:
                 response_df = pd.json_normalize(response_data)
             response_df = response_df[org_headers.columns]
-            response_df.to_csv(temp_org_dir + temp_org_path, index=False)
+            common_columns = list(set(response_df.columns.tolist()).intersection(set(user_response_df.columns.tolist())))
+            final_response_df = pd.merge(response_df, user_response_df, on=common_columns, how='left')
+            final_response_df.to_csv(temp_org_dir + temp_org_path, index=False)
             org_progress_bar.update(1)
         except:
             org_progress_bar.total = org_progress_bar.total - 1

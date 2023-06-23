@@ -77,11 +77,14 @@ def get_members(org_df, org_members_output_path, get_url_field, error_file_path,
                 continue
             # Else append the response data to the list of dfs
             response_df = pd.json_normalize(response_data)
-
+            if 'message' in response_df.columns:
+                print(response_df.message.values[0])
+                org_progress_bar.update(1)
+                continue
             dfs.append(response_df)
             # Check if there is a next page and if so, keep making requests until there is no next page
             while "next" in response.links.keys():
-                time.sleep(120)
+                time.sleep(10)
                 query = response.links['next']['url']
                 response = requests.get(query, headers=auth_headers)
                 response_data = get_response_data(response, query)
@@ -138,15 +141,15 @@ def get_members(org_df, org_members_output_path, get_url_field, error_file_path,
     org_progress_bar.close()
     return org_members_df
 
-def get_org_users_activities(org_df, org_members_output_path, orgs_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files, join_unique_field, filter_fields, retry_errors=False):
+def get_org_users_activities(org_df, org_members_output_path, user_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files, join_unique_field, filter_fields, retry_errors=False):
     # Flag to check if we want to reload existing data or rerun our code
     if load_existing_files:
         # Load relevant datasets and return them
         org_members_df = pd.read_csv(org_members_output_path, low_memory=False)
-        orgs_df = pd.read_csv(orgs_output_path, low_memory=False)
+        user_df = pd.read_csv(user_output_path, low_memory=False)
     else:
         # If we want to rerun our code, first check if the join file exists
-        updated_orgs_output_path = f"../data/temp/entity_files/{orgs_output_path.split('/')[-1].split('.csv')[0]}_updated.csv"
+        updated_user_output_path = f"../data/temp/entity_files/{user_output_path.split('/')[-1].split('.csv')[0]}_updated.csv"
         # Create the path for the error logs
         error_file_path = f"../data/error_logs/{org_members_output_path.split('/')[-1].split('.csv')[0]}_errors.csv"
         cols_df = pd.read_csv("../data/metadata_files/user_url_cols.csv")
@@ -167,7 +170,7 @@ def get_org_users_activities(org_df, org_members_output_path, orgs_output_path, 
                 missing_actors = merged_df[merged_df[counts_exist] > merged_df[f'new_{counts_exist}']]
                 unprocessed_org_members = org_df[org_df.login.isin(missing_actors.login)]
             else:
-                unprocessed_org_members = org_df[~org_df.url.isin(org_members_df.org_url)] 
+                unprocessed_org_members = org_df[~org_df.login.isin(org_members_df.org_login)] 
 
             # Now create the path for the error logs
             error_file_path = f"../data/error_logs/{org_members_output_path.split('/')[-1].split('.csv')[0]}_errors.csv"
@@ -177,7 +180,7 @@ def get_org_users_activities(org_df, org_members_output_path, orgs_output_path, 
                     # If it does, load it and also add the orgs that were in the error log to the unprocessed orgs so that we don't keep trying to grab errored orgs
                     error_df = pd.read_csv(error_file_path)
                     if len(error_df) > 0:
-                        unprocessed_org_members = unprocessed_org_members[~unprocessed_org_members['org_login'].isin(error_df['org_login'])]
+                        unprocessed_org_members = unprocessed_org_members[~unprocessed_org_members[get_url_field].isin(error_df['error_url'])]
             
             # If there are unprocessed orgs, run the get_members code to get them or return the existing data if there are no unprocessed repos
             if len(unprocessed_org_members) > 0:
@@ -199,25 +202,27 @@ def get_org_users_activities(org_df, org_members_output_path, orgs_output_path, 
         # users_df = get_user_df(users_output_path)
         original_user_df = pd.read_csv("../data/large_files/entity_files/users_dataset.csv", low_memory=False)
         data_df = org_members_df.copy()
-        data_df = data_df[(data_df.user_login.isin(org_df.login)) & (~data_df.login.isin(original_user_df.login))]
+        data_df = data_df[(data_df.org_login.isin(org_df.login)) & (~data_df.login.isin(original_user_df.login))]
         return_df=False
-        check_add_users(data_df, updated_orgs_output_path, return_df, overwrite_existing_temp_files)
+        check_add_users(data_df, updated_user_output_path, return_df, overwrite_existing_temp_files)
 
         overwrite_existing_temp_files = True
         return_df = True
-        orgs_df = combined_updated_users(users_output_path, updated_users_output_path, overwrite_existing_temp_files, return_df)
-    return org_members_df, orgs_df
+        user_df = combined_updated_users(users_output_path, updated_user_output_path, overwrite_existing_temp_files, return_df)
+    return org_members_df, user_df
 
 
 if __name__ == '__main__':
-    core_orgs_output_path = '../data/derived_files/core_orgs.csv'
-    core_orgs = pd.read_csv(core_orgs_output_path)
+    initial_core_orgs = pd.read_csv("../data/derived_files/initial_core_orgs.csv")
+    firstpass_core_orgs_path = "../data/derived_files/firstpass_core_orgs.csv"
+    firstpass_core_orgs = pd.read_csv(firstpass_core_orgs_path)
+    core_orgs = pd.concat([initial_core_orgs, firstpass_core_orgs])
     org_followers_output_path = "../data/join_files/org_followers_join_dataset.csv"
-    users_output_path = "../data/entity_files/users_dataset.csv"
+    users_output_path = "../data/large_files/entity_files/users_dataset.csv"
     get_url_field = "followers_url"
     load_existing_files = False
     overwrite_existing_temp_files = False
     join_unique_field = "org_login"
     filter_fields = ["org_login", "login"]
-    retry_error = True
+    retry_error = False
     org_followers_df, user_df = get_org_users_activities(core_orgs,org_followers_output_path, users_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files, join_unique_field, filter_fields, retry_error)

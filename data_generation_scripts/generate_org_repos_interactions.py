@@ -24,7 +24,7 @@ auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
 
 auth_headers = {'Authorization': f'token {auth_token}','User-Agent': 'request'}
 
-def get_org_repos(org_df, org_repos_output_path, repos_output_path, get_url_field, error_file_path, org_cols_metadata, overwrite_existing_temp_files):
+def get_org_repos(org_df, org_repos_output_path, get_url_field, error_file_path, org_cols_metadata, overwrite_existing_temp_files, filter_fields):
     # Create the temporary directory path to store the data
     temp_org_repos_dir = f"../data/temp/{org_repos_output_path.split('/')[-1].split('.csv')[0]}/"
 
@@ -80,12 +80,16 @@ def get_org_repos(org_df, org_repos_output_path, repos_output_path, get_url_fiel
             response_data = get_response_data(response, url)
 
             # If the response is empty, skip to the next org
-            if len(response_data) == 0:
+            if response_data is None:
                 org_progress_bar.update(1)
                 continue
 
             # Else append the response data to the list of dfs
             response_df = pd.json_normalize(response_data)
+            if 'message' in response_df.columns:
+                print(response_df.message.values[0])
+                org_progress_bar.update(1)
+                continue
             dfs.append(response_df)
             # Check if there is a next page and if so, keep making requests until there is no next page
             while "next" in response.links.keys():
@@ -93,7 +97,7 @@ def get_org_repos(org_df, org_repos_output_path, repos_output_path, get_url_fiel
                 query = response.links['next']['url']
                 response = requests.get(query, headers=auth_headers, timeout=10)
                 response_data = get_response_data(response, query)
-                if len(response_data) == 0:
+                if response_data is None:
                     org_progress_bar.update(1)
                     continue
                 response_df = pd.json_normalize(response_data)
@@ -118,17 +122,16 @@ def get_org_repos(org_df, org_repos_output_path, repos_output_path, get_url_fiel
                 if len(existing_df) > 0:
                     existing_df = existing_df[~existing_df.id.isin(org_repos_df.id)]
                     org_repos_df = pd.concat([existing_df, org_repos_df])
-                    org_repos_df = org_repos_df.drop_duplicates()
+                    org_repos_df = org_repos_df.drop_duplicates(subset=filter_fields)
                 # Save the org_repos_df to the temporary directory
                 org_repos_df.to_csv(temp_org_repos_dir + temp_org_repos_path, index=False)
 
                 # Get the unique repos from the data_df
-                check_add_repos(data_df, repos_output_path,  return_df=False)
                 org_progress_bar.update(1)
         except:
             org_progress_bar.total = org_progress_bar.total - 1
             # print(f"Error on getting orgs for {row.login}")
-            error_df = pd.DataFrame([{'login': row.login, 'error_time': time.time(), 'error_url': url}])
+            error_df = pd.DataFrame([{'login': row.login, 'error_time': time.time(), 'error_url': row.url}])
             
             if os.path.exists(error_file_path):
                 error_df.to_csv(error_file_path, mode='a', header=False, index=False)
@@ -151,6 +154,7 @@ def get_org_repo_activities(org_df,org_repos_output_path, repos_output_path, get
         org_repos_df = pd.read_csv(org_repos_output_path, low_memory=False)
         repos_df = pd.read_csv(repos_output_path, low_memory=False)
     else:
+        updated_repo_output_path = f"../data/temp/entity_files/{repo_output_path.split('/')[-1].split('.csv')[0]}_updated.csv"
         # Now create the path for the error logs
         error_file_path = f"../data/error_logs/{org_repos_output_path.split('/')[-1].split('.csv')[0]}_errors.csv"
         cols_df = pd.read_csv("../data/metadata_files/user_url_cols.csv")
@@ -183,7 +187,7 @@ def get_org_repo_activities(org_df,org_repos_output_path, repos_output_path, get
             
             # If there are unprocessed repos, run the get_actors code to get them or return the existing data if there are no unprocessed repos
             if len(unprocessed_org_repos) > 0:
-                new_repos_df = get_org_repos(unprocessed_org_repos, org_repos_output_path, repos_output_path, get_url_field, error_file_path, cols_metadata, overwrite_existing_temp_files)
+                new_repos_df = get_org_repos(unprocessed_org_repos, org_repos_output_path, get_url_field, error_file_path, cols_metadata, overwrite_existing_temp_files, filter_fields)
             else:
                 new_repos_df = unprocessed_org_repos
             # Finally combine the existing join file with the new data and save it
@@ -191,26 +195,43 @@ def get_org_repo_activities(org_df,org_repos_output_path, repos_output_path, get
             
         else:
             # If the join file doesn't exist, run the get_actors code to get them
-            org_repos_df = get_org_repos(org_df, org_repos_output_path, repos_output_path, get_url_field, error_file_path, cols_metadata,overwrite_existing_temp_files)
+            org_repos_df = get_org_repos(org_df, org_repos_output_path, get_url_field, error_file_path, cols_metadata,overwrite_existing_temp_files, filter_fields)
         
+        clean_write_error_file(error_file_path, 'login')
         check_if_older_file_exists(org_repos_output_path)
         org_repos_df['org_query_time'] = datetime.now().strftime("%Y-%m-%d")
+        org_repos_df = check_for_joins_in_older_queries(org_repos_output_path, org_repos_df, join_unique_field, filter_fields)
         org_repos_df.to_csv(org_repos_output_path, index=False)
-        clean_write_error_file(error_file_path, 'login')
         
-        check_for_joins_in_older_queries(org_repos_output_path, org_repos_df, join_unique_field, filter_fields)
-        repos_df = get_repo_df(repos_output_path)
+        original_repo_df = pd.read_csv(repo_output_path, low_memory=False)
+        data_df = org_repos_df.copy()
+        data_df = data_df[(data_df.org_login.isin(org_df.login)) & (~data_df.full_name.isin(original_repo_df.full_name))]
+        return_df =False
+        check_add_repos(data_df, updated_repo_output_path, return_df)
+        overwrite_existing_temp_files = True
+        return_df = True
+        repos_df = combined_updated_repos(repos_output_path, updated_repo_output_path, overwrite_existing_temp_files, return_df)
+
     return org_repos_df, repos_df
 
 if __name__ == '__main__':
-    core_orgs_output_path = '../data/derived_files/core_orgs.csv'
-    core_orgs = pd.read_csv(core_orgs_output_path)
+    initial_core_orgs = pd.read_csv("../data/derived_files/initial_core_orgs.csv")
+    firstpass_core_orgs_path = "../data/derived_files/firstpass_core_orgs.csv"
+    firstpass_core_orgs = pd.read_csv(firstpass_core_orgs_path)
+    core_orgs = pd.concat([initial_core_orgs, firstpass_core_orgs])
     org_repos_output_path = "../data/join_files/org_repos_join_dataset.csv"
-    repo_output_path = "../data/large_files/entity_files/repo_dataset.csv"
+    repo_output_path = "../data/large_files/entity_files/repos_dataset.csv"
     get_url_field = "repos_url"
     load_existing_files = False
     overwrite_existing_temp_files = False
     join_unique_field = "org_login"
     filter_fields = ["org_login", "full_name"]
-    retry_error = True
+    retry_error = False
     org_repos_df, user_df = get_org_repo_activities(core_orgs,org_repos_output_path, repo_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files, join_unique_field, filter_fields, retry_error)
+    # updated_repo_output_path = f"../data/temp/entity_files/{repo_output_path.split('/')[-1].split('.csv')[0]}_updated.csv"
+
+    # repo_df = pd.read_csv(updated_repo_output_path, low_memory=False)
+    # repo_df = check_for_entity_in_older_queries(updated_repo_output_path, repo_df, is_large=True)
+    # overwrite_existing_temp_files = True
+    # return_df = True
+    # repos_df = combined_updated_repos(repo_output_path, updated_repo_output_path, overwrite_existing_temp_files, return_df)
