@@ -166,14 +166,15 @@ def get_user_org_activities(user_df,user_orgs_output_path, orgs_output_path, get
             # If it does, load it
             user_orgs_df = pd.read_csv(user_orgs_output_path, low_memory=False)
             # Then check from our org_df which orgs are missing from the join file, using either the field we are grabing (get_url_field) or the the org id
-            
             if counts_exist in user_df.columns:
                 subset_user_df = user_df[['login', counts_exist]]
                 subset_user_orgs_df = user_orgs_df[join_unique_field].value_counts().reset_index().rename(columns={'index': 'login', join_unique_field: f'new_{counts_exist}'})
                 merged_df = pd.merge(subset_user_df, subset_user_orgs_df, on='login', how='left')
                 merged_df[f'new_{counts_exist}'] = merged_df[f'new_{counts_exist}'].fillna(0)
+                merged_df[f'new_{counts_exist}'] = merged_df[f'new_{counts_exist}'].astype(int)
                 missing_actors = merged_df[merged_df[counts_exist] > merged_df[f'new_{counts_exist}']]
                 unprocessed_orgs = user_df[user_df.login.isin(missing_actors.login)]
+                print(len(unprocessed_orgs))
             else:
                 unprocessed_orgs = user_df[~user_df['login'].isin(user_orgs_df['user_login'])]
 
@@ -187,6 +188,7 @@ def get_user_org_activities(user_df,user_orgs_output_path, orgs_output_path, get
             
             # If there are unprocessed orgs, run the get_actors code to get them or return the existing data if there are no unprocessed orgs
             if len(unprocessed_orgs) > 0:
+                print(len(unprocessed_orgs))
                 new_orgs_df = get_user_orgs(unprocessed_orgs, user_orgs_output_path, get_url_field, error_file_path, cols_metadata, overwrite_existing_temp_files, filter_fields)
             else:
                 new_orgs_df = unprocessed_orgs
@@ -220,14 +222,14 @@ if __name__ == '__main__':
     # Get the data
     core_user_path = "../data/derived_files/firstpass_core_users.csv"
     core_users = pd.read_csv(core_user_path, low_memory=False)
-    user_organizations_output_path = "../data/large_files/join_files/user_organizations_join_dataset.csv"
-    user_orgs_output_path = "../data/join_files/user_orgs_join_dataset.csv"
+    # user_organizations_output_path = "../data/large_files/join_files/user_organizations_join_dataset.csv"
+    user_orgs_output_path = "../data/large_files/join_files/user_organizations_join_dataset.csv"
     orgs_output_path = "../data/entity_files/orgs_dataset.csv"
     get_url_field = "organizations_url"
     load_existing_files = False
     overwrite_existing_temp_files = False
     join_unique_field = 'user_login'
     filter_fields = ['user_login', 'login']
-    retry_errors = False
+    retry_errors = True
 
     users_organizations_df, user_df = get_user_org_activities(core_users, user_orgs_output_path, orgs_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files, join_unique_field, filter_fields, retry_errors)

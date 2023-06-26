@@ -215,19 +215,33 @@ def get_org_repo_activities(org_df,org_repos_output_path, repos_output_path, get
     return org_repos_df, repos_df
 
 if __name__ == '__main__':
-    initial_core_orgs = pd.read_csv("../data/derived_files/initial_core_orgs.csv")
-    firstpass_core_orgs_path = "../data/derived_files/firstpass_core_orgs.csv"
-    firstpass_core_orgs = pd.read_csv(firstpass_core_orgs_path)
-    core_orgs = pd.concat([initial_core_orgs, firstpass_core_orgs])
-    org_repos_output_path = "../data/join_files/org_repos_join_dataset.csv"
-    repo_output_path = "../data/large_files/entity_files/repos_dataset.csv"
-    get_url_field = "repos_url"
-    load_existing_files = False
-    overwrite_existing_temp_files = False
-    join_unique_field = "org_login"
-    filter_fields = ["org_login", "full_name"]
-    retry_error = False
-    org_repos_df, user_df = get_org_repo_activities(core_orgs,org_repos_output_path, repo_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files, join_unique_field, filter_fields, retry_error)
+    # initial_core_orgs = pd.read_csv("../data/derived_files/initial_core_orgs.csv")
+    # firstpass_core_orgs_path = "../data/derived_files/firstpass_core_orgs.csv"
+    # firstpass_core_orgs = pd.read_csv(firstpass_core_orgs_path)
+    # core_orgs = pd.concat([initial_core_orgs, firstpass_core_orgs])
+    # org_repos_output_path = "../data/join_files/org_repos_join_dataset.csv"
+    # repo_output_path = "../data/large_files/entity_files/repos_dataset.csv"
+    # get_url_field = "repos_url"
+    # load_existing_files = False
+    # overwrite_existing_temp_files = False
+    # join_unique_field = "org_login"
+    # filter_fields = ["org_login", "full_name"]
+    # retry_error = False
+    # org_repos_df, user_df = get_org_repo_activities(core_orgs,org_repos_output_path, repo_output_path, get_url_field, load_existing_files, overwrite_existing_temp_files, join_unique_field, filter_fields, retry_error)
+    # temp_user_file = "../data/temp/missing_repos.csv"
+    # missing_repos = pd.read_csv(temp_user_file)
+    # return_df =False
+    # temp_repos_dir = "../data/temp/temp_repos/"
+    # repos_progress_bar = tqdm(total=len(missing_repos), desc="Getting Repos")
+    # error_file_path = '../data/error_logs/potential_repos_errors.csv'
+    # updated_repos = get_new_repos(missing_repos, temp_repos_dir, repos_progress_bar,  error_file_path, overwrite_existing_temp_files=True)
+    # overwrite_existing_temp_files = True
+    # return_df = True
+    # clean_write_error_file(error_file_path, 'full_name')
+    # check_if_older_file_exists(temp_user_file)
+    # updated_repos['repo_query_time'] = datetime.now().strftime("%Y-%m-%d")
+    # updated_repos.to_csv(temp_user_file, index=False)
+    # repo_df = combined_updated_repos("../data/large_files/entity_files/repos_dataset.csv", temp_user_file, overwrite_existing_temp_files, return_df)
     # updated_repo_output_path = f"../data/temp/entity_files/{repo_output_path.split('/')[-1].split('.csv')[0]}_updated.csv"
 
     # repo_df = pd.read_csv(updated_repo_output_path, low_memory=False)
@@ -235,3 +249,13 @@ if __name__ == '__main__':
     # overwrite_existing_temp_files = True
     # return_df = True
     # repos_df = combined_updated_repos(repo_output_path, updated_repo_output_path, overwrite_existing_temp_files, return_df)
+    temp_user_file = "../data/temp/missing_users.csv"
+    missing_users = pd.read_csv(temp_user_file)
+    missing_users["url"] = missing_users.login.apply(
+        lambda x: f"https://api.github.com/users/{x}")
+    
+    temp_user_file_updated = "../data/temp/missing_users_updated.csv"
+    
+    check_add_users(missing_users, users_output_path=temp_user_file_updated, return_df=False, overwrite_existing_temp_files=False)
+
+    user_df = combined_updated_users(user_output_path="../data/large_files/entity_files/users_dataset.csv", updated_user_output_path=temp_user_file_updated, overwrite_existing_temp_files=True, return_df=True)

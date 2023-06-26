@@ -76,10 +76,10 @@ def generate_translated_terms():
     merged_df['translated_term'] = merged_df['translated_term'].apply(lambda x: html.unescape(x))
     return merged_df
 
-def check_detect_language(row, is_repo=False):
+def check_detect_language(row, check_name=False, is_repo=False):
     text = row.description if is_repo else row.bio
-    # if len(text) == 0:
-    #     text = row.name.replace('-', ' ').replace('_', ' ')
+    if (len(text) == 0) and (check_name):
+        text = row['name'].replace('-', ' ').replace('_', ' ')
     if pd.notna(text) and len(text) > 1:  # Additional check if text is not NaN
         try:
             result = translate_client.detect_language(text)

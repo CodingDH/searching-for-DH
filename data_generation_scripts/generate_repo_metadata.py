@@ -135,8 +135,12 @@ def get_profiles(repo_df, temp_repo_dir, error_file_path):
         try:
             response = requests.get(row.url +'/community/profile', headers=auth_headers)
             response_data = get_response_data(response, row.url +'/community/profile')
-            if len(response_data) > 0:
+            if response_data is not None:
                 response_df = pd.json_normalize(response_data)
+                if 'message' in response_df.columns:
+                    print(response_df.message.values[0])
+                    profile_bar.update(1)
+                    continue
                 response_df = response_df.rename(columns={'updated_at': 'community_profile_updated_at'})
                 final_df = pd.DataFrame(row.to_dict() | response_df.to_dict())
                 temp_name = row.full_name.replace('/', '_')
@@ -158,7 +162,7 @@ def get_profiles(repo_df, temp_repo_dir, error_file_path):
     profile_bar.close()
     return repo_df
 
-def get_repo_profile(repo_df, repo_output_path, rates_df, error_file_path, temp_repo_dir):
+def get_repo_profile(repo_df, repo_output_path, rates_df, error_file_path, temp_repo_dir, overwrite_existing_files=False):
     """Function to get community profiles and health percentages for all repos in repo_df
     :param repo_df: dataframe of repos
     :param repo_output_path: path to save output
@@ -167,27 +171,23 @@ def get_repo_profile(repo_df, repo_output_path, rates_df, error_file_path, temp_
     :param temp_repo_dir: path to temp directory to write repos
     :return: dataframe of repos with community profiles and health percentages
     """
-    if os.path.exists(temp_repo_dir):
+    if os.path.exists(temp_repo_dir) and overwrite_existing_files:
         shutil.rmtree(temp_repo_dir)
-        os.makedirs(temp_repo_dir)
-    else:
+    
+    if not os.path.exists(temp_repo_dir):
         os.makedirs(temp_repo_dir) 
 
-    calls_remaining = rates_df['resources.core.remaining'].values[0]
     if 'health_percentage' in repo_df.columns:
         repos_without_community_profile = repo_df[repo_df.health_percentage.isna()]
+        repos_with_community_profile = repo_df[repo_df.health_percentage.notna()]
     else: 
         repos_without_community_profile = repo_df
-    while len(repos_without_community_profile[repos_without_community_profile.url.notna()]) > calls_remaining:
-        time.sleep(3700)
-        rates_df = check_rate_limit()
-        calls_remaining = rates_df['resources.core.remaining'].values[0]
-    else:
-        if len(repos_without_community_profile) > 0:
-            updated_repos = get_profiles(repos_without_community_profile, temp_repo_dir, error_file_path)
-            repo_df = pd.concat([repo_df, updated_repos])
-            repo_df.to_csv(repo_output_path, index=False)
-    shutil.rmtree(temp_repo_dir)
+        repos_with_community_profile = pd.DataFrame()
+
+    if len(repos_without_community_profile) > 0:
+        updated_repos = get_profiles(repos_without_community_profile, temp_repo_dir, error_file_path)
+        repo_df = pd.concat([repos_with_community_profile, updated_repos])
+        repo_df.to_csv(repo_output_path, index=False)
     return repo_df
 
 def make_total_commits_calls(row):
@@ -338,24 +338,33 @@ def get_counts(repo_df, url_type, count_type, overwrite_existing_temp_files = Fa
         return repo_df
 
 if __name__ == "__main__":
-    repo_file_path = "../data/derived_files/firstpass_core_repos.csv"
-    core_repos = pd.read_csv(repo_file_path)
-    counts_fields = pd.read_csv('../data/metadata_files/repo_url_cols.csv')
-    counts_fields.loc[counts_fields.url_type == 'review_comments_url', 'count_type'] = 'review_count'
+    # repo_file_path = "../data/derived_files/initial_core_repos.csv"
+    # core_repos = pd.read_csv(repo_file_path)
+    # counts_fields = pd.read_csv('../data/metadata_files/repo_url_cols.csv')
+    # counts_fields.loc[counts_fields.url_type == 'review_comments_url', 'count_type'] = 'review_count'
     
     
-    skip_types = ['review_comments_url', 'commits_url', 'collaborators_url']
-    overwrite_existing_temp_files = True
-    for index, row in counts_fields.iterrows():
-        if (row.url_type not in skip_types):
-            count_type = row.url_type.split("_")[0] + "_count"
-            print(f"Getting {count_type} for {row['url_type']}")
-            core_repos = get_counts(core_repos, row['url_type'], count_type, overwrite_existing_temp_files)
-            core_repos.to_csv(repo_file_path, index=False)
-            row['count_type'] = count_type
-    core_repos.to_csv(repo_file_path, index=False)
+    # skip_types = ['review_comments_url', 'commits_url', 'collaborators_url']
+    # overwrite_existing_temp_files = True
+    # for index, row in counts_fields.iterrows():
+    #     if (row.url_type not in skip_types):
+    #         count_type = row.url_type.split("_")[0] + "_count"
+    #         print(f"Getting {count_type} for {row['url_type']}")
+    #         core_repos = get_counts(core_repos, row['url_type'], count_type, overwrite_existing_temp_files)
+    #         core_repos.to_csv(repo_file_path, index=False)
+    #         row['count_type'] = count_type
+    # core_repos.to_csv(repo_file_path, index=False)
     # pulls_df = pd.read_csv('../data/large_files/join_files/repo_pulls_join_dataset.csv')
     # url_type = "review_comments_url"
     # count_type = "review_count"
     # pulls_df = get_counts(pulls_df, url_type, count_type, overwrite_existing_temp_files=False)
     # pulls_df.to_csv('../data/large_files/join_files/repo_pulls_join_dataset.csv', index=False)
+    initial_core_repos = pd.read_csv("../data/derived_files/initial_core_repos.csv")
+    firstpass_core_repos = pd.read_csv("../data/derived_files/firstpass_core_repos.csv")
+    finalpass_core_repos = pd.read_csv("../data/derived_files/finalpass_core_repos.csv")
+    core_repos = pd.concat([initial_core_repos, firstpass_core_repos, finalpass_core_repos])
+    repo_output_path = "../data/large_files/entity_files/repos_dataset.csv"
+    error_file_path = "../data/error_logs/repo_profile_errors.csv"
+    temp_repo_dir = "../data/temp/repo_profile/"
+    rates_df = check_rate_limit()
+    core_repos = get_repo_profile(core_repos, repo_output_path, rates_df, error_file_path, temp_repo_dir)

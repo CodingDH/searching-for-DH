@@ -235,7 +235,7 @@ def check_for_entity_in_older_queries(entity_path, entity_df, is_large=True):
     :param entity_path: path to entity file
     :param entity_df: entity dataframe"""
     entity_type = entity_path.split('/')[-1].split('_dataset')[0]
-
+    print(entity_type)
     older_entity_file_path = entity_path.replace('data/', 'data/older_files/')
     older_entity_file_dir = os.path.dirname(older_entity_file_path) + '/'
 
@@ -405,7 +405,7 @@ def check_add_users(potential_new_users_df, users_output_path, return_df, overwr
         else:
             expanded_new_users = new_users_df
         users_df = pd.concat([users_df, expanded_new_users])
-        users_df = users_df.drop_duplicates(subset=['login', 'id'])
+        users_df = users_df.drop_duplicates(subset=['login'])
     else:
         new_users_df = potential_new_users_df.copy()
         users_progress_bar = tqdm(total=len(new_users_df), desc='Users', position=1)
@@ -485,6 +485,10 @@ def get_new_repos(potential_new_repos_df, temp_repos_dir, repos_progress_bar,  e
                 repos_progress_bar.update(1)
                 continue
             response_df = pd.json_normalize(response_data)
+            if 'message' in response_df.columns:
+                print(response_df.message.values[0])
+                repos_progress_bar.update(1)
+                continue
             missing_headers = list(set(repo_headers.columns.tolist()) - set(response_df.columns.tolist()))
             if len(missing_headers) > 0:
                 merged_df = pd.concat([response_df, repo_headers])
@@ -537,7 +541,7 @@ def check_add_repos(potential_new_repo_df, repo_output_path, return_df):
     if os.path.exists(repo_output_path):
         repo_df = pd.read_csv(repo_output_path)
         print(f"Number of repos: {len(repo_df)}", time.time())
-        new_repo_df = potential_new_repo_df[~potential_new_repo_df.id.isin(repo_df.id)]
+        new_repo_df = potential_new_repo_df[~potential_new_repo_df.full_name.isin(repo_df.full_name)]
         error_df = check_return_error_file(error_file_path)
         if len(error_df) > 0:
             new_repo_df = new_repo_df[~new_repo_df.full_name.isin(error_df.full_name)]
@@ -545,7 +549,7 @@ def check_add_repos(potential_new_repo_df, repo_output_path, return_df):
         if len(new_repo_df) > 0:
             new_repo_df = new_repo_df[repo_headers.columns]
             repo_df = pd.concat([repo_df, new_repo_df])
-            repo_df = repo_df.drop_duplicates(subset=['id'])
+            repo_df = repo_df.drop_duplicates(subset=['full_name'])
             print(f"Number of repos: {len(repo_df)}", time.time())
         else:
             repo_df = repo_df[repo_headers.columns]
@@ -602,7 +606,7 @@ def get_orgs(org_df, org_output_path, error_file_path, overwrite_existing_temp_f
         os.makedirs(temp_org_dir)
     org_progress_bar = tqdm(total=len(org_df), desc="Cleaning Orgs", position=0)
     org_headers = pd.read_csv('../data/metadata_files/org_headers.csv')
-    user_cols = ['bio', 'followers_url', 'following_url', 'gists_url', 'gravatar_id', 'hireable', 'organizations_url','received_events_url', 'site_admin', 'starred_url','subscriptions_url','user_query_time', 'login', 'url']
+    user_cols = ['bio', 'followers_url', 'following_url', 'gists_url', 'gravatar_id', 'hireable', 'organizations_url','received_events_url', 'site_admin', 'starred_url','subscriptions_url','user_query_time', 'login',]
     for _, row in org_df.iterrows():
         try:
             # Create the temporary directory path to store the data
@@ -612,7 +616,8 @@ def get_orgs(org_df, org_output_path, error_file_path, overwrite_existing_temp_f
             if os.path.exists(temp_org_dir + temp_org_path):
                 org_progress_bar.update(1)
                 continue
-            user_url = row.url
+            user_url = row.url if '/users/' in row.url else row.url.replace('/orgs/', '/users/')
+            print(user_url)
             user_response = requests.get(user_url, headers=auth_headers)
             user_response_data = get_response_data(user_response, user_url)
             if user_response_data is None:
@@ -621,18 +626,21 @@ def get_orgs(org_df, org_output_path, error_file_path, overwrite_existing_temp_f
                 user_response_df = pd.json_normalize(user_response_data)
             user_response_df = user_response_df[user_cols]
             # Create the url to get the org
-            url = row.url.replace('/users/', '/orgs/')
-
+            url = row.url.replace('/users/', '/orgs/') if '/users/' in row.url else row.url
+            print(url)
             # Make the first request
             response = requests.get(url, headers=auth_headers)
             response_data = get_response_data(response, url)
+            print(response_data)
             if response_data is None:
                 response_df = pd.read_csv('../data/metadata_files/org_headers.csv')
             else:
                 response_df = pd.json_normalize(response_data)
+            print(response_df.columns.tolist())
             response_df = response_df[org_headers.columns]
             common_columns = list(set(response_df.columns.tolist()).intersection(set(user_response_df.columns.tolist())))
             final_response_df = pd.merge(response_df, user_response_df, on=common_columns, how='left')
+            print(final_response_df.columns.tolist())
             final_response_df.to_csv(temp_org_dir + temp_org_path, index=False)
             org_progress_bar.update(1)
         except:
