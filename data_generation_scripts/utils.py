@@ -792,20 +792,38 @@ def check_for_joins_in_older_queries(join_file_path: str, join_files_df: pd.Data
 
     return join_files_df
 
-def get_core_users_repos():
+def get_core_users_repos(combine_files=True):
     """Function to get core users and repos
     :return: core users and repos
     """
-    core_repos_path = "../data/derived_files/core_repos.csv"
-    if os.path.exists(core_repos_path):
-        core_repos = pd.read_csv(core_repos_path)
-        
+    initial_core_users = pd.read_csv("../data/derived_files/initial_core_users.csv")
+    initial_core_users['origin'] = 'initial_core'
+    initial_core_repos = pd.read_csv("../data/derived_files/initial_core_repos.csv")
+    initial_core_repos['origin'] = 'initial_core'
+    initial_core_orgs = pd.read_csv("../data/derived_files/initial_core_orgs.csv")
+    initial_core_orgs['origin'] = 'initial_core'
+
+    firstpass_core_users = pd.read_csv("../data/derived_files/firstpass_core_users.csv")
+    firstpass_core_users['origin'] = 'firstpass_core'
+    firstpass_core_repos = pd.read_csv("../data/derived_files/firstpass_core_repos.csv")
+    firstpass_core_repos['origin'] = 'firstpass_core'
+    firstpass_core_orgs = pd.read_csv("../data/derived_files/firstpass_core_orgs.csv")
+    firstpass_core_orgs['origin'] = 'firstpass_core'
+
+    finalpass_core_users = pd.read_csv("../data/derived_files/finalpass_core_users.csv")
+    finalpass_core_users['origin'] = 'finalpass_core'
+    finalpass_core_repos = pd.read_csv("../data/large_files/derived_files/finalpass_core_repos.csv", low_memory=False, on_bad_lines='skip')
+    finalpass_core_repos['origin'] = 'finalpass_core'
+    finalpass_core_orgs = pd.read_csv("../data/derived_files/finalpass_core_orgs.csv")
+    finalpass_core_orgs['origin'] = 'finalpass_core'
+
+    if combine_files:
+        core_users = pd.concat([initial_core_users, firstpass_core_users, finalpass_core_users])
+        core_repos = pd.concat([initial_core_repos, firstpass_core_repos, finalpass_core_repos])
+        core_orgs = pd.concat([initial_core_orgs, firstpass_core_orgs, finalpass_core_orgs])
+        return core_users, core_repos, core_orgs
     else:
-        repo_df = pd.read_csv("../data/large_files/entity_files/repos_dataset.csv", low_memory=False)
-        search_queries_repo_join_df = pd.read_csv("../data/join_files/search_queries_repo_join_dataset.csv")
-        core_repos = repo_df[repo_df["id"].isin(search_queries_repo_join_df["id"].unique())]
-    core_users = pd.read_csv("../data/derived_files/core_users.csv")
-    return core_users, core_repos
+        return initial_core_users, initial_core_repos, initial_core_orgs, firstpass_core_users, firstpass_core_repos, firstpass_core_orgs, finalpass_core_users, finalpass_core_repos, finalpass_core_orgs
 
 
 def save_chart(chart, filename, scale_factor=1):
