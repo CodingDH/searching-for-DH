@@ -368,13 +368,13 @@ if __name__ == "__main__":
     # count_type = "review_count"
     # pulls_df = get_counts(pulls_df, url_type, count_type, overwrite_existing_temp_files=False)
     # pulls_df.to_csv('../data/large_files/join_files/repo_pulls_join_dataset.csv', index=False)
-    initial_core_repos = pd.read_csv("../data/derived_files/initial_core_repos.csv")
+    firstpass_core_repos = pd.read_csv("../data/derived_files/firstpass_core_repos.csv")
     # finalpass_core_repos = pd.read_csv("../data/large_files/derived_files/finalpass_core_repos.csv")
     # finalpass_core_repos = pd.read_csv("../data/derived_files/finalpass_core_repos.csv")
-    # core_repos = pd.concat([initial_core_repos, firstpass_core_repos, finalpass_core_repos])
-    repo_output_path = "../data/derived_files/initial_core_repos.csv"
+    # core_repos = pd.concat([firstpass_core_repos, firstpass_core_repos, finalpass_core_repos])
+    repo_output_path = "../data/derived_files/firstpass_core_repos.csv"
     error_file_path = "../data/error_logs/repo_profile_errors.csv"
     temp_repo_dir = "../data/temp/repo_profile/"
     rates_df = check_rate_limit()
-    core_repos = get_repo_profile(initial_core_repos, repo_output_path, rates_df, error_file_path, temp_repo_dir)
+    core_repos = get_repo_profile(firstpass_core_repos, repo_output_path, rates_df, error_file_path, temp_repo_dir)
     # finalpass_core_repos = get_repo_languages(finalpass_core_repos, "../data/large_files/derived_files/finalpass_core_repos.csv")
