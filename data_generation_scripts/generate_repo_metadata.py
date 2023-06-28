@@ -22,8 +22,24 @@ def get_languages(row):
     """Function to get languages for a repo
     :param row: row from repo_df
     :return: dictionary of languages with number of bytes"""
-    response = requests.get(row.languages_url, headers=auth_headers)
-    response_data = get_response_data(response, row.languages_url)
+    temp_repo_dir = "../data/temp/repo_languages/"
+    temp_name = row.full_name.replace('/', '_') + '_language.json'
+    temp_path = temp_repo_dir + temp_name
+    if os.path.exists(temp_path):
+        with open(temp_path, 'r') as f:
+            response_data = ast.literal_eval(f.read())
+    else:
+        try:
+            response = requests.get(row.languages_url, headers=auth_headers)
+            response_data = get_response_data(response, row.languages_url)
+            
+        except:
+            print("Error getting languages for repo: " + row.full_name)
+            response_data = None
+        if response_data is not None:
+            os.makedirs(temp_repo_dir, exist_ok=True)
+            with open(temp_path, 'w') as f:
+                f.write(str(response_data))
     return response_data
 
 def get_repo_languages(repo_df, output_path):
@@ -43,7 +59,7 @@ def get_repo_languages(repo_df, output_path):
         tqdm.pandas(desc="Getting Languages")
         repos_without_languages['languages'] = repos_without_languages.progress_apply(get_languages, axis=1)
         repo_df = pd.concat([repos_with_languages, repos_without_languages])
-        repo_df = repo_df.drop_duplicates(subset=['id'])
+        repo_df = repo_df.drop_duplicates(subset=['full_name'])
         repo_df.to_csv(output_path, index=False)
     return repo_df
 
@@ -66,7 +82,7 @@ def get_repo_labels(repo_df, output_path):
     :param repo_df: dataframe of repos
     :param output_path: path to save output
     :param rates_df: dataframe of rate limit info
-    :return: dataframe of repos with labels"""\
+    :return: dataframe of repos with labels"""
     if 'labels' in repo_df.columns:
         repos_without_labels = repo_df[repo_df.labels.isna()]
         repos_with_labels = repo_df[repo_df.labels.notna()]
@@ -353,11 +369,12 @@ if __name__ == "__main__":
     # pulls_df = get_counts(pulls_df, url_type, count_type, overwrite_existing_temp_files=False)
     # pulls_df.to_csv('../data/large_files/join_files/repo_pulls_join_dataset.csv', index=False)
     initial_core_repos = pd.read_csv("../data/derived_files/initial_core_repos.csv")
-    firstpass_core_repos = pd.read_csv("../data/derived_files/firstpass_core_repos.csv")
-    finalpass_core_repos = pd.read_csv("../data/derived_files/finalpass_core_repos.csv")
-    core_repos = pd.concat([initial_core_repos, firstpass_core_repos, finalpass_core_repos])
-    repo_output_path = "../data/large_files/entity_files/repos_dataset.csv"
-    error_file_path = "../data/error_logs/repo_profile_errors.csv"
-    temp_repo_dir = "../data/temp/repo_profile/"
-    rates_df = check_rate_limit()
-    core_repos = get_repo_profile(core_repos, repo_output_path, rates_df, error_file_path, temp_repo_dir)
+    # firstpass_core_repos = pd.read_csv("../data/derived_files/firstpass_core_repos.csv")
+    # finalpass_core_repos = pd.read_csv("../data/derived_files/finalpass_core_repos.csv")
+    # core_repos = pd.concat([initial_core_repos, firstpass_core_repos, finalpass_core_repos])
+    # repo_output_path = "../data/large_files/entity_files/repos_dataset.csv"
+    # error_file_path = "../data/error_logs/repo_profile_errors.csv"
+    # temp_repo_dir = "../data/temp/repo_profile/"
+    # rates_df = check_rate_limit()
+    # core_repos = get_repo_profile(core_repos, repo_output_path, rates_df, error_file_path, temp_repo_dir)
+    initial_core_repos = get_repo_languages(initial_core_repos, "../data/derived_files/initial_core_repos.csv")
