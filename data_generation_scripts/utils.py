@@ -62,7 +62,6 @@ def check_total_pages(url: str, auth_headers: dict) -> int:
         total_pages = match.group() if match is not None else 1
     return int(total_pages)
 
-
 def check_total_results(url: str) -> Optional[int]:
     """Function to check total number of results from API. Useful for not going over rate limit. Differs from check_total_pages because this returns all results, not just total number of pagination.
 
@@ -186,7 +185,6 @@ def read_combine_files(dir_path: str, check_all_dirs: bool=False, file_path_cont
 
     combined_df = pd.concat(rows) if len(rows) > 0 else pd.DataFrame()
     return combined_df
-
 
 
 def check_return_error_file(error_file_path):

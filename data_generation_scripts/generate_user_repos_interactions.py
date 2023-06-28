@@ -83,7 +83,9 @@ def get_user_repos(user_df, user_repos_output_path, get_url_field, error_file_pa
             url = row[get_url_field].split('{')[0] + '?per_page=100&page=1' if '{' in row[get_url_field] else row[get_url_field] + '?per_page=100&page=1'
 
             # Make the first request
+            print(f"Making request to {url}", time.time())
             response = requests.get(url, headers=auth_headers, timeout=10)
+            print(f"Request to {url} complete", time.time())
             response_data = get_response_data(response, url)
 
             # If the response is empty, skip to the next repo
@@ -181,6 +183,7 @@ def get_user_repo_activities(user_df,user_repos_output_path, repos_output_path, 
         # If we want to rerun our code, first check if the join file exists
         if os.path.exists(user_repos_output_path):
             # If it does, load it
+            print("Loading existing user repos file", time.time())
             user_repos_df = pd.read_csv(user_repos_output_path, low_memory=False)
             # Then check from our repo_df which repos are missing from the join file, using either the field we are grabing (get_url_field) or the the repo id
             if threshold_check in user_df.columns:
