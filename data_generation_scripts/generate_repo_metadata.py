@@ -59,7 +59,9 @@ def get_repo_languages(repo_df, output_path):
         tqdm.pandas(desc="Getting Languages")
         repos_without_languages['languages'] = repos_without_languages.progress_apply(get_languages, axis=1)
         repo_df = pd.concat([repos_with_languages, repos_without_languages])
+        print(len(repo_df))
         repo_df = repo_df.drop_duplicates(subset=['full_name'])
+        print(len(repo_df))
         repo_df.to_csv(output_path, index=False)
     return repo_df
 
@@ -141,35 +143,45 @@ def get_profiles(repo_df, temp_repo_dir, error_file_path):
     """
     profile_bar = tqdm(total=len(repo_df), desc="Getting Community Profiles")
     for _, row in repo_df.iterrows():
-        try:
-            response = requests.get(row.url +'/community/profile', headers=auth_headers)
-            response_data = get_response_data(response, row.url +'/community/profile')
-            if response_data is not None:
-                response_df = pd.json_normalize(response_data)
-                if 'message' in response_df.columns:
-                    print(response_df.message.values[0])
-                    profile_bar.update(1)
-                    continue
-                response_df = response_df.rename(columns={'updated_at': 'community_profile_updated_at'})
-                final_df = pd.DataFrame(row.to_dict() | response_df.to_dict())
-                temp_name = row.full_name.replace('/', '_')
-                temp_output_path = temp_repo_dir + f'{temp_name}_community_profile.csv'
-                final_df.to_csv(temp_output_path, index=False)
-            else:
-                continue
+        temp_name = row.full_name.replace('/', '_')
+        temp_output_path = temp_repo_dir + f'{temp_name}_community_profile.csv'
+        if os.path.exists(temp_output_path):
             profile_bar.update(1)
-        except:
-            profile_bar.total = profile_bar.total - 1
-            error_df = pd.DataFrame([{'repo_full_name': row.full_name, 'error_time': time.time(), 'url': str(row.url) +'/community/profile'}])
-            if os.path.exists(error_file_path):
-                error_df.to_csv(error_file_path, mode='a', header=False, index=False)
-            else:
-                error_df.to_csv(error_file_path, index=False)
             continue
-    repo_df = read_combine_files(dir_path=temp_repo_dir)
+        else:
+            try:
+                response = requests.get(row.url +'/community/profile', headers=auth_headers)
+                response_data = get_response_data(response, row.url +'/community/profile')
+                if response_data is not None:
+                    response_df = pd.json_normalize(response_data)
+                    if 'message' in response_df.columns:
+                        print(response_df.message.values[0])
+                        profile_bar.update(1)
+                        continue
+                    response_df = response_df.rename(columns={'updated_at': 'community_profile_updated_at'})
+                    final_df = pd.DataFrame(row.to_dict() | response_df.to_dict())
+                    
+                    final_df.to_csv(temp_output_path, index=False)
+                
+                else:
+                    continue
+                profile_bar.update(1)
+            except:
+                profile_bar.total = profile_bar.total - 1
+                error_df = pd.DataFrame([{'repo_full_name': row.full_name, 'error_time': time.time(), 'url': str(row.url) +'/community/profile'}])
+                if os.path.exists(error_file_path):
+                    error_df.to_csv(error_file_path, mode='a', header=False, index=False)
+                else:
+                    error_df.to_csv(error_file_path, index=False)
+                continue
+    updated_repo_df = read_combine_files(dir_path=temp_repo_dir)
+    updated_repo_df = updated_repo_df[updated_repo_df.full_name.isin(repo_df.full_name)]
+    missing_rows = repo_df[~repo_df.full_name.isin(updated_repo_df.full_name)]
+    if len(missing_rows) > 0:
+        updated_repo_df = pd.concat([updated_repo_df, missing_rows])
     clean_write_error_file(error_file_path, 'repo_full_name')
     profile_bar.close()
-    return repo_df
+    return updated_repo_df
 
 def get_repo_profile(repo_df, repo_output_path, rates_df, error_file_path, temp_repo_dir, overwrite_existing_files=False):
     """Function to get community profiles and health percentages for all repos in repo_df
@@ -369,12 +381,10 @@ if __name__ == "__main__":
     # pulls_df = get_counts(pulls_df, url_type, count_type, overwrite_existing_temp_files=False)
     # pulls_df.to_csv('../data/large_files/join_files/repo_pulls_join_dataset.csv', index=False)
     firstpass_core_repos = pd.read_csv("../data/derived_files/firstpass_core_repos.csv")
-    # finalpass_core_repos = pd.read_csv("../data/large_files/derived_files/finalpass_core_repos.csv")
-    # finalpass_core_repos = pd.read_csv("../data/derived_files/finalpass_core_repos.csv")
-    # core_repos = pd.concat([firstpass_core_repos, firstpass_core_repos, finalpass_core_repos])
-    repo_output_path = "../data/derived_files/firstpass_core_repos.csv"
-    error_file_path = "../data/error_logs/repo_profile_errors.csv"
-    temp_repo_dir = "../data/temp/repo_profile/"
-    rates_df = check_rate_limit()
-    core_repos = get_repo_profile(firstpass_core_repos, repo_output_path, rates_df, error_file_path, temp_repo_dir)
-    # finalpass_core_repos = get_repo_languages(finalpass_core_repos, "../data/large_files/derived_files/finalpass_core_repos.csv")
+   
+    # repo_output_path = "../data/derived_files/firstpass_core_repos.csv"
+    # error_file_path = "../data/error_logs/repo_profile_errors.csv"
+    # temp_repo_dir = "../data/temp/repo_profile/"
+    # rates_df = check_rate_limit()
+    # core_repos = get_repo_profile(firstpass_core_repos, repo_output_path, rates_df, error_file_path, temp_repo_dir)
+    firstpass_core_repos = get_repo_languages(firstpass_core_repos, "../data/derived_files/firstpass_core_repos.csv")
