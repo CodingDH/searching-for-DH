@@ -48,6 +48,7 @@ def get_repo_languages(repo_df, output_path):
     :param output_path: path to save output
     :param rates_df: dataframe of rate limit info
     :return: dataframe of repos with languages"""
+    print(len(repo_df))
     if 'languages' in repo_df.columns:
         repos_without_languages = repo_df[repo_df.languages.isna()]
         repos_with_languages = repo_df[repo_df.languages.notna()]
@@ -192,12 +193,13 @@ def get_repo_profile(repo_df, repo_output_path, rates_df, error_file_path, temp_
     :param temp_repo_dir: path to temp directory to write repos
     :return: dataframe of repos with community profiles and health percentages
     """
+    print(len(repo_df))
     if os.path.exists(temp_repo_dir) and overwrite_existing_files:
         shutil.rmtree(temp_repo_dir)
     
     if not os.path.exists(temp_repo_dir):
         os.makedirs(temp_repo_dir) 
-
+    
     if 'health_percentage' in repo_df.columns:
         repos_without_community_profile = repo_df[repo_df.health_percentage.isna()]
         repos_with_community_profile = repo_df[repo_df.health_percentage.notna()]
@@ -380,11 +382,11 @@ if __name__ == "__main__":
     # count_type = "review_count"
     # pulls_df = get_counts(pulls_df, url_type, count_type, overwrite_existing_temp_files=False)
     # pulls_df.to_csv('../data/large_files/join_files/repo_pulls_join_dataset.csv', index=False)
-    firstpass_core_repos = pd.read_csv("../data/derived_files/firstpass_core_repos.csv")
+    finalpass_core_repos = pd.read_csv("../data/large_files/derived_files/finalpass_core_repos.csv")
    
-    # repo_output_path = "../data/derived_files/firstpass_core_repos.csv"
-    # error_file_path = "../data/error_logs/repo_profile_errors.csv"
-    # temp_repo_dir = "../data/temp/repo_profile/"
-    # rates_df = check_rate_limit()
-    # core_repos = get_repo_profile(firstpass_core_repos, repo_output_path, rates_df, error_file_path, temp_repo_dir)
-    firstpass_core_repos = get_repo_languages(firstpass_core_repos, "../data/derived_files/firstpass_core_repos.csv")
+    repo_output_path = "../data/large_files/derived_files/finalpass_core_repos.csv"
+    error_file_path = "../data/error_logs/repo_profile_errors.csv"
+    temp_repo_dir = "../data/temp/repo_profile/"
+    rates_df = check_rate_limit()
+    core_repos = get_repo_profile(finalpass_core_repos, repo_output_path, rates_df, error_file_path, temp_repo_dir)
+    # finalpass_core_repos = get_repo_languages(finalpass_core_repos, "../data/large_files/derived_files/finalpass_core_repos.csv")
