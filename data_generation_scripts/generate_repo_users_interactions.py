@@ -16,6 +16,8 @@ auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
 auth_headers = {'Authorization': f'token {auth_token}','User-Agent': 'request'}
 stargazers_auth_headers = {'Authorization': f'token {auth_token}','User-Agent': 'request', 'Accept': 'application/vnd.github.v3.star+json'}
 
+datafile_path = "../../datasets/"
+
 def get_additional_commit_data(response_df):
     """Function to get additional commit data from the commit url
     :param response_df: dataframe of commits
@@ -48,10 +50,10 @@ def get_actors(repo_df, repo_actors_output_path, get_url_field, error_file_path,
     returns: dataframe of repo contributors and unique users"""
 
     # Create the temporary directory path to store the data
-    temp_repo_actors_dir = f"../data/temp/{repo_actors_output_path.split('/')[-1].split('.csv')[0]}/"
+    temp_repo_actors_dir = datafile_path + f"temp/{repo_actors_output_path.split('/')[-1].split('.csv')[0]}/"
     print(temp_repo_actors_dir)
 
-    too_many_results = f"../data/error_logs/{repo_actors_output_path.split('/')[-1].split('.csv')[0]}_{get_url_field}_too_many_results.csv"
+    too_many_results = datafile_path + f"error_logs/{repo_actors_output_path.split('/')[-1].split('.csv')[0]}_{get_url_field}_too_many_results.csv"
 
     # Delete existing temporary directory and create it again
     if (os.path.exists(temp_repo_actors_dir)) and (overwrite_existing_temp_files):
@@ -214,12 +216,12 @@ def get_repos_user_actors(repo_df,repo_actors_output_path, users_output_path, ge
         users_df = pd.read_csv(users_output_path, low_memory=False)
     else:
         # If we want to rerun our code, first check if the join file exists
-        updated_users_output_path = f"../data/temp/entity_files/{users_output_path.split('/')[-1].split('.csv')[0]}_updated.csv"
+        updated_users_output_path = datafile_path + f"temp/entity_files/{users_output_path.split('/')[-1].split('.csv')[0]}_updated.csv"
         # Create the path for the error logs
-        error_file_path = f"../data/error_logs/{repo_actors_output_path.split('/')[-1].split('.csv')[0]}_errors.csv"
+        error_file_path = datafile_path + f"error_logs/{repo_actors_output_path.split('/')[-1].split('.csv')[0]}_errors.csv"
 
         # Load in the Repo URLS metadata folder that contains relevant info on how to process various fields
-        urls_df = pd.read_csv("../data/metadata_files/repo_url_cols.csv")
+        urls_df = pd.read_csv(os.path.join(datafile_path, "metadata_files/repo_url_cols.csv"))
         # Subset the urls df to only the relevant field (for example `stargazers_url` or `contributors_url`)
         repo_urls_metadata = urls_df[urls_df.url_type == get_url_field]
         counts_exist = repo_urls_metadata.count_type.values[0]
@@ -242,7 +244,7 @@ def get_repos_user_actors(repo_df,repo_actors_output_path, users_output_path, ge
                 unprocessed_actors = repo_df[~repo_df.url.isin(repo_actors_df.repo_url)] 
 
             # Now create the path for the error logs
-            error_file_path = f"../data/error_logs/{repo_actors_output_path.split('/')[-1].split('.csv')[0]}_errors.csv"
+            error_file_path = datafile_path + f"error_logs/{repo_actors_output_path.split('/')[-1].split('.csv')[0]}_errors.csv"
             if retry_errors == False:
                 # Check if the error log exists
                 if os.path.exists(error_file_path):
@@ -302,15 +304,15 @@ def get_repos_user_actors(repo_df,repo_actors_output_path, users_output_path, ge
 
 if __name__ == "__main__":
     # Load the repo dataframe
-    core_repos = pd.read_csv("../data/derived_files/firstpass_core_repos.csv", low_memory=False)
-    initial_core_repos = pd.read_csv("../data/derived_files/initial_core_repos.csv", low_memory=False)
+    core_repos = pd.read_csv(os.path.join(datafile_path, "derived_files/firstpass_core_repos.csv"), low_memory=False)
+    initial_core_repos = pd.read_csv(os.path.join(datafile_path, "derived_files/initial_core_repos.csv"), low_memory=False)
     core_repos = pd.concat([core_repos, initial_core_repos])
     get_url_field = 'pulls_url'
     load_existing_files = True
     overwrite_existing_temp_files = False
     filter_fields = ['id', 'repo_full_name', 'user.login', 'head.user.login']
     join_unique_field = 'repo_full_name'
-    pulls_df, users_df = get_repos_user_actors(core_repos, '../data/large_files/join_files/repo_pulls_join_dataset.csv', '../data/large_files/entity_files/users_dataset.csv', get_url_field, load_existing_files, overwrite_existing_temp_files, join_unique_field, filter_fields, retry_errors=False)
+    pulls_df, users_df = get_repos_user_actors(core_repos, datafile_path + 'large_files/join_files/repo_pulls_join_dataset.csv', datafile_path +'large_files/entity_files/users_dataset.csv', get_url_field, load_existing_files, overwrite_existing_temp_files, join_unique_field, filter_fields, retry_errors=False)
     # users_output_path = "../data/large_files/entity_files/users_dataset.csv"
     # updated_users_output_path = f"../data/temp/entity_files/{users_output_path.split('/')[-1].split('.csv')[0]}_updated.csv"
 

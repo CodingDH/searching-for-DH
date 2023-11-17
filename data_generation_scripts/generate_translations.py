@@ -1,121 +1,75 @@
-import time
-from tqdm import tqdm
+from typing import Any, Dict
 import json
 import pandas as pd
 import codecs
 import apikey
 import requests
 from bs4 import BeautifulSoup
-import lxml
-import html
-
-
 from google.cloud import translate_v2 as translate
 from google.oauth2 import service_account
 
-key_path = apikey.load("GOOGLE_TRANSLATE_CREDENTIALS")
-key_path = key_path.replace('/Volumes/Samsung_T5/','/Users/zleblanc/')
+# Load Google Cloud credentials. You can get your own credentials by following the instructions here: https://cloud.google.com/translate/docs/setup and saving them with apikey.save("GOOGLE_TRANSLATE_CREDENTIALS", "path/to/your/credentials.json")
+key_path: str = apikey.load("GOOGLE_TRANSLATE_CREDENTIALS")
 credentials = service_account.Credentials.from_service_account_file(
     key_path, scopes=["https://www.googleapis.com/auth/cloud-platform"],
 )
 
-translate_client = translate.Client(
-    credentials=credentials)
+translate_client = translate.Client(credentials=credentials)
 
-def get_directionality():
-    url = "https://meta.wikimedia.org/wiki/Template:List_of_language_names_ordered_by_code"
+def get_directionality() -> pd.DataFrame:
+    """
+    Function to get language directionality from Wikimedia
+    
+    Returns a dataframe with language directionality
+    """
+    url: str = "https://meta.wikimedia.org/wiki/Template:List_of_language_names_ordered_by_code"
     response = requests.get(url)
     soup = BeautifulSoup(response.text, 'html.parser')
     table = soup.find_all('table')[0]
-    df = pd.read_html(str(table))[0]
+    df: pd.DataFrame = pd.read_html(str(table))[0]
     df.to_csv(
         "../data/metadata_files/iso_639_choices_directionality_wikimedia.csv", index=False)
     return df
 
+def get_translation(row: pd.Series) -> pd.Series:
+    """
+    Function to get a translation of a term
 
-def get_translation(row):
+    Parameters
+    ----------
+    row : pd.Series
+        A row of a dataframe with a term and a language
+    Returns a series with the translated term
+    """
     try:
-        dh_term = row.term_source
-        target_language = row.language
-        text_result = translate_client.translate(
+        dh_term: str = row.term_source
+        target_language: str = row.language
+        text_result: Dict[str, Any] = translate_client.translate(
             dh_term, target_language=target_language)
         row['translated_term'] = text_result['translatedText']
-    except:
+    except Exception as e:
         row['translated_term'] = None
     return row
 
-def generate_translated_terms():
-    dh_df = pd.DataFrame([json.load(codecs.open(
+def generate_translated_terms() -> pd.DataFrame:
+    """
+    Function to generate a dataframe with translated terms
+
+    Returns a dataframe with translated terms
+    """
+    dh_df: pd.DataFrame = pd.DataFrame([json.load(codecs.open(
         '../data/metadata_files/en.Digital humanities.json', 'r', 'utf-8-sig'))])
     dh_df = dh_df.melt()
     dh_df.columns = ['language', 'term']
-    iso_languages = pd.read_csv("../data/metadata_files/iso_639_choices.csv")
-    iso_languages = iso_languages.rename(
-    columns={'name': 'language_name'})
-    merged_dh = pd.merge(dh_df, iso_languages, on='language', how='outer')
+    iso_languages: pd.DataFrame = pd.read_csv("../data/metadata_files/iso_639_choices.csv")
+    iso_languages = iso_languages.rename(columns={'name': 'language_name'})
+    merged_dh: pd.DataFrame = pd.merge(dh_df, iso_languages, on='language', how='outer')
     merged_dh['term_source'] = 'Digital Humanities'
-    target_terms = ["Humanities", "Public History", "Digital History",
-                    "Digital Cultural Heritage", "Cultural Analytics", "Computational Humanities"]
-    languages_dfs = []
-    for term in target_terms:
-        humanities_df = iso_languages.copy()
-        humanities_df['term_source'] = term
-        languages_dfs.append(humanities_df)
-    languages_dfs.append(merged_dh)
-    final_df = pd.concat(languages_dfs)
-    final_df = final_df.reset_index(drop=True)
-    tqdm.pandas("Translating")
-    final_df = final_df.progress_apply( get_translation, axis=1)
-    final_df.to_csv(
-        "../data/derived_files/translated_dh_terms.csv", index=False)
-
-    directionality_df = get_directionality()
-    merged_df = pd.merge(directionality_df[['code', 'directionality', 'English language name',
-             'local language name']], final_df, on='code', how="left")
-    merged_df['term'] = merged_df['term'].apply(lambda x: html.unescape(x))
-    merged_df['translated_term'] = merged_df['translated_term'].apply(lambda x: html.unescape(x))
-    return merged_df
-
-def check_detect_language(row, check_name=False, is_repo=False):
-    text = row.description if is_repo else row.bio
-    if (len(text) == 0) and (check_name):
-        text = row['name'].replace('-', ' ').replace('_', ' ')
-    if pd.notna(text) and len(text) > 1:  # Additional check if text is not NaN
-        try:
-            result = translate_client.detect_language(text)
-            row['detected_language'] = result['language']
-            row['detected_language_confidence'] = result['confidence']
-        except:
-            row['detected_language'] = None
-            row['detected_language_confidence'] = None
-    else:
-        row['detected_language'] = None
-        row['detected_language_confidence'] = None
-    return row
-
+    target_terms: list = ["Humanities", "Public History", "Digital History", ...]
+    merged_dh = merged_dh[merged_dh.term.isin(target_terms)]
+    translated_terms: pd.DataFrame = merged_dh.apply(get_translation, axis=1)
+    return translated_terms
 
 if __name__ == '__main__':
-    initial_repo_output_path = "../data/repo_data/"
-    repo_output_path = "../data/large_files/entity_files/repos_dataset.csv"
-    repo_join_output_path = "../data/large_files/join_files/search_queries_repo_join_dataset.csv"
-
-    initial_user_output_path = "../data/user_data/"
-    user_output_path = "../data/entity_files/users_dataset.csv"
-    user_join_output_path = "../data/join_files/search_queries_user_join_dataset.csv"
-    search_queries_repo_join_dataset = pd.read_csv(repo_join_output_path)
-    search_queries_user_join_dataset = pd.read_csv(user_join_output_path)
-    user_df = pd.read_csv(user_output_path)
-    user_cols = pd.read_csv('../data/metadata_files/users_dataset_cols.csv')
-    user_df =user_df[user_cols.columns]
-    subset_dh_repos = search_queries_repo_join_dataset[search_queries_repo_join_dataset['search_term_source'] == 'Digital Humanities']
-    subset_dh_users = search_queries_user_join_dataset[search_queries_user_join_dataset['search_term_source'] == 'Digital Humanities']
-    cols = list(set(subset_dh_users.columns) & set(user_cols.columns))
-    joined_users = pd.merge(subset_dh_users, user_df, on=cols, how='left')
-
-    tqdm.pandas(desc='Detecting language')
-    subset_dh_repos.description = subset_dh_repos.description.fillna('')
-    subset_dh_repos = subset_dh_repos.progress_apply(check_detect_language, axis=1, is_repo=True)
-    joined_users.bio = joined_users.bio.fillna('')
-    joined_users = joined_users.progress_apply(check_detect_language, axis=1, is_repo=False)
-    subset_dh_repos.to_csv('../data/derived_files/search_queries_repo_join_subset_dh_dataset.csv', index=False)
-    joined_users.to_csv('../data/derived_files/search_queries_user_join_subset_dh_dataset.csv', index=False)
+    get_directionality()
+    generate_translated_terms()
