@@ -4,8 +4,6 @@
 # pylint: disable=W0614
 import time
 import os
-import json
-import codecs
 from datetime import datetime
 import sys
 import pandas as pd
@@ -20,55 +18,65 @@ import arabic_reshaper
 from bidi.algorithm import get_display
 import warnings
 warnings.filterwarnings("ignore")
+from typing import List, Dict, Any, Union, Tuple
 
 auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
 
 auth_headers = {'Authorization': f'token {auth_token}','User-Agent': 'request'}
 
+console = Console()
 
-def get_search_api_data(query, total_pages):
-    """Function to get all data from the search API
+def fetch_data(query: str, auth_headers: Dict[str, str]) -> Tuple[pd.DataFrame, requests.Response]:
+    """Fetch data from the API and return a DataFrame and the response object.
+    
+    :param query: the query to be passed to the search API
+    :param auth_headers: the headers to be passed to the API
+    :return: a dataframe of the data returned from the API and the response object"""
+    # Initiate the request
+    response = requests.get(query, headers=auth_headers)
+    response_data = get_response_data(response, query)
+
+    response_df = pd.json_normalize(response_data['items'])
+    # If there is data returned, add the search query to the dataframe
+    if len(response_df) > 0:
+        response_df['search_query'] = query
+    else:
+        # If there is no data returned, load in the headers from the metadata files
+        if 'repo' in query:
+            response_df = pd.read_csv('../data/metadata_files/search_repo_headers.csv')
+        else:
+            response_df = pd.read_csv('../data/metadata_files/search_user_headers.csv')
+    return response_df, response
+
+def get_search_api_data(query: str, total_pages: int, auth_headers: Dict[str, str]) -> pd.DataFrame:
+    """Function to get all data from the search API.
+    
     :param query: the query to be passed to the search API
     :param total_pages: the total number of pages to be queried
-    :return: a dataframe of the data returned from the API"""
-    # Thanks https://stackoverflow.com/questions/33878019/how-to-get-data-from-all-pages-in-github-api-with-python 
+    :param auth_headers: the headers to be passed to the API
+    :return: a dataframe of the data returned from the API
+    """
+    # Initiate an empty list to store the dataframes
     dfs = []
     pbar = tqdm(total=total_pages, desc="Getting Search API Data")
     try:
+        # Get the data from the API
         time.sleep(0.01)
-        response = requests.get(query, headers=auth_headers)
-        response_data = get_response_data(response, query)
-
-        response_df = pd.json_normalize(response_data['items'])
-        if len(response_df) > 0:
-            response_df['search_query'] = query
-        else:
-            if 'repo' in query:
-                response_df = pd.read_csv('../data/metadata_files/search_repo_headers.csv')
-            else:
-                response_df = pd.read_csv('../data/metadata_files/search_user_headers.csv')
-        dfs.append(response_df)
+        df, response = fetch_data(query, auth_headers)
+        dfs.append(df)
         pbar.update(1)
+        # Loop through the pages. A suggestion we gathered from https://stackoverflow.com/questions/33878019/how-to-get-data-from-all-pages-in-github-api-with-python
         while "next" in response.links.keys():
             time.sleep(120)
             query = response.links['next']['url']
-            response = requests.get(query, headers=auth_headers)
-            response_data = get_response_data(response, query)
-
-            response_df = pd.json_normalize(response_data['items'])
-            if len(response_df) > 0:
-                response_df['search_query'] = query
-            else:
-                if 'repo' in query:
-                    response_df = pd.read_csv('../data/metadata_files/search_repo_headers.csv')
-                else: 
-                    response_df = pd.read_csv('../data/metadata_files/search_user_headers.csv')
-            dfs.append(response_df)
+            df, response = fetch_data(query, auth_headers)
+            dfs.append(df)
             pbar.update(1)
     except:  # pylint: disable=W0702
         print(f"Error with URL: {query}")
 
     pbar.close()
+    # Concatenate the dataframes
     search_df = pd.concat(dfs)
     return search_df
 
