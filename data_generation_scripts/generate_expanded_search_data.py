@@ -1,31 +1,36 @@
-# pylint: disable=missing-class-docstring
-# pylint: disable=missing-function-docstring
-# pylint: disable=wildcard-import
-# pylint: disable=W0614
-import time
+# Standard library imports
 import os
-from datetime import datetime
 import sys
-import pandas as pd
-import requests
-sys.path.append("..")
-from data_generation_scripts.utils import *
-from tqdm import tqdm
-import apikey
-from rich import print
-from rich.console import Console
-import arabic_reshaper
-from bidi.algorithm import get_display
+import time
+from datetime import datetime
+from typing import List, Dict, Any, Union, Tuple
 import warnings
 warnings.filterwarnings("ignore")
-from typing import List, Dict, Any, Union, Tuple
 
+# Related third-party imports
+import pandas as pd
+import requests
+import arabic_reshaper
+from bidi.algorithm import get_display
+from rich import print
+from rich.console import Console
+from tqdm import tqdm
+
+# Local application/library specific imports
+sys.path.append("..")
+import apikey
+from data_generation_scripts.utils import *
+
+# Load in the API key
 auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
 
+# Set the headers
 auth_headers = {'Authorization': f'token {auth_token}','User-Agent': 'request'}
 
+# Initiate the console
 console = Console()
 
+# Set the directory path
 directory_path = "../../datasets"
 
 def fetch_data(query: str, auth_headers: Dict[str, str]) -> Tuple[pd.DataFrame, requests.Response]:
