@@ -1,18 +1,22 @@
-from typing import Any, Dict
+# Standard library imports
 import json
-import pandas as pd
-import codecs
-import apikey
-import requests
-from bs4 import BeautifulSoup
-from tqdm import tqdm
-import time
 import os
-import html
+import time
 import warnings
 warnings.filterwarnings('ignore')
+
+# Related third-party imports
+import pandas as pd
+import requests
+from bs4 import BeautifulSoup
 from google.cloud import translate_v2 as translate
 from google.oauth2 import service_account
+from tqdm import tqdm
+
+# Local application/library specific imports
+import apikey
+import codecs
+import html
 
 # Load Google Cloud credentials. You can get your own credentials by following the instructions here: https://cloud.google.com/translate/docs/setup and saving them with apikey.save("GOOGLE_TRANSLATE_CREDENTIALS", "path/to/your/credentials.json")
 key_path = apikey.load("GOOGLE_TRANSLATE_CREDENTIALS")
