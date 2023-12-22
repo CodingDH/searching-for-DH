@@ -31,7 +31,7 @@ auth_headers = {'Authorization': f'token {auth_token}','User-Agent': 'request'}
 console = Console()
 
 # Set the directory path
-directory_path = "../../datasets"
+data_directory_path = "../../datasets"
 
 def fetch_data(query: str, auth_headers: Dict[str, str]) -> Tuple[pd.DataFrame, requests.Response]:
     """Fetch data from the API and return a DataFrame and the response object.
@@ -50,9 +50,9 @@ def fetch_data(query: str, auth_headers: Dict[str, str]) -> Tuple[pd.DataFrame, 
     else:
         # If there is no data returned, load in the headers from the metadata files
         if 'repo' in query:
-            response_df = pd.read_csv(f'{directory_path}/metadata_files/search_repo_headers.csv')
+            response_df = pd.read_csv(f'{data_directory_path}/metadata_files/search_repo_headers.csv')
         else:
-            response_df = pd.read_csv(f'{directory_path}/metadata_files/search_user_headers.csv')
+            response_df = pd.read_csv(f'{data_directory_path}/metadata_files/search_user_headers.csv')
     return response_df, response
 
 def get_search_api_data(query: str, total_pages: int, auth_headers: Dict[str, str]) -> pd.DataFrame:
@@ -355,7 +355,7 @@ def generate_initial_search_datasets(rates_df: pd.DataFrame, initial_repo_output
     if os.path.exists(initial_user_output_path) == False:
         os.makedirs(initial_user_output_path)
     
-    final_terms = prepare_terms_and_directories(f'{directory_path}/derived_files/grouped_cleaned_translated_dh_terms.csv', f'{directory_path}/derived_files/threshold_search_errors.csv')
+    final_terms = prepare_terms_and_directories(f'{data_directory_path}/derived_files/grouped_cleaned_translated_dh_terms.csv', f'{data_directory_path}/derived_files/threshold_search_errors.csv')
     for _, row in final_terms.iterrows():
         try:
             # Update the search term to be displayed correctly
@@ -373,7 +373,7 @@ def generate_initial_search_datasets(rates_df: pd.DataFrame, initial_repo_output
             search_for_users(row, search_query, rates_df, initial_user_output_path, source_type)
         except Exception as e:
             console.print(f"Error with {row.search_term}: {e}", style="bold red")
-            log_error_to_csv(row.row_index, row.search_term, f'{directory_path}/derived_files/thershold_search_errors.csv')
+            log_error_to_csv(row.row_index, row.search_term, f'{data_directory_path}/derived_files/thershold_search_errors.csv')
             continue
 
     # Combine the dataframes
@@ -413,16 +413,16 @@ def get_initial_search_datasets(rates_df, initial_repo_output_path,  repo_output
 
 if __name__ == '__main__':
     rates_df = check_rate_limit()
-    initial_repo_output_path = "../data/repo_data/"
-    repo_output_path = "../data/large_files/entity_files/repos_dataset.csv"
-    repo_join_output_path = "../data/large_files/join_files/search_queries_repo_join_dataset.csv"
+    initial_repo_output_path = f"{data_directory_path}/repo_data/"
+    repo_output_path = f"{data_directory_path}/large_files/entity_files/repos_dataset.csv"
+    repo_join_output_path = f"{data_directory_path}/large_files/join_files/search_queries_repo_join_dataset.csv"
 
-    initial_user_output_path = "../data/user_data/"
-    user_output_path = "../data/entity_files/users_dataset.csv"
-    user_join_output_path = "../data/join_files/search_queries_user_join_dataset.csv"
+    initial_user_output_path = f"{data_directory_path}/user_data/"
+    user_output_path = f"{data_directory_path}/entity_files/users_dataset.csv"
+    user_join_output_path = f"{data_directory_path}/join_files/search_queries_user_join_dataset.csv"
     load_existing_data = False
     overwrite_existing_temp_files = False
-    org_output_path = "../data/entity_files/orgs_dataset.csv"
+    org_output_path = f"{data_directory_path}/entity_files/orgs_dataset.csv"
 
     get_initial_search_datasets(rates_df, initial_repo_output_path,  repo_output_path, repo_join_output_path, initial_user_output_path, user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files, load_existing_data)
   
