@@ -34,12 +34,17 @@ console = Console()
 # Set the directory path
 data_directory_path = "../../datasets"
 
-def fetch_data(query: str, auth_headers: Dict[str, str]) -> Tuple[pd.DataFrame, requests.Response]:
-    """Fetch data from the API and return a DataFrame and the response object.
-    
-    :param query: the query to be passed to the search API
-    :param auth_headers: the headers to be passed to the API
-    :return: a dataframe of the data returned from the API and the response object"""
+def fetch_data(query: str) -> Tuple[pd.DataFrame, requests.Response]:
+    """
+    Fetches data from the search API using the provided query. This function returns both the 
+    processed data as a DataFrame and the raw response object from the API request.
+
+    :param query: String specifying the query to be passed to the search API. 
+        It should be formatted according to the API's requirements.
+    :return: A tuple containing two elements:
+        1. DataFrame: The processed data retrieved from the API, structured for analysis.
+        2. Response: The raw response object from the requests library, providing access to response headers, status code, and other metadata.
+    """
     # Initiate the request
     response = make_request_with_rate_limiting(query, headers=auth_headers)
     
@@ -62,13 +67,15 @@ def fetch_data(query: str, auth_headers: Dict[str, str]) -> Tuple[pd.DataFrame, 
             response_df = read_csv_file(f'{data_directory_path}/metadata_files/search_user_headers.csv')
     return response_df, response
 
-def get_search_api_data(query: str, total_pages: int, auth_headers: Dict[str, str]) -> pd.DataFrame:
-    """Function to get all data from the search API.
-    
-    :param query: the query to be passed to the search API
-    :param total_pages: the total number of pages to be queried
-    :param auth_headers: the headers to be passed to the API
-    :return: a dataframe of the data returned from the API
+def get_search_api_data(query: str, total_pages: int) -> pd.DataFrame:
+    """
+    Retrieves data from the search API based on the specified query across a defined number of pages. This function consolidates the data from all pages into a single DataFrame.
+
+    :param query: String representing the query to be passed to the search API. 
+        This should conform to the API's query format and include any necessary parameters.
+    :param total_pages: Integer specifying the total number of pages of data to be 
+        queried from the API. It determines how many API requests will be made.
+    :return: DataFrame containing aggregated data from all queried pages of the API. 
     """
     # Initiate an empty list to store the dataframes
     dfs = []
@@ -95,16 +102,18 @@ def get_search_api_data(query: str, total_pages: int, auth_headers: Dict[str, st
     return search_df
 
 def process_search_data(rates_df: pd.DataFrame, query: str, output_path: str, total_results: int, row_data: Dict[str, Any]) -> pd.DataFrame:
-    """Function to process the data from the search API
-    
-    :param rates_df: the dataframe of the current rate limit
-    :param query: the query to be passed to the search API
-    :param output_path: the path to the output file
-    :param total_results: the total number of results to be returned from the API
-    :param row_data: the row of data from the search terms csv
-    :return: a dataframe of the data returned from the API"""
+    """
+    Processes data obtained from the search API. It uses the specified query to fetch data, adhering to the given rate limits, and then processes this data according to the row data from the search terms CSV.
+
+    :param rates_df: DataFrame containing the current rate limit information.
+    :param query: Query string to be passed to the search API.
+    :param output_path: Path to the file where processed data will be saved.
+    :param total_results: Total number of results expected from the API.
+    :param row_data: Dictionary representing a row of data from the search terms CSV.
+    :return: DataFrame containing the processed data from the API.
+    """
     console.print(query, style="bold blue")
-    total_pages = int(check_total_pages(query))
+    total_pages = int(check_total_pages(query, auth_headers=auth_headers))
     console.print(f"Total pages: {total_pages}", style="green")
     calls_remaining = rates_df['resources.search.remaining'].values[0]
     while total_pages > calls_remaining:
@@ -131,18 +140,20 @@ def process_search_data(rates_df: pd.DataFrame, query: str, output_path: str, to
     check_if_older_file_exists(output_path)
     searched_df.to_csv(output_path, index=False)
 
-def process_large_search_data(rates_df: pd.DataFrame, search_url: str, dh_term: str, params: str, initial_output_path: str, total_results: int, row_data: Dict[str, Any]) -> Optional[pd.DataFrame]:
-    """Function to process the data from the search API that has over 1000 results
-    An example query looks like: https://api.github.com/search/repositories?q=%22Digital+Humanities%22+created%3A2017-01-01..2017-12-31+sort:updated
 
-    :param rates_df: the dataframe of the current rate limit
-    :param search_url: the base url for the search API
-    :param dh_term: the term to be searched for
-    :param params: the parameters to be passed to the search API
-    :param initial_output_path: the path to the output file
-    :param total_results: the total number of results to be returned from the API
-    :param row_data: the row of data from the search terms csv
-    :return: a dataframe of the data returned from the API"""
+def process_large_search_data(rates_df: pd.DataFrame, search_url: str, dh_term: str, params: str, initial_output_path: str, total_results: int, row_data: Dict[str, Any]) -> Optional[pd.DataFrame]:
+    """
+    Processes large datasets from the search API, specifically designed for queries expected to return over 1000 results. It constructs the query using the provided parameters and processes the resulting data. An example query looks like: https://api.github.com/search/repositories?q=%22Digital+Humanities%22+created%3A2017-01-01..2017-12-31+sort:updated
+
+    :param rates_df: DataFrame containing the current rate limit information.
+    :param search_url: String representing the base URL for the search API.
+    :param dh_term: String indicating the term to be searched within the API.
+    :param params: String detailing additional parameters to be passed to the search API. These parameters should be formatted as a query string.
+    :param initial_output_path: String specifying the file path where the output data will be stored.
+    :param total_results: Integer indicating the total number of results expected from the API.
+    :param row_data: Dictionary representing a single row from the search terms CSV, used for further processing.
+    :return: Optionally returns a DataFrame containing the processed data from the API. Returns None if there are no results or in case of an error.
+    """
     # Set the first year to be searched
     first_year = 2008
     current_year = datetime.now().year
@@ -162,20 +173,27 @@ def process_large_search_data(rates_df: pd.DataFrame, search_url: str, dh_term: 
                 f"{dh_term}+created%3A{year}-01-01..{year}-12-31+sort:created{params}"
         # Get the data from the API
         process_search_data(rates_df, query, yearly_output_path, total_results, row_data)
-   
 
 def combine_search_df(initial_repo_output_path: str, repo_output_path: str, repo_join_output_path: str, initial_user_output_path: str, user_output_path: str, user_join_output_path: str, org_output_path: str, overwrite_existing_temp_files: bool) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Function to combine the dataframes of the search API data
-    
-    :param initial_repo_output_path: the path to the initial repo output file
-    :param repo_output_path: the path to the repo output file
-    :param repo_join_output_path: the path to the repo join output file
-    :param initial_user_output_path: the path to the initial user output file
-    :param user_output_path: the path to the output file
-    :param user_join_output_path: the path to the output file
-    :param org_output_path: the path to the output file
-    :param overwrite_existing_temp_files: whether to overwrite existing temp files
-    :return: a dataframe of the combined data"""
+    """
+    Combines various dataframes containing search API data into consolidated datasets. This function 
+    processes and merges data from repositories, users, and organizations into separate, structured dataframes.
+
+    :param initial_repo_output_path: String specifying the path to the initial repository output file.
+    :param repo_output_path: String specifying the path to the processed repository output file.
+    :param repo_join_output_path: String specifying the path to the repository join output file.
+    :param initial_user_output_path: String specifying the path to the initial user output file.
+    :param user_output_path: String specifying the path to the processed user output file.
+    :param user_join_output_path: String specifying the path to the user join output file.
+    :param org_output_path: String specifying the path to the organization output file.
+    :param overwrite_existing_temp_files: Boolean indicating whether to overwrite existing temporary files during processing.
+    :return: A tuple of five DataFrames, each representing a different aspect of the combined data:
+        1. `repo_df` DataFrame for repository entities
+        2. `repo_join_df` DataFrame for repositories joined with search query data
+        3. `user_df` DataFrame for user entities
+        4. `user_join_df` DataFrame for users joined with search query data
+        5. `org_df` DataFrame for organization entities
+    """
     # Flag to indicate whether to return a DataFrame
     return_df = True
 
@@ -223,11 +241,17 @@ def combine_search_df(initial_repo_output_path: str, repo_output_path: str, repo
     return repo_df, repo_join_df, user_df, user_join_df, org_df
 
 def prepare_terms_and_directories(translated_terms_output_path: str, threshold_file_path: str) -> Tuple[pd.DataFrame, int]:
-    """Function to prepare the terms and directories for the search API
+    """
+    Prepares the terms and directories necessary for use with the search API. This function processes 
+    translated terms, storing them in a specified output path, and reads threshold values from a given 
+    file if the code has previously errorer out, setting up the environment for subsequent API searches.
 
-    :param translated_terms_output_path: the path to the translated terms output file (eg. '../data/derived_files/grouped_cleaned_translated_dh_terms.csv')
-    :param threshold_file_path: the path to the threshold file (eg. '../data/derived_files/threshold.csv')
-    :return: a dataframe of the terms"""
+    :param translated_terms_output_path: String specifying the path to the file where translated terms are stored. 
+    :param threshold_file_path: String specifying the path to the file containing threshold values. 
+    :return: A tuple containing:
+        1. DataFrame: Contains the processed and translated terms ready for API search.
+        2. Integer: A threshold value read from the threshold file, used for filtering or other purposes in the API search.
+    """
     # Load in the translated terms
     cleaned_dh_terms = read_csv_file(translated_terms_output_path, encoding='utf-8-sig')
     # check if columns need renaming
@@ -250,32 +274,38 @@ def prepare_terms_and_directories(translated_terms_output_path: str, threshold_f
     return final_terms
 
 def log_error_to_csv(row_index: int, search_term: str, file_path: str):
-    """Logs the row index and search term to a CSV file when an error occurs."""
+    """
+    Logs errors to a CSV file.
+
+    :param row_index: The index of the row in the search terms CSV.
+    :param search_term: The search term that caused the error.
+    :param file_path: The path to the CSV file where the error should be logged.
+    """
     df = pd.DataFrame({'row_index': [row_index], 'search_term': [search_term]})
     df.to_csv(file_path, index=False)
 
 def search_for_topics(row: pd.Series, rates_df: pd.DataFrame, initial_repo_output_path: str, search_query: str, source_type: str):
-    """Function to search for topics in the search API
-    :param row: the row of data from the search terms csv
-    :param rates_df: the dataframe of the rate limit data
-    :param initial_repo_output_path: the path to the initial repo output file
-    :param search_query: the query to be passed to the search API
-    :param source_type: the source type of the search term"""
+    """
+    Searches for topics in the search API based on given parameters.
+
+    :param row: The row of data from the search terms CSV.
+    :param rates_df: The dataframe containing the rate limit data.
+    :param initial_repo_output_path: Path to the initial repository output file.
+    :param search_query: The query string to be passed to the search API.
+    :param source_type: The type of the source for the search term.
+    """
 
     # search_query = search_query if row.search_term_source == "Digital Humanities" else '"' + search_query + '"' 
     search_topics_query = "https://api.github.com/search/topics?q=" + search_query
     time.sleep(5)
-    response = requests.get(search_topics_query, headers=auth_headers, timeout=5)
-    data = get_response_data(response, search_topics_query)
-
     # Initiate the request
-    response = make_request_with_rate_limiting(search_topics_query, headers=auth_headers)
+    response = make_request_with_rate_limiting(search_topics_query, headers=auth_headers, timeout=5)
     
     # Check if response is None
     if response is None:
         console.print(f'Failed to fetch data for query: {search_topics_query}', style='bold red')
         return None
-
+    data = response.json()
     # If term exists as a topic proceed
     if data['total_count'] > 0:
         # Term may result in multiple topics so loop through them
@@ -287,7 +317,7 @@ def search_for_topics(row: pd.Series, rates_df: pd.DataFrame, initial_repo_outpu
             tagged_query = item['name'].replace(' ', '-')
             repos_tagged_query = "https://api.github.com/search/repositories?q=topic:" + tagged_query + "&per_page=100&page=1"
             # Check how many results
-            total_tagged_results = check_total_results(repos_tagged_query)
+            total_tagged_results = check_total_results(repos_tagged_query, auth_headers=auth_headers)
             #If results exist then proceed
             if total_tagged_results > 0:
 
@@ -305,16 +335,19 @@ def search_for_topics(row: pd.Series, rates_df: pd.DataFrame, initial_repo_outpu
                     process_search_data(rates_df, repos_tagged_query, final_tagged_output_path, total_tagged_results, row)
 
 def search_for_repos(row: pd.Series, search_query: str, rates_df: pd.DataFrame, initial_repo_output_path: str, source_type: str):
-    """Function to search for repos in the search API
-    :param row: the row of data from the search terms csv
-    :param search_query: the query to be passed to the search API
-    :param rates_df: the dataframe of the rate limit data
-    :param initial_repo_output_path: the path to the initial repo output file
-    :param source_type: the source type of the search term"""
+    """
+    Searches for repositories in the search API based on given parameters.
+
+    :param row: The row of data from the search terms CSV.
+    :param search_query: The query string to be passed to the search API.
+    :param rates_df: The dataframe containing the rate limit data.
+    :param initial_repo_output_path: Path to the initial repository output file.
+    :param source_type: The type of the source for the search term.
+    """
     # Now search for repos that contain query string
     search_repos_query = "https://api.github.com/search/repositories?q=" + search_query + "&per_page=100&page=1"
     # Check how many results
-    total_search_results = check_total_results(search_repos_query)
+    total_search_results = check_total_results(search_repos_query, auth_headers=auth_headers)
 
     if total_search_results > 0:
         output_term = row.search_term.replace(' ','+')
@@ -329,16 +362,19 @@ def search_for_repos(row: pd.Series, search_query: str, rates_df: pd.DataFrame, 
             process_search_data(rates_df, search_repos_query, final_searched_output_path, total_search_results, row)
 
 def search_for_users(row: pd.Series, search_query: str, rates_df: pd.DataFrame, initial_user_output_path: str, source_type: str):
-    """Function to search for users in the search API
-    :param row: the row of data from the search terms csv
-    :param search_query: the query to be passed to the search API
-    :param rates_df: the dataframe of the rate limit data
-    :param initial_user_output_path: the path to the initial user output file
-    :param source_type: the source type of the search term"""
+    """
+    Searches for users in the search API based on given parameters.
+
+    :param row: The row of data from the search terms CSV.
+    :param search_query: The query string to be passed to the search API.
+    :param rates_df: The dataframe containing the rate limit data.
+    :param initial_user_output_path: Path to the initial user output file.
+    :param source_type: The type of the source for the search term.
+    """
     # Now search for repos that contain query string
     search_users_query = "https://api.github.com/search/users?q=" + search_query + "&per_page=100&page=1"
     # Check how many results
-    total_search_results = check_total_results(search_users_query)
+    total_search_results = check_total_results(search_users_query, auth_headers=auth_headers)
     if total_search_results > 0:
         output_term = row.search_term.replace(' ','+')
         if total_search_results > 1000:
@@ -352,17 +388,27 @@ def search_for_users(row: pd.Series, search_query: str, rates_df: pd.DataFrame, 
             process_search_data(rates_df, search_users_query, final_searched_output_path, total_search_results, row)
 
 def generate_initial_search_datasets(rates_df: pd.DataFrame, initial_repo_output_path: str,  repo_output_path: str, repo_join_output_path: str, initial_user_output_path: str,  user_output_path: str, user_join_output_path: str, org_output_path: str, overwrite_existing_temp_files: bool) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Function to generate the queries for the search API
-    :param rates_df: the dataframe of the rate limit data
-    :param initial_repo_output_path: the path to the initial repo output file
-    :param repo_output_path: the path to the repo output file
-    :param repo_join_output_path: the path to the repo join output file
-    :param initial_user_output_path: the path to the initial user output file
-    :param user_output_path: the path to the output file
-    :param user_join_output_path: the path to the output file
-    :param org_output_path: the path to the output file
-    :param overwrite_existing_temp_files: whether to overwrite existing temp files
-    :return: a dataframe of the combined data"""
+    """
+    Generates initial datasets for the search API by processing and organizing data into various output files.
+    This function handles data related to repositories, users, and organizations, ensuring they are formatted 
+    correctly and saved to the specified paths.
+
+    :param rates_df: DataFrame containing the rate limit data from the API.
+    :param initial_repo_output_path: String specifying the path to the initial repository output file.
+    :param repo_output_path: String specifying the path to the processed repository output file.
+    :param repo_join_output_path: String specifying the path to the repository join output file.
+    :param initial_user_output_path: String specifying the path to the initial user output file.
+    :param user_output_path: String specifying the path to the processed user output file.
+    :param user_join_output_path: String specifying the path to the user join output file.
+    :param org_output_path: String specifying the path to the organization output file.
+    :param overwrite_existing_temp_files: Boolean indicating whether to overwrite existing temporary files during processing.
+    :return: A tuple of five DataFrames, each representing a different aspect of the search API data:
+        1. `repo_df` DataFrame for repository entities
+        2. `repo_join_df` DataFrame for repositories joined with search query data
+        3. `user_df` DataFrame for user entities
+        4. `user_join_df` DataFrame for users joined with search query data
+        5. `org_df` DataFrame for organization entities
+    """
 
     if os.path.exists(initial_repo_output_path) == False:
         os.makedirs(initial_repo_output_path)
@@ -413,11 +459,11 @@ def get_initial_search_datasets(rates_df, initial_repo_output_path,  repo_output
     """
     if load_existing_data:
         if os.path.exists(repo_output_path):
-            repo_df = pd.read_csv(repo_output_path)
-            join_df = pd.read_csv(repo_join_output_path)
-            user_df = pd.read_csv(user_output_path)
-            user_join_df = pd.read_csv(user_join_output_path)
-            org_df = pd.read_csv(org_output_path)
+            repo_df = read_csv_file(repo_output_path)
+            join_df = read_csv_file(repo_join_output_path)
+            user_df = read_csv_file(user_output_path)
+            user_join_df = read_csv_file(user_join_output_path)
+            org_df = read_csv_file(org_output_path)
         else:
             repo_df, join_df, user_df, user_join_df, org_df = generate_initial_search_datasets(rates_df, initial_repo_output_path,  repo_output_path, repo_join_output_path, initial_user_output_path,  user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files)
     else:
