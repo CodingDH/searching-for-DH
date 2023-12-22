@@ -31,77 +31,175 @@ def check_rate_limit() -> pd.DataFrame:
     :return: data from rate limit api call"""
     # Checks for rate limit so that you don't hit issues with Github API. Mostly for search API that has a 30 requests per minute https://docs.github.com/en/rest/rate-limit
     url = 'https://api.github.com/rate_limit'
+    # Make request
     response = requests.get(url, headers=auth_headers, timeout=10)
     if response.status_code != 200:
         console.print(f'Failed to retrieve rate limit with status code: {response.status_code}', style='bold red')
         return pd.DataFrame()
+    # Convert to dataframe
     rates_df = pd.json_normalize(response.json())
     return rates_df
 
-def make_request_with_rate_limiting(url: str, auth_headers: dict) -> requests.Response:
-    """Make a GET request to the URL, handling rate limiting."""
-    for index in range(3):
-        response = requests.get(url, headers=auth_headers, timeout=10)
+def make_request_with_rate_limiting(url: str, auth_headers: dict, number_of_attempts: int = 3, timeout: int = 10) -> requests.Response:
+    """Make a GET request to the URL, handling rate limiting.
+    :param url: URL to make request to
+    :param auth_headers: authentication headers
+    :param number_of_attempts: number of attempts to make before giving up (default is 3)
+    :param timeout: number of seconds to wait for the server to send data before giving up (default is 10)
+    :return: response from request"""
+    # Set range for number of attempts
+    for index in range(number_of_attempts):
+        response = requests.get(url, headers=auth_headers, timeout=timeout)
+        # Check if response is valid and return it if it is
         if response.status_code == 200:
             return response
+        elif response.status_code == 401:
+            console.print("response code 401 - unauthorized access. check api key", style='bold red')
+            return None
+        elif response.status_code == 204:
+            console.print(f'No data for {url}', style='bold red')
+            return None
+        # If not, check if it's a rate limit issue
         if index == 0:
             console.print('hit rate limiting. trying to sleep...', style='bold red')
             time.sleep(120)
+        # If it is, wait for an hour and try again
         if index == 1:
             rates_df = check_rate_limit()
             if rates_df['resources.core.remaining'].values[0] == 0:
                 console.print('rate limit reached. sleeping for 1 hour', style='bold red')
                 time.sleep(3600)
-    console.print(f'query failed after 3 attempts with code {response.status_code}. Failing URL: {url}', style='bold red')
+    # If it's not a rate limit issue, return None
+    console.print(f'query failed after {number_of_attempts} attempts with code {response.status_code}. Failing URL: {url}', style='bold red')
     return None
 
 def check_total_pages(url: str, auth_headers: dict) -> int:
-    """Function to check total number of pages to get from search. Useful for not going over rate limit."""
+    """Function to check total number of pages to get from search. Useful for not going over rate limit.
+    :param url: url to check
+    :param auth_headers: authentication headers
+    :return: total number of pages"""
+    # Get total number of pages
     response = make_request_with_rate_limiting(f'{url}?per_page=1', auth_headers)
+    # If response is None or there are no links, return 1
     if response is None or len(response.links) == 0:
         return 1
+    # Otherwise, get the last page number
     match = re.search(r'\d+$', response.links['last']['url'])
     return int(match.group()) if match is not None else 1
 
 def check_total_results(url: str, auth_headers: dict) -> Optional[int]:
-    """Function to check total number of results from API. Useful for not going over rate limit. Differs from check_total_pages because this returns all results, not just total number of pagination."""
+    """Function to check total number of results from API. Useful for not going over rate limit. Differs from check_total_pages because this returns all results, not just total number of pagination.
+    :param url: url to check
+    :param auth_headers: authentication headers
+    :return: total number of results"""
+    # Get total number of results
     response = make_request_with_rate_limiting(url, auth_headers)
+    # If response is None, return None
     if response is None:
         data = {'total_count': None}
     else:
         data = response.json()
+    # Return total count
     return data.get('total_count')
-
-def get_response_data(response: Response, query: str, auth_headers: Dict[str, str]) -> Union[List, Dict[str, Any]]:
-    """Function to get and process response data from GitHub API call."""
-    # First, check if response is valid
-    if response.status_code == 401:
-        console.print("response code 401 - unauthorized access. check api key", style='bold red')
-        return []
-    elif response.status_code == 204:
-        console.print(f'No data for {query}', style='bold red')
-        return []
-    elif response.status_code == 200:
-        return response.json()
-    else:
-        console.print(f'response code: {response.status_code}. hit rate limiting. trying to sleep...', style='bold red')
-        response = make_request_with_rate_limiting(query, auth_headers)
-        if response is None or response.status_code != 200:
-            console.print(f'query failed with code {response.status_code if response else "unknown"}. Failing URL: {query}', style='bold red')
-            return []
-        else:
-            return response.json()
-
-def read_csv_file(directory: str, file_name: str) -> Optional[pd.DataFrame]:
-    """Reads a CSV file into a pandas DataFrame."""
+        
+def read_csv_file(file_name: str, directory: Optional[str] = None, encoding: Optional[str] = 'utf-8', error_bad_lines: Optional[bool] = False) -> Optional[pd.DataFrame]:
+    """Reads a CSV file into a pandas DataFrame.
+    :param file_name: name of file to read
+    :param directory: directory to read file from (default is None and is Optional)
+    :param encoding: encoding to use (default is 'utf-8' and is Optional)
+    :param error_bad_lines: whether to skip bad lines (default is False and is Optional)
+    :return: pandas DataFrame"""
+    # Read in the file
+    file_path = file_name if directory is None else os.path.join(directory, file_name)
     try:
-        return pd.read_csv(os.path.join(directory, file_name), low_memory=False, encoding='utf-8')
+        # Return the dataframe
+        return pd.read_csv(file_path, low_memory=False, encoding=encoding, error_bad_lines=error_bad_lines)
+    # If there's a Pandas error, print it and return None
     except pd.errors.EmptyDataError:
-        print(f'Empty dataframe for {file_name}')
+        console.print(f'Empty dataframe for {file_name}', style='bold red')
+        return None
+    # If there's an error, print it and return None
+    except Exception as e:
+        console.print(f'Failed to read {file_name} with {encoding} encoding. Error: {e}', style='bold red')
         return None
 
+def check_return_error_file(error_file_path):
+    """Function to check if error file exists and return it if it does
+    :param error_file_path: path to error file
+    :return: error dataframe"""
+    # Check if error file exists and return it if it does
+    if os.path.exists(error_file_path):
+        error_df = read_csv_file(error_file_path)
+        return error_df
+    else:
+        return pd.DataFrame()
+
+def clean_write_error_file(error_file_path, drop_field):
+    """Function to clean error file and write it
+    :param error_file_path: path to error file
+    :param drop_field: field to drop from error file"""
+    # Clean error file and write it
+    if os.path.exists(error_file_path):
+        error_df = read_csv_file(error_file_path)
+        # Drop duplicates if error_time exists
+        if 'error_time' in error_df.columns:
+            error_df = error_df.sort_values(by=['error_time']).drop_duplicates(subset=[drop_field], keep='last')
+        else: 
+            error_df = error_df.drop_duplicates(subset=[drop_field], keep='last')
+        error_df.to_csv(error_file_path, index=False)
+    else:
+        console.print('No error file to clean', style='bold blue')
+
+def check_file_size_and_move(file_dir):
+    """Function to check if file size is too large and move it
+    :param file_dir: path to file directory"""
+    # Check if file size is too large and move it
+    for dir, _, files in os.walk(file_dir):
+        for file in files:
+            file_path = os.path.join(dir, file)
+            size = os.path.getsize(file_path)
+            size = round(size/(1024*1024), 2)
+            if size > 50:
+                console.print(f'File {file_path} is {size} MB', style='bold red')
+                new_file_path = file_path.replace(f'{data_directory_path}/', f'{data_directory_path}/large_files/')
+                if not os.path.exists(new_file_path):
+                    shutil.copy2(file_path, new_file_path)
+                    os.remove(file_path)
+
+def check_file_created(file_path :str, existing_df: pd.DataFrame) -> bool:
+    """Function to check if file was created correctly
+    :param file_path: path to file
+    :param existing_df: existing dataframe"""
+    # Check if file was created correctly
+    df = read_csv_file(file_path)
+    if len(df) == len(existing_df):
+        return True
+    else:
+        console.print(f'File {file_path} not created correctly', style='bold red')
+        return False
+    
+def check_if_older_file_exists(file_path: str) -> None:
+    """Function to check if older file exists and move it to older_files folder
+    :param file_path: path to file"""
+    if os.path.exists(file_path):
+        src = file_path 
+        new_file_path = file_path.replace(f'{data_directory_path}/',f'{data_directory_path}/older_files/')
+        time_stamp = datetime.now().strftime("%Y_%m_%d")
+        dst = new_file_path.replace('.csv', f'_{time_stamp}.csv')
+        
+        new_dir = os.path.dirname(new_file_path)
+        if not os.path.exists(new_dir):
+            os.makedirs(new_dir)
+
+        if not os.path.exists(dst):
+            shutil.copy2(src, dst)  
+
 def create_file_dict(directory: str, file_name: str) -> dict:
-    """Create a file dictionary with name, size, and directory."""
+    """Create a file dictionary with name, size, and directory.
+    :param directory: directory of file
+    :param file_name: name of file
+    :return: file dictionary"""
+    # Create a file dictionary with name, size, and directory
     file_dict = {}
     loaded_file = os.path.join(directory, file_name)
     file_size = os.path.getsize(loaded_file)
@@ -143,48 +241,6 @@ def read_combine_files(dir_path: str, check_all_dirs: bool=False, file_path_cont
 
     combined_df = pd.concat(rows) if len(rows) > 0 else pd.DataFrame()
     return combined_df
-
-
-def check_return_error_file(error_file_path):
-    """Function to check if error file exists and return it if it does
-    :param error_file_path: path to error file
-    :return: error dataframe"""
-    if os.path.exists(error_file_path):
-        error_df = pd.read_csv(error_file_path)
-        return error_df
-    else:
-        return pd.DataFrame()
-
-def clean_write_error_file(error_file_path, drop_field):
-    """Function to clean error file and write it
-    :param error_file_path: path to error file
-    :param drop_field: field to drop from error file"""
-    if os.path.exists(error_file_path):
-        error_df = pd.read_csv(error_file_path)
-        if 'error_time' in error_df.columns:
-            error_df = error_df.sort_values(by=['error_time']).drop_duplicates(subset=[drop_field], keep='last')
-        else: 
-            error_df = error_df.drop_duplicates(subset=[drop_field], keep='last')
-        error_df.to_csv(error_file_path, index=False)
-    else:
-        print('no error file to clean')
-
-def check_if_older_file_exists(file_path):
-    """Function to check if older file exists and move it to older_files folder
-    :param file_path: path to file"""
-    if os.path.exists(file_path):
-        src = file_path 
-        new_file_path = file_path.replace('/data/','/data/older_files/')
-        time_stamp = datetime.now().strftime("%Y_%m_%d")
-        dst = new_file_path.replace('.csv', f'_{time_stamp}.csv')
-        
-        new_dir = os.path.dirname(new_file_path)
-        if not os.path.exists(new_dir):
-            os.makedirs(new_dir)
-
-        if not os.path.exists(dst):
-            shutil.copy2(src, dst)  
-
 
 def check_for_entity_in_older_queries(entity_path, entity_df, is_large=True):
     """Function to check if entity exists in older queries and add it to our most recent version of the file
@@ -238,29 +294,6 @@ def check_for_entity_in_older_queries(entity_path, entity_df, is_large=True):
     entity_df.to_csv(entity_path, index=False)
     return entity_df
 
-def check_file_size_and_move(file_dir):
-    """Function to check if file size is too large and move it
-    :param file_dir: path to file directory"""
-    for dir, _, files in os.walk(file_dir):
-        for file in files:
-            file_path = os.path.join(dir, file)
-            size = os.path.getsize(file_path)
-            size = round(size/(1024*1024), 2)
-            if size > 50:
-            
-                new_file_path = file_path.replace('data/', 'data/large_files/')
-            
-                if not os.path.exists(new_file_path):
-                    shutil.copy2(file_path, new_file_path)
-                    os.remove(file_path)
-
-def check_file_created(file_path, existing_df):
-    df = pd.read_csv(file_path, low_memory=False)
-    if len(df) == len(existing_df):
-        return True
-    else:
-        print(f'File {file_path} not created correctly')
-        return False
 
 def get_core_users_repos(combine_files=True):
     """Function to get core users and repos

@@ -20,6 +20,7 @@ from tqdm import tqdm
 sys.path.append("..")
 import apikey
 from data_generation_scripts.utils import *
+from data_generation_scripts.general_utils import  read_csv_file, check_total_pages, check_total_results, check_rate_limit, make_request_with_rate_limiting
 
 # Load in the API key
 auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
@@ -40,8 +41,14 @@ def fetch_data(query: str, auth_headers: Dict[str, str]) -> Tuple[pd.DataFrame, 
     :param auth_headers: the headers to be passed to the API
     :return: a dataframe of the data returned from the API and the response object"""
     # Initiate the request
-    response = requests.get(query, headers=auth_headers)
-    response_data = get_response_data(response, query)
+    response = make_request_with_rate_limiting(query, headers=auth_headers)
+    
+    # Check if response is None
+    if response is None:
+        console.print(f'Failed to fetch data for query: {query}', style='bold red')
+        return pd.DataFrame(), None
+
+    response_data = response.json()
 
     response_df = pd.json_normalize(response_data['items'])
     # If there is data returned, add the search query to the dataframe
@@ -50,9 +57,9 @@ def fetch_data(query: str, auth_headers: Dict[str, str]) -> Tuple[pd.DataFrame, 
     else:
         # If there is no data returned, load in the headers from the metadata files
         if 'repo' in query:
-            response_df = pd.read_csv(f'{data_directory_path}/metadata_files/search_repo_headers.csv')
+            response_df = read_csv_file(f'{data_directory_path}/metadata_files/search_repo_headers.csv')
         else:
-            response_df = pd.read_csv(f'{data_directory_path}/metadata_files/search_user_headers.csv')
+            response_df = read_csv_file(f'{data_directory_path}/metadata_files/search_user_headers.csv')
     return response_df, response
 
 def get_search_api_data(query: str, total_pages: int, auth_headers: Dict[str, str]) -> pd.DataFrame:
@@ -107,7 +114,7 @@ def process_search_data(rates_df: pd.DataFrame, query: str, output_path: str, to
     # Check if the file already exists
     if os.path.exists(output_path):
         # If it does load it in
-        searched_df = pd.read_csv(output_path, encoding="ISO-8859-1", error_bad_lines=False)
+        searched_df = read_csv_file(output_path, encoding="ISO-8859-1", error_bad_lines=False)
         # Check if the number of rows is less than the total number of results
         if searched_df.shape[0] != int(total_results):
             # If it is not, move the older file to a backup location and then remove existing file
@@ -222,7 +229,7 @@ def prepare_terms_and_directories(translated_terms_output_path: str, threshold_f
     :param threshold_file_path: the path to the threshold file (eg. '../data/derived_files/threshold.csv')
     :return: a dataframe of the terms"""
     # Load in the translated terms
-    cleaned_dh_terms = pd.read_csv(translated_terms_output_path, encoding='utf-8-sig')
+    cleaned_dh_terms = read_csv_file(translated_terms_output_path, encoding='utf-8-sig')
     # check if columns need renaming
     columns_to_rename = ['language_code', 'term', 'term_source']
     if set(columns_to_rename).issubset(cleaned_dh_terms.columns) == False:
@@ -235,7 +242,7 @@ def prepare_terms_and_directories(translated_terms_output_path: str, threshold_f
     final_terms = pd.concat([ltr, rtl])
     # Subset to just the terms that are in the threshold file
     if os.path.exists(threshold_file_path):
-        threshold = pd.read_csv(threshold_file_path)
+        threshold = read_csv_file(threshold_file_path)
         final_terms = final_terms[(final_terms.index > threshold.row_index.values[0]) & (final_terms.search_term == threshold.search_term.values[0])]
     else:
         final_terms = final_terms
@@ -260,6 +267,14 @@ def search_for_topics(row: pd.Series, rates_df: pd.DataFrame, initial_repo_outpu
     time.sleep(5)
     response = requests.get(search_topics_query, headers=auth_headers, timeout=5)
     data = get_response_data(response, search_topics_query)
+
+    # Initiate the request
+    response = make_request_with_rate_limiting(search_topics_query, headers=auth_headers)
+    
+    # Check if response is None
+    if response is None:
+        console.print(f'Failed to fetch data for query: {search_topics_query}', style='bold red')
+        return None
 
     # If term exists as a topic proceed
     if data['total_count'] > 0:
