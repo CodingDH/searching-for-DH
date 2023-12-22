@@ -17,6 +17,7 @@ from rich import print
 from rich.console import Console
 from typing import List, Union, Dict, Any
 from requests.models import Response
+import altair as alt
 
 auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
 
@@ -141,10 +142,13 @@ def read_csv_file(file_name: str, directory: Optional[str] = None, encoding: Opt
         console.print(f'Failed to read {file_name} with {encoding} encoding. Error: {e}', style='bold red')
         return None
 
-def check_return_error_file(error_file_path):
-    """Function to check if error file exists and return it if it does
-    :param error_file_path: path to error file
-    :return: error dataframe"""
+def check_return_error_file(error_file_path:str) -> pd.DataFrame():
+    """
+    Checks if error file exists and returns it if it does.
+    
+    :param error_file_path: Path to error file
+    :return: Error dataframe
+    """
     # Check if error file exists and return it if it does
     if os.path.exists(error_file_path):
         error_df = read_csv_file(error_file_path)
@@ -152,10 +156,13 @@ def check_return_error_file(error_file_path):
     else:
         return pd.DataFrame()
 
-def clean_write_error_file(error_file_path, drop_field):
-    """Function to clean error file and write it
-    :param error_file_path: path to error file
-    :param drop_field: field to drop from error file"""
+def clean_write_error_file(error_file_path: str, drop_field: str) -> None:
+    """
+    Cleans error file and writes it. Drops duplicates if error_time column exists. Also drops duplicates based on drop_field column.
+
+    :param error_file_path: Path to error file
+    :param drop_field: Field to drop duplicates on
+    """
     # Clean error file and write it
     if os.path.exists(error_file_path):
         error_df = read_csv_file(error_file_path)
@@ -168,9 +175,12 @@ def clean_write_error_file(error_file_path, drop_field):
     else:
         console.print('No error file to clean', style='bold blue')
 
-def check_file_size_and_move(file_dir):
-    """Function to check if file size is too large and move it
-    :param file_dir: path to file directory"""
+def check_file_size_and_move(file_dir: str) -> None:
+    """
+    Checks file size and moves it if it is too large.
+
+    :param file_dir: Directory of file
+    """
     # Check if file size is too large and move it
     for dir, _, files in os.walk(file_dir):
         for file in files:
@@ -185,9 +195,13 @@ def check_file_size_and_move(file_dir):
                     os.remove(file_path)
 
 def check_file_created(file_path :str, existing_df: pd.DataFrame) -> bool:
-    """Function to check if file was created correctly
-    :param file_path: path to file
-    :param existing_df: existing dataframe"""
+    """
+    Checks if csv file was created correctly and that it has the same length as its current DataFrame.
+
+    :param file_path: Path to file
+    :param existing_df: Existing dataframe
+    :return: Boolean indicating whether file was created correctly
+    """
     # Check if file was created correctly
     df = read_csv_file(file_path)
     if len(df) == len(existing_df):
@@ -197,26 +211,34 @@ def check_file_created(file_path :str, existing_df: pd.DataFrame) -> bool:
         return False
     
 def check_if_older_file_exists(file_path: str) -> None:
-    """Function to check if older file exists and move it to older_files folder
-    :param file_path: path to file"""
+    """
+    Checks if older file exists and moves it if it does.
+
+    :param file_path: Path to file
+    """
+    # Check if older file exists and move it
     if os.path.exists(file_path):
         src = file_path 
+        # Create new file path
         new_file_path = file_path.replace(f'{data_directory_path}/',f'{data_directory_path}/older_files/')
         time_stamp = datetime.now().strftime("%Y_%m_%d")
         dst = new_file_path.replace('.csv', f'_{time_stamp}.csv')
-        
+        # Create new directory if it doesn't exist
         new_dir = os.path.dirname(new_file_path)
         if not os.path.exists(new_dir):
             os.makedirs(new_dir)
-
+        # Move file
         if not os.path.exists(dst):
             shutil.copy2(src, dst)  
 
 def create_file_dict(directory: str, file_name: str) -> dict:
-    """Create a file dictionary with name, size, and directory.
-    :param directory: directory of file
-    :param file_name: name of file
-    :return: file dictionary"""
+    """
+    Creates a file dictionary with name, size, and directory.
+
+    :param directory: Directory of file
+    :param file_name: Name of file
+    :return: File dictionary
+    """
     # Create a file dictionary with name, size, and directory
     file_dict = {}
     loaded_file = os.path.join(directory, file_name)
@@ -226,27 +248,41 @@ def create_file_dict(directory: str, file_name: str) -> dict:
     file_dict['directory'] = directory
     return file_dict
 
-def read_combine_files(dir_path: str, check_all_dirs: bool=False, file_path_contains: Optional[str]=None, large_files: bool=False) -> pd.DataFrame:
-    """Combines all files in a directory."""
+
+def read_combine_files(dir_path: str, check_all_dirs: bool = False, file_path_contains: Optional[str] = None, large_files: bool = False) -> pd.DataFrame:
+    """
+    Combines all relevant files within a specified directory into a single pandas DataFrame. This function can optionally exclude certain directories, filter files by name, and handle large files differently.
+
+    :param dir_path: String specifying the directory path to search for files.
+    :param check_all_dirs: Boolean indicating whether to check all subdirectories within the specified directory. Defaults to False.
+    :param file_path_contains: Optional string for filtering files by name. Only files containing this string are processed.
+    :param large_files: Boolean indicating whether to handle large files differently. If True, only metadata is collected initially. Defaults to False.
+    :return: A pandas DataFrame combining data from all relevant files.
+    """
+    # List of directories to exclude
     excluded_dirs = ['temp', 'derived_files', 'metadata_files', 'repo_data', 'user_data', 'derived_files', 'archived_data', 'error_logs', 'archived_files']
     rows = []
     relevant_files = []
-
+    # Walk through the directory
     for directory, _, files in os.walk(dir_path):
-        if check_all_dirs and directory == '../data':
+        # If check_all_dirs is False or directory is data directory or excluded directory, skip it
+        if check_all_dirs and (directory == data_directory_path or any(excluded_dir in directory for excluded_dir in excluded_dirs)):
             continue
-        if check_all_dirs and any(excluded_dir in directory for excluded_dir in excluded_dirs):
-            continue
-
+        # Check all files in directory
         for file_name in files:
+            # If file_path_contains is None or file_name contains file_path_contains, process it
             if file_path_contains is None or file_path_contains in file_name:
+                file_path = os.path.join(directory, file_name)
                 if large_files:
-                    relevant_files.append(create_file_dict(directory, file_name))
+                    relevant_files.append(create_file_dict(directory, file_name))  # 
                 else:
-                    row = read_csv_file(directory, file_name)
-                    if row is not None:
-                        rows.append(row)
-
+                    try:
+                        row = read_csv_file(file_path)  # Assuming read_csv_file is capable of reading a file given its path
+                        if row is not None:
+                            rows.append(row)
+                    except Exception as e:
+                        print(f"Error reading file {file_path}: {e}")
+    # If large_files is True, then turn relevant_files into a dataframe and sort by file_size and date
     if large_files:
         files_df = pd.DataFrame(relevant_files)
         if len(files_df) == 0:
@@ -256,50 +292,62 @@ def read_combine_files(dir_path: str, check_all_dirs: bool=False, file_path_cont
         files_df.date = pd.to_datetime(files_df.date)
         top_files = files_df.sort_values(by=['file_size', 'date'], ascending=[False, False]).head(2)
         rows = [read_csv_file(row.directory, row.file_name) for _, row in top_files.iterrows() if row is not None]
-
-    combined_df = pd.concat(rows) if len(rows) > 0 else pd.DataFrame()
+    # Combine all rows into a single dataframe
+    combined_df = pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()
     return combined_df
 
-def check_for_entity_in_older_queries(entity_path, entity_df, is_large=True):
-    """Function to check if entity exists in older queries and add it to our most recent version of the file
-    :param entity_path: path to entity file
-    :param entity_df: entity dataframe"""
-    entity_type = entity_path.split('/')[-1].split('_dataset')[0]
-    print(entity_type)
-    older_entity_file_path = entity_path.replace('data/', 'data/older_files/')
-    older_entity_file_dir = os.path.dirname(older_entity_file_path) + '/'
+def handle_entity_type(entity_type: str, missing_entities: pd.DataFrame, error_file_path: str, headers_file_path: str) -> pd.DataFrame:
+    """
+    Handles entity type by checking for errors and removing entities that have errors.
 
-
-    older_entity_df = read_combine_files(dir_path=older_entity_file_dir, check_all_dirs=True, file_path_contains=entity_type, large_files=is_large)
-    print(f'older entity df shape: {older_entity_df.shape}')
-    if len(older_entity_df) > 0:
+    :param entity_type: Type of entity
+    :param missing_entities: Missing entities dataframe
+    :param error_file_path: Path to error file
+    :param headers_file_path: Path to headers file
+    :return: Missing entities dataframe
+    """
+    # Read in error file and headers file
+    headers = read_csv_file(headers_file_path)
+    if set(missing_entities.columns) != set(headers.columns):
+        error_df = check_return_error_file(error_file_path)
+        now = pd.Timestamp('now')
+        error_df['error_time'] = pd.to_datetime(error_df['error_time'], errors='coerce')
+        error_df = error_df.dropna(subset=['error_time'])  # Drop any rows where 'error_time' is NaT
+        error_df['time_since_error'] = (now - error_df['error_time']).dt.days
+        error_df = error_df[error_df.time_since_error > 7]
         entity_field = 'full_name' if entity_type == 'repos' else 'login'
+        # Drop entities that have errors
+        missing_entities = missing_entities[~missing_entities[entity_field].isin(error_df[entity_field])]
+        # Drop columns that are not in headers
+        missing_entities = missing_entities[headers.columns]
+    return missing_entities
+
+def check_for_entity_in_older_queries(entity_path: str, entity_df: pd.DataFrame, is_large: bool =True) -> pd.DataFrame:
+    """
+    Checks for entity in older queries and adds it to the entity dataframe if it is not there.
+
+    :param entity_path: Path to entity file
+    :param entity_df: Entity dataframe
+    :param is_large: Boolean indicating whether to handle large files differently. If True, only metadata is collected initially. Defaults to True.
+    :return: Entity dataframe
+    """
+    # Extract entity type
+    entity_type = entity_path.split("/")[-1].split("_dataset")[0]
+    console.print(f"Checking for {entity_type} in older queries", style="bold blue")
+    # Check for entity in older queries
+    older_entity_file_path = entity_path.replace(f"{data_directory_path}/", f"{data_directory_path}/older_files/")
+    older_entity_file_dir = os.path.dirname(older_entity_file_path) + "/"
+    older_entity_df = read_combine_files(dir_path=older_entity_file_dir, check_all_dirs=True, file_path_contains=entity_type, large_files=is_large)
+    console.print(f"older entity df shape: {older_entity_df.shape}", style="bold blue")
+    if len(older_entity_df) > 0:
+        entity_field = "full_name" if entity_type == "repos" else "login"
         missing_entities = older_entity_df[~older_entity_df[entity_field].isin(entity_df[entity_field])]
 
-        if entity_type == 'users':
-            user_headers = pd.read_csv('../data/metadata_files/users_dataset_cols.csv')
-            if set(missing_entities.columns) != set(user_headers.columns):
-                error_file_path = "../data/error_logs/potential_users_errors.csv"
-                error_df = check_return_error_file(error_file_path)
-                now = pd.Timestamp('now')
-                error_df['error_time'] = pd.to_datetime(error_df['error_time'], errors='coerce')
-                error_df = error_df.dropna(subset=['error_time'])  # Drop any rows where 'error_time' is NaT
-                error_df['time_since_error'] = (now - error_df['error_time']).dt.days
-                error_df = error_df[error_df.time_since_error > 7]
-                missing_entities = missing_entities[~missing_entities.login.isin(error_df.login)]
-                missing_entities = missing_entities[user_headers.columns]
-        if entity_type == 'repos':
-            repo_headers = pd.read_csv('../data/metadata_files/repo_headers.csv')
-            if set(missing_entities.columns) != set(repo_headers.columns):
-                error_file_path = "../data/error_logs/potential_repos_errors.csv"
-                error_df = check_return_error_file(error_file_path)
-                now = pd.Timestamp('now')
-                error_df['error_time'] = pd.to_datetime(error_df['error_time'], errors='coerce')
-                error_df = error_df.dropna(subset=['error_time'])  # Drop any rows where 'error_time' is NaT
-                error_df['time_since_error'] = (now - error_df['error_time']).dt.days
-                error_df = error_df[error_df.time_since_error > 7]
-                missing_entities = missing_entities[~missing_entities.full_name.isin(error_df.full_name)]
-                missing_entities = missing_entities[repo_headers.columns]
+        if entity_type == "users":
+            missing_entities = handle_entity_type("users", missing_entities, f"{data_directory_path}/error_logs/potential_users_errors.csv", f"{data_directory_path}/metadata_files/users_dataset_cols.csv")
+        if entity_type == "repos":
+            missing_entities = handle_entity_type("repos", missing_entities, f"{data_directory_path}/error_logs/potential_repos_errors.csv", f"{data_directory_path}/metadata_files/repo_headers.csv")
+
         if len(missing_entities) > 0:
             missing_entities = missing_entities[missing_entities.id.notna()]
             entity_df = pd.concat([entity_df, missing_entities])
@@ -308,34 +356,37 @@ def check_for_entity_in_older_queries(entity_path, entity_df, is_large=True):
             entity_df[cleaned_field] = pd.to_datetime(entity_df[time_field], errors='coerce')
             entity_field = 'full_name' if 'repo' in entity_type else 'login'
             entity_df = entity_df.sort_values(by=[cleaned_field], ascending=False).drop_duplicates(subset=[entity_field], keep='first').drop(columns=[cleaned_field])
+
     check_if_older_file_exists(entity_path)
     entity_df.to_csv(entity_path, index=False)
     return entity_df
 
-
-def get_core_users_repos(combine_files=True):
-    """Function to get core users and repos
-    :return: core users and repos
+def get_core_users_repos(combine_files: bool =True) -> Union[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
-    initial_core_users = pd.read_csv("../data/derived_files/initial_core_users.csv")
+    Gets core users, repos, and orgs.
+
+    :param combine_files: Boolean indicating whether to combine files. Defaults to True.
+    :return: Core users, repos, and orgs
+    """
+    initial_core_users = read_csv_file(f"{data_directory_path}/derived_files/initial_core_users.csv")
     initial_core_users['origin'] = 'initial_core'
-    initial_core_repos = pd.read_csv("../data/derived_files/initial_core_repos.csv")
+    initial_core_repos = read_csv_file(f"{data_directory_path}/derived_files/initial_core_repos.csv")
     initial_core_repos['origin'] = 'initial_core'
-    initial_core_orgs = pd.read_csv("../data/derived_files/initial_core_orgs.csv")
+    initial_core_orgs = read_csv_file(f"{data_directory_path}/derived_files/initial_core_orgs.csv")
     initial_core_orgs['origin'] = 'initial_core'
 
-    firstpass_core_users = pd.read_csv("../data/derived_files/firstpass_core_users.csv")
+    firstpass_core_users = read_csv_file(f"{data_directory_path}/derived_files/firstpass_core_users.csv")
     firstpass_core_users['origin'] = 'firstpass_core'
-    firstpass_core_repos = pd.read_csv("../data/derived_files/firstpass_core_repos.csv")
+    firstpass_core_repos = read_csv_file(f"{data_directory_path}/derived_files/firstpass_core_repos.csv")
     firstpass_core_repos['origin'] = 'firstpass_core'
-    firstpass_core_orgs = pd.read_csv("../data/derived_files/firstpass_core_orgs.csv")
+    firstpass_core_orgs = read_csv_file(f"{data_directory_path}/derived_files/firstpass_core_orgs.csv")
     firstpass_core_orgs['origin'] = 'firstpass_core'
 
-    finalpass_core_users = pd.read_csv("../data/derived_files/finalpass_core_users.csv")
+    finalpass_core_users = read_csv_file(f"{data_directory_path}/derived_files/finalpass_core_users.csv")
     finalpass_core_users['origin'] = 'finalpass_core'
-    finalpass_core_repos = pd.read_csv("../data/large_files/derived_files/finalpass_core_repos.csv", low_memory=False, on_bad_lines='skip')
+    finalpass_core_repos = read_csv_file(f"{data_directory_path}/large_files/derived_files/finalpass_core_repos.csv", low_memory=False, on_bad_lines='skip')
     finalpass_core_repos['origin'] = 'finalpass_core'
-    finalpass_core_orgs = pd.read_csv("../data/derived_files/finalpass_core_orgs.csv")
+    finalpass_core_orgs = read_csv_file(f"{data_directory_path}/derived_files/finalpass_core_orgs.csv")
     finalpass_core_orgs['origin'] = 'finalpass_core'
 
     if combine_files:
@@ -347,17 +398,13 @@ def get_core_users_repos(combine_files=True):
         return initial_core_users, initial_core_repos, initial_core_orgs, firstpass_core_users, firstpass_core_repos, firstpass_core_orgs, finalpass_core_users, finalpass_core_repos, finalpass_core_orgs
 
 
-def save_chart(chart, filename, scale_factor=2.0):
+def save_chart(chart: alt.Chart, filename: str, scale_factor=2.0) -> None:
     '''
     Save an Altair chart using vl-convert
     
-    Parameters
-    ----------
-    chart : altair.Chart
-        Altair chart to save
-    filename : str
-        The path to save the chart to
-    scale_factor: int or float
+    :param chart: Altair chart to save
+    :param filename : The path to save the chart to
+    :param scale_factor: int or float
         The factor to scale the image resolution by.
         E.g. A value of `2` means two times the default resolution.
     '''
