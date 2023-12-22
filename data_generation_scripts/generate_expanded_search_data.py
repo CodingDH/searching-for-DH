@@ -17,8 +17,8 @@ from rich.console import Console
 from tqdm import tqdm
 
 # Local application/library specific imports
-sys.path.append("..")
 import apikey
+sys.path.append("..")
 from data_generation_scripts.utils import *
 from data_generation_scripts.general_utils import  read_csv_file, check_total_pages, check_total_results, check_rate_limit, make_request_with_rate_limiting
 
