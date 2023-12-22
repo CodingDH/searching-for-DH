@@ -163,10 +163,9 @@ def process_large_search_data(rates_df: pd.DataFrame, search_url: str, dh_term: 
     if return_dataframe:
         return pd.concat(search_dfs)
 
-
-
-def combine_search_df(initial_repo_output_path, repo_output_path, repo_join_output_path, initial_user_output_path, user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files):
+def combine_search_df(initial_repo_output_path: str, repo_output_path: str, repo_join_output_path: str, initial_user_output_path: str, user_output_path: str, user_join_output_path: str, org_output_path: str, overwrite_existing_temp_files: bool) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Function to combine the dataframes of the search API data
+    
     :param initial_repo_output_path: the path to the initial repo output file
     :param repo_output_path: the path to the repo output file
     :param repo_join_output_path: the path to the repo join output file
@@ -174,30 +173,40 @@ def combine_search_df(initial_repo_output_path, repo_output_path, repo_join_outp
     :param user_output_path: the path to the output file
     :param user_join_output_path: the path to the output file
     :param org_output_path: the path to the output file
+    :param overwrite_existing_temp_files: whether to overwrite existing temp files
     :return: a dataframe of the combined data"""
+    # Flag to indicate whether to return a DataFrame
     return_df = True
+
+    # Combine repo files
     print("Combining repo files")
     repo_searched_files = read_combine_files(
         dir_path=initial_repo_output_path, check_all_dirs=False, file_path_contains='searched', large_files=False)
     repo_tagged_files = read_combine_files(dir_path=initial_repo_output_path, check_all_dirs=False, file_path_contains='tagged', large_files=False)
 
+    # Concatenate searched and tagged files, add search query time, check if older file exists, and write to CSV
     repo_join_df = pd.concat([repo_searched_files, repo_tagged_files])
     repo_join_df['search_query_time'] = datetime.now().strftime("%Y-%m-%d")
     print("Checking if older file exists")
     check_if_older_file_exists(repo_join_output_path)
     repo_join_df.to_csv(repo_join_output_path, index=False)
+
+    # Drop duplicates, reset index, drop search query column, and add repos
     repo_df = repo_join_df.drop_duplicates(subset='id')
     repo_df = repo_df.reset_index(drop=True)
     repo_df = repo_df.drop(columns=['search_query'])
     print("Adding repos")
     repo_df = check_add_repos(repo_df, repo_output_path, return_df=True)
 
+    # Combine user files
     print("Combining user files")
     user_join_df = read_combine_files(dir_path=initial_user_output_path, check_all_dirs=False, file_path_contains='searched', large_files=False)
     user_join_df['search_query_time'] = datetime.now().strftime("%Y-%m-%d")
     print("Checking if older file exists")
     check_if_older_file_exists(user_join_output_path)
     user_join_df.to_csv(user_join_output_path, index=False)
+
+    # Drop duplicates, reset index, drop search query column, and add users and orgs
     user_df = user_join_df.drop_duplicates(subset='id')
     user_df = user_df.reset_index(drop=True)
     user_df = user_df.drop(columns=['search_query'])
@@ -209,6 +218,7 @@ def combine_search_df(initial_repo_output_path, repo_output_path, repo_join_outp
     org_df = check_add_orgs(org_df, org_output_path,
                             return_df, overwrite_existing_temp_files)
 
+    # Return the processed DataFrames
     return repo_df, repo_join_df, user_df, user_join_df, org_df
 
 def generate_initial_search_datasets(rates_df, initial_repo_output_path,  repo_output_path, repo_join_output_path, initial_user_output_path,  user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files):
