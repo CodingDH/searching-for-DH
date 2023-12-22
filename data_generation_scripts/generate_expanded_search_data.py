@@ -331,7 +331,7 @@ def search_for_users(row: pd.Series, search_query: str, rates_df: pd.DataFrame, 
             final_searched_output_path = initial_user_output_path + f'{source_type}/' + f'users_searched_{output_term}.csv'
             process_search_data(rates_df, search_users_query, final_searched_output_path, total_search_results, row)
 
-def generate_initial_search_datasets(rates_df, initial_repo_output_path,  repo_output_path, repo_join_output_path, initial_user_output_path,  user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files):
+def generate_initial_search_datasets(rates_df: pd.DataFrame, initial_repo_output_path: str,  repo_output_path: str, repo_join_output_path: str, initial_user_output_path: str,  user_output_path: str, user_join_output_path: str, org_output_path: str, overwrite_existing_temp_files: bool) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Function to generate the queries for the search API
     :param rates_df: the dataframe of the rate limit data
     :param initial_repo_output_path: the path to the initial repo output file
@@ -371,7 +371,7 @@ def generate_initial_search_datasets(rates_df, initial_repo_output_path,  repo_o
             log_error_to_csv(row.row_index, row.search_term, f'{directory_path}/derived_files/thershold_search_errors.csv')
             continue
 
-
+    # Combine the dataframes
     repo_df, repo_join_df, user_df, user_join_df, org_df = combine_search_df(initial_repo_output_path, repo_output_path, repo_join_output_path, initial_user_output_path, user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files)
     join_unique_field = 'search_query'
     repo_filter_fields = ["full_name", "cleaned_search_query"]
@@ -420,27 +420,4 @@ if __name__ == '__main__':
     org_output_path = "../data/entity_files/orgs_dataset.csv"
 
     get_initial_search_datasets(rates_df, initial_repo_output_path,  repo_output_path, repo_join_output_path, initial_user_output_path, user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files, load_existing_data)
-    # repo_df, repo_join_df, user_df, user_join_df, org_df = combine_search_df(
-    #     initial_repo_output_path, repo_output_path, repo_join_output_path, initial_user_output_path, user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files)
-    # join_unique_field = 'search_query'
-    # print("Checking for older repo joins")
-    # repo_join_df = check_for_joins_in_older_queries(
-    #     repo_df, repo_join_output_path, repo_join_df, join_unique_field)
-    # print("Checking for older user joins")
-    # user_join_df = check_for_joins_in_older_queries(
-    #     user_df, user_join_output_path, user_join_df, join_unique_field)
-
-    # console = Console()
-    # cleaned_dh_terms = pd.read_csv(
-    #     '../data/derived_files/grouped_cleaned_translated_dh_terms.csv', encoding='utf-8-sig')
-    # cleaned_dh_terms = cleaned_dh_terms.rename(
-    # columns={'language_code': 'natural_language', 'term': 'search_term', 'term_source': 'search_term_source'})
-    # subset_dh_terms = cleaned_dh_terms[cleaned_dh_terms.directionality == 'rtl']
-    # subset_dh_terms['search_term'] = subset_dh_terms['search_term'].apply(lambda x: arabic_reshaper.reshape(x))
-    # # subset_dh_terms['search_term'] = subset_dh_terms['search_term'].apply(lambda x: get_display(x))
-    # val = subset_dh_terms[subset_dh_terms.natural_language == 'ar'][0:1].search_term.values[0]
-    # search_repos_query = "https://api.github.com/search/repositories?q=" + val + "&per_page=100&page=1"
-    # print(search_repos_query)
-    # print(get_display(val))
-    # response = requests.get(search_repos_query, headers=auth_headers)
-    # print(response.json())
+  
