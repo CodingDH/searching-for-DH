@@ -221,6 +221,38 @@ def combine_search_df(initial_repo_output_path: str, repo_output_path: str, repo
     # Return the processed DataFrames
     return repo_df, repo_join_df, user_df, user_join_df, org_df
 
+def prepare_terms_and_directories(translated_terms_output_path: str, threshold_file_path: str) -> Tuple[pd.DataFrame, int]:
+    """Function to prepare the terms and directories for the search API
+
+    :param translated_terms_output_path: the path to the translated terms output file (eg. '../data/derived_files/grouped_cleaned_translated_dh_terms.csv')
+    :param threshold_file_path: the path to the threshold file (eg. '../data/derived_files/threshold.csv')
+    :return: a dataframe of the terms"""
+    # Load in the translated terms
+    cleaned_dh_terms = pd.read_csv(translated_terms_output_path, encoding='utf-8-sig')
+    # check if columns need renaming
+    columns_to_rename = ['language_code', 'term', 'term_source']
+    if set(columns_to_rename).issubset(cleaned_dh_terms.columns) == False:
+        cleaned_dh_terms = cleaned_dh_terms.rename(columns={'language_code': 'natural_language', 'term': 'search_term', 'term_source': 'search_term_source'})
+    # Subset the terms to only those that are RTL and update them to be displayed correctly
+    rtl = cleaned_dh_terms[cleaned_dh_terms.directionality == 'rtl']
+    rtl['search_term'] = rtl['search_term'].apply(lambda x: arabic_reshaper.reshape(x))
+    # Concatenate the RTL and LTR terms
+    ltr = cleaned_dh_terms[cleaned_dh_terms.directionality == 'ltr']
+    final_terms = pd.concat([ltr, rtl])
+    # Subset to just the terms that are in the threshold file
+    if os.path.exists(threshold_file_path):
+        threshold = pd.read_csv(threshold_file_path)
+        final_terms = final_terms[(final_terms.index > threshold.row_index.values[0]) & (final_terms.search_term == threshold.search_term.values[0])]
+    else:
+        final_terms = final_terms
+    # Return the final terms
+    return final_terms
+
+def log_error_to_csv(row_index: int, search_term: str, file_path: str = 'threshold.csv'):
+    """Logs the row index and search term to a CSV file when an error occurs."""
+    df = pd.DataFrame({'row_index': [row_index], 'search_term': [search_term]})
+    df.to_csv(file_path, index=False)
+
 def generate_initial_search_datasets(rates_df, initial_repo_output_path,  repo_output_path, repo_join_output_path, initial_user_output_path,  user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files):
     """Function to generate the queries for the search API
     :param rates_df: the dataframe of the rate limit data
@@ -234,36 +266,25 @@ def generate_initial_search_datasets(rates_df, initial_repo_output_path,  repo_o
     :param overwrite_existing_temp_files: whether to overwrite existing temp files
     :return: a dataframe of the combined data"""
 
-    cleaned_dh_terms = pd.read_csv(
-        '../data/derived_files/grouped_cleaned_translated_dh_terms.csv', encoding='utf-8-sig')
-    cleaned_dh_terms = cleaned_dh_terms.rename(columns={'language_code': 'natural_language', 'term': 'search_term', 'term_source': 'search_term_source'})
-
     if os.path.exists(initial_repo_output_path) == False:
         os.makedirs(initial_repo_output_path)
 
     if os.path.exists(initial_user_output_path) == False:
         os.makedirs(initial_user_output_path)
     
-    # final_terms = cleaned_dh_terms[cleaned_dh_terms.natural_language.str.contains('zh')]
-    rtl = cleaned_dh_terms[cleaned_dh_terms.directionality == 'rtl']
-    rtl['search_term'] = rtl['search_term'].apply(lambda x: arabic_reshaper.reshape(x))
-    ltr = cleaned_dh_terms[cleaned_dh_terms.directionality == 'ltr']
-    final_terms = pd.concat([ltr, rtl])
-    threshold = final_terms[(final_terms.natural_language == 'ko') & (final_terms.search_term == "인문학")].index[0]
-    # print(threshold)
-    # 
-    # threshold = 839
-    for _, row in final_terms[final_terms.index > threshold ].iterrows():
-        display_term = get_display(row.search_term) if row.directionality == 'rtl' else row.search_term
-        print(f"Getting repos with this term {display_term} in this language {row.natural_language}")
-        #Check if term exists as a topic
-        search_query = row.search_term.replace(' ', '+')
-        search_query = '"' + search_query + '"'
-        # search_query = search_query if row.search_term_source == "Digital Humanities" else '"' + search_query + '"' 
-        search_topics_query = "https://api.github.com/search/topics?q=" + search_query
-        time.sleep(5)
-        response = requests.get(search_topics_query, headers=auth_headers, timeout=5)
-        data = get_response_data(response, search_topics_query)
+    final_terms = prepare_terms_and_directories('../data/derived_files/grouped_cleaned_translated_dh_terms.csv', '../data/derived_files/threshold.csv')
+    for _, row in final_terms.iterrows():
+        try:
+            display_term = get_display(row.search_term) if row.directionality == 'rtl' else row.search_term
+            print(f"Getting repos with this term {display_term} in this language {row.natural_language}")
+            #Check if term exists as a topic
+            search_query = row.search_term.replace(' ', '+')
+            search_query = '"' + search_query + '"'
+            # search_query = search_query if row.search_term_source == "Digital Humanities" else '"' + search_query + '"' 
+            search_topics_query = "https://api.github.com/search/topics?q=" + search_query
+            time.sleep(5)
+            response = requests.get(search_topics_query, headers=auth_headers, timeout=5)
+            data = get_response_data(response, search_topics_query)
 
         source_type = row.search_term_source.lower().replace(' ', '_')
         # If term exists as a topic proceed
