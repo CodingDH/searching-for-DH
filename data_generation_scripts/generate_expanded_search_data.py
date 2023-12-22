@@ -39,8 +39,7 @@ def fetch_data(query: str) -> Tuple[pd.DataFrame, requests.Response]:
     Fetches data from the search API using the provided query. This function returns both the 
     processed data as a DataFrame and the raw response object from the API request.
 
-    :param query: String specifying the query to be passed to the search API. 
-        It should be formatted according to the API's requirements.
+    :param query: String specifying the query to be passed to the search API. It should be formatted according to the API's requirements.
     :return: A tuple containing two elements:
         1. DataFrame: The processed data retrieved from the API, structured for analysis.
         2. Response: The raw response object from the requests library, providing access to response headers, status code, and other metadata.
@@ -71,10 +70,8 @@ def get_search_api_data(query: str, total_pages: int) -> pd.DataFrame:
     """
     Retrieves data from the search API based on the specified query across a defined number of pages. This function consolidates the data from all pages into a single DataFrame.
 
-    :param query: String representing the query to be passed to the search API. 
-        This should conform to the API's query format and include any necessary parameters.
-    :param total_pages: Integer specifying the total number of pages of data to be 
-        queried from the API. It determines how many API requests will be made.
+    :param query: String representing the query to be passed to the search API. This should conform to the API's query format and include any necessary parameters.
+    :param total_pages: Integer specifying the total number of pages of data to be queried from the API. It determines how many API requests will be made.
     :return: DataFrame containing aggregated data from all queried pages of the API. 
     """
     # Initiate an empty list to store the dataframes

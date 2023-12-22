@@ -27,8 +27,11 @@ console = Console()
 data_directory_path = "../../datasets"
 
 def check_rate_limit() -> pd.DataFrame:
-    """Function to check rate limit status
-    :return: data from rate limit api call"""
+    """
+    Checks rate limit status on GitHub API
+
+    :return: data from rate limit api call
+    """
     # Checks for rate limit so that you don't hit issues with Github API. Mostly for search API that has a 30 requests per minute https://docs.github.com/en/rest/rate-limit
     url = 'https://api.github.com/rate_limit'
     # Make request
@@ -41,12 +44,17 @@ def check_rate_limit() -> pd.DataFrame:
     return rates_df
 
 def make_request_with_rate_limiting(url: str, auth_headers: dict, number_of_attempts: int = 3, timeout: int = 10) -> requests.Response:
-    """Make a GET request to the URL, handling rate limiting.
-    :param url: URL to make request to
-    :param auth_headers: authentication headers
-    :param number_of_attempts: number of attempts to make before giving up (default is 3)
-    :param timeout: number of seconds to wait for the server to send data before giving up (default is 10)
-    :return: response from request"""
+    """
+    Makes a GET request to the specified URL with handling for rate limiting. If the request encounters rate limiting, 
+    it will attempt to retry the request a specified number of times before giving up. The function also adheres to 
+    a timeout for server response.
+
+    :param url: String representing the URL to which the request is made.
+    :param auth_headers: Dictionary containing authentication headers for the request.
+    :param number_of_attempts: Integer specifying the maximum number of attempts for the request. Defaults to 3.
+    :param timeout: Integer specifying the timeout in seconds to wait for a response from the server. Defaults to 10.
+    :return: The response object from the requests library representing the outcome of the GET request.
+    """
     # Set range for number of attempts
     for index in range(number_of_attempts):
         response = requests.get(url, headers=auth_headers, timeout=timeout)
@@ -74,10 +82,13 @@ def make_request_with_rate_limiting(url: str, auth_headers: dict, number_of_atte
     return None
 
 def check_total_pages(url: str, auth_headers: dict) -> int:
-    """Function to check total number of pages to get from search. Useful for not going over rate limit.
-    :param url: url to check
-    :param auth_headers: authentication headers
-    :return: total number of pages"""
+    """
+    Checks total number of pages for a given url on the GitHub API.
+
+    :param url: URL to check
+    :param auth_headers: Authentication headers
+    :return: Total number of pages. If there are no links or response is None, returns 1.
+    """
     # Get total number of pages
     response = make_request_with_rate_limiting(f'{url}?per_page=1', auth_headers)
     # If response is None or there are no links, return 1
@@ -88,10 +99,13 @@ def check_total_pages(url: str, auth_headers: dict) -> int:
     return int(match.group()) if match is not None else 1
 
 def check_total_results(url: str, auth_headers: dict) -> Optional[int]:
-    """Function to check total number of results from API. Useful for not going over rate limit. Differs from check_total_pages because this returns all results, not just total number of pagination.
-    :param url: url to check
-    :param auth_headers: authentication headers
-    :return: total number of results"""
+    """
+    Checks total number of results for a given url on the GitHub API.
+    
+    :param url: URL to check
+    :param auth_headers: Authentication headers
+    :return: Total number of results. If response is None, returns None.
+    """
     # Get total number of results
     response = make_request_with_rate_limiting(url, auth_headers)
     # If response is None, return None
@@ -103,12 +117,16 @@ def check_total_results(url: str, auth_headers: dict) -> Optional[int]:
     return data.get('total_count')
         
 def read_csv_file(file_name: str, directory: Optional[str] = None, encoding: Optional[str] = 'utf-8', error_bad_lines: Optional[bool] = False) -> Optional[pd.DataFrame]:
-    """Reads a CSV file into a pandas DataFrame.
-    :param file_name: name of file to read
-    :param directory: directory to read file from (default is None and is Optional)
-    :param encoding: encoding to use (default is 'utf-8' and is Optional)
-    :param error_bad_lines: whether to skip bad lines (default is False and is Optional)
-    :return: pandas DataFrame"""
+    """
+    Reads a CSV file into a pandas DataFrame. This function allows specification of the directory, encoding, 
+    and handling of bad lines in the CSV file. If the file cannot be read, the function returns None.
+
+    :param file_name: String representing the name of the CSV file to read.
+    :param directory: Optional string specifying the directory where the file is located. If None, it is assumed the file is in the current working directory.
+    :param encoding: Optional string specifying the encoding used in the CSV file. Defaults to 'utf-8'.
+    :param error_bad_lines: Optional boolean indicating whether to skip bad lines in the CSV. If False, an error is raised for bad lines. Defaults to False.
+    :return: A pandas DataFrame containing the data from the CSV file, or None if the file cannot be read.
+    """
     # Read in the file
     file_path = file_name if directory is None else os.path.join(directory, file_name)
     try:
