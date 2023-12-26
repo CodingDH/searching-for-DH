@@ -5,78 +5,125 @@ import warnings
 warnings.filterwarnings('ignore')
 from tqdm import tqdm
 import os
-from typing import Optional, List
+from typing import Optional, List, Union
 import sys
 sys.path.append('..')
 from data_generation_scripts.utils import *
 from data_generation_scripts.generate_user_metadata import check_total_results
 from data_generation_scripts.generate_translations import check_detect_language
 
-def get_languages(search_df: pd.DataFrame, search_type: str) -> pd.DataFrame:
-    """Get the languages for the search queries data.
+def get_languages(search_df: pd.DataFrame, search_type: str, is_repo: bool) -> pd.DataFrame:
+    """
+    Gets the languages for the search queries data.
+
     :param search_df: The search queries data for repos
-    :type search_df: pandas.DataFrame
     :param search_type: The type of search queries data
-    :type search_type: str
-    :return: The search queries data with the languages added"""
+    :param is_repo: Whether the search queries data is for repos or users
+    :return: The search queries data with the languages added
+    """
     tqdm.pandas(desc='Detecting language')
     if 'repo' in search_type:
         search_df.description = search_df.description.fillna('')
     else:
         search_df.bio = search_df.bio.fillna('')
-    search_df = search_df.progress_apply(check_detect_language, axis=1, is_repo=True)
+    search_df = search_df.progress_apply(check_detect_language, axis=1, is_repo=is_repo)
     return search_df
 
-def clean_languages(search_df: pd.DataFrame, join_field: str) -> pd.DataFrame:
-    """Clean the languages for the search queries data.
+def update_finalized_language(df: pd.DataFrame, condition: pd.Series, new_value: Union[str, pd.Series]) -> None:
+    """
+    Update the 'finalized_language' column in the DataFrame based on a condition.
+
+    This function checks if there are any rows in the DataFrame that meet the condition
+    and have a NaN 'finalized_language'. If there are, it updates the 'finalized_language'
+    for those rows with the new value.
+
+    Parameters:
+    df (pd.DataFrame): The DataFrame to update.
+    condition (pd.Series): A boolean Series representing the condition to meet.
+    new_value (Union[str, pd.Series]): The new value for 'finalized_language'. Can be a string or a Series.
+
+    Returns:
+    None
+    """
+
+    # Get the rows that meet the condition and have a NaN 'finalized_language'
+    needs_language = df[condition & df.finalized_language.isna()]
+
+    # If there are any such rows, update the 'finalized_language' for those rows
+    if len(needs_language) > 0:
+        df.loc[condition, 'finalized_language'] = new_value
+
+def use_set_search_cleaning(search_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Cleans the search queries data using the SET search cleaning method.
+
     :param search_df: The search queries data for repos
-    :type search_df: pandas.DataFrame
-    :param join_field: The field to join the search queries data to the repo data
-    :type join_field: str
-    :return: The search queries data with the languages cleaned"""
+    :return: The search queries data with the languages cleaned
+    """
     english_langs = 'en, ny, ha, ig, lb, mg, sm, sn, st, tl, yo'
     english_langs = english_langs.split(', ')
-    search_df.loc[(search_df.detected_language.isin(
-        english_langs)) & (search_df.finalized_language.isna()), 'finalized_language'] = search_df.detected_language
-    search_df.loc[(search_df.natural_language == search_df.detected_language) & (search_df.finalized_language.isna()),
-                  'finalized_language'] = search_df.detected_language
-    needs_language = search_df[(search_df.detected_language.str.contains('zh', na=False)) & (search_df.natural_language == 'zh') & (search_df.finalized_language.isna())]
-    if len(needs_language) > 0:
-        search_df.loc[(search_df.detected_language.str.contains('zh', na=False)) & (search_df.natural_language == 'zh'), 'finalized_language'] = search_df.loc[(search_df.detected_language.str.contains('zh', na=False)) & (search_df.natural_language == 'zh'), 'detected_language']
-    needs_language =  search_df[(search_df.natural_language.str.contains('fr')) & (search_df.detected_language.str.contains('fr')) & (search_df.finalized_language.isna())]
-    if len(needs_language) > 0:
-        search_df.loc[(search_df.natural_language.str.contains('fr')) & (search_df.detected_language.str.contains('fr')), 'finalized_language'] = 'fr'
-    needs_language = search_df[(search_df.natural_language == 'xh, zu') & (search_df.finalized_language.isna())]
-    if len(needs_language) > 0:
-        search_df.loc[(search_df.natural_language == 'xh, zu') & (search_df.finalized_language.isna()), 'finalized_language'] = search_df.loc[(search_df.natural_language == 'xh, zu') & (search_df.detected_language.notna()), 'detected_language']
-    search_df.loc[(search_df.finalized_language.isna()) & (
-        search_df.detected_language_confidence < 0.5), 'finalized_language'] = None
-    if join_field == 'full_name':
 
-        search_df.loc[(search_df.finalized_language.isna()) & (
-        search_df.description.str.len() < 30), 'finalized_language'] = None
-        search_df.loc[(search_df.detected_language.isna()) & (
-            search_df.description.isna()) & (search_df.finalized_language.isna()), 'finalized_language'] = None
-        search_df.loc[(search_df.detected_language.isna()) & (
-            search_df.description.isna()) & (search_df['size'] < 1) & (search_df.finalized_language.isna()), 'keep_resource'] = False
-    if join_field == 'login':
-        search_df.loc[(search_df.finalized_language.isna()) & (
-            search_df.bio.str.len() < 30), 'finalized_language'] = None
-        search_df.loc[(search_df.detected_language.isna()) & (
-            search_df.bio.isna() & (search_df.finalized_language.isna())), 'finalized_language'] = None
+    update_finalized_language(search_df, search_df.detected_language.isin(english_langs), search_df.detected_language)
+    update_finalized_language(search_df, search_df.natural_language == search_df.detected_language, search_df.detected_language)
+    update_finalized_language(search_df, (search_df.detected_language.str.contains('zh', na=False)) & (search_df.natural_language == 'zh'), search_df.detected_language)
+    update_finalized_language(search_df, (search_df.natural_language.str.contains('fr')) & (search_df.detected_language.str.contains('fr')), 'fr')
+    update_finalized_language(search_df, search_df.natural_language == 'xh, zu', search_df.detected_language)
     return search_df
 
-def clean_search_queries_data(search_df: object, join_field: str, search_type: str) -> object:
-    """Clean the search queries data and try to determine as much as possible the exact language using automated language detection and natural language processing.
-    :param search_df: The search queries data
-    :type search_df: pandas.DataFrame
+def handle_join_field(search_df: pd.DataFrame, join_field: str, field: str) -> pd.DataFrame:
+    """
+    Handles the join field for the search queries data.
+
+    :param search_df: The search queries data for repos
     :param join_field: The field to join the search queries data to the repo data
-    :type join_field: str
+    :param field: The field to use for the join
+    :return: The search queries data with the join field handled
+    """
+    search_df.loc[(search_df.finalized_language.isna()) & (search_df[field].str.len() < 30), 'finalized_language'] = None
+    search_df.loc[(search_df.detected_language.isna()) & (search_df[field].isna() & (search_df.finalized_language.isna())), 'finalized_language'] = None
+    if join_field == 'full_name':
+        search_df.loc[(search_df.detected_language.isna()) & (search_df.description.isna()) & (search_df['size'] < 1) & (search_df.finalized_language.isna()), 'keep_resource'] = False
+    return search_df
+
+def clean_languages(search_df: pd.DataFrame, join_field: str, grouped_translated_terms_output_path: str, use_defined_search_cleaning: bool=True) -> pd.DataFrame:
+    """
+    Cleans the languages for the search queries data.
+
+    :param search_df: The search queries data for repos
+    :param join_field: The field to join the search queries data to the repo data
+    :return: The search queries data with the languages cleaned"""
+    if use_defined_search_cleaning:
+        search_df = use_set_search_cleaning(search_df)
+    else:
+        # check if columns need renaming
+        columns_to_rename = ['language_code', 'term', 'term_source']
+        grouped_translated_terms_df = read_csv_file(grouped_translated_terms_output_path)
+        if set(columns_to_rename).issubset(grouped_translated_terms_df.columns) == False:
+            grouped_translated_terms_df = grouped_translated_terms_df.rename(columns={'language_code': 'natural_language', 'term': 'search_term', 'term_source': 'search_term_source'})
+        contains_multiple_languages = grouped_translated_terms_df[grouped_translated_terms_df.search_term.str.contains(',', na=False)]
+        if len(contains_multiple_languages) > 0:
+            for _, row in contains_multiple_languages.iterrows():
+                search_df = update_finalized_language(search_df, (search_df['natural_language'] == row['natural_language']) & (search_df.search_term == row.search_term), row.natural_language)
+
+    search_df.loc[(search_df.finalized_language.isna()) & (search_df.detected_language_confidence < 0.5), 'finalized_language'] = None
+    if join_field == 'full_name':
+        search_df = handle_join_field(search_df, join_field, 'description')
+    if join_field == 'login':
+        search_df = handle_join_field(search_df, join_field, 'bio')
+    return search_df
+
+def clean_search_queries_data(search_df: object, join_field: str, search_type: str, is_repo: bool, grouped_translated_terms_output_path: str, use_set_search_cleaning: bool) -> object:
+    """
+    Cleans the search queries data and tries to determine as much as possible the exact language using automated language detection and natural language processing.
+
+    :param search_df: The search queries data
+    :param join_field: The field to join the search queries data to the repo data
     :param search_type: The type of search queries data
-    :type search_type: str
+    :param is_repo: Whether the search queries data is for repos or users
+    :param grouped_translated_terms_output_path: The path to the grouped translated terms data
+    :param use_set_search_cleaning: Whether to use the SET search cleaning method
     :return: The cleaned search queries data
-    :rtype: pandas.DataFrame"""
-    
+    """
     search_df = search_df.drop_duplicates(
         subset=[join_field, 'cleaned_search_query'])
     
@@ -84,7 +131,6 @@ def clean_search_queries_data(search_df: object, join_field: str, search_type: s
         search_df['keep_resource'] = True
     else:
         search_df.loc[search_df.keep_resource == 'None'] = None
-    
 
     if 'finalized_language' not in search_df.columns:
         search_df['finalized_language'] = None
@@ -92,16 +138,16 @@ def clean_search_queries_data(search_df: object, join_field: str, search_type: s
         search_df.loc[search_df.finalized_language == 'None'] = None
     
     if 'detected_language' not in search_df.columns:
-        search_df = get_languages(search_df, search_type)
-        search_df = clean_languages(search_df, join_field)
+        search_df = get_languages(search_df, search_type, is_repo)
+        search_df = clean_languages(search_df, join_field, grouped_translated_terms_output_path, use_set_search_cleaning)
     else:
         subset_search_df = search_df[(search_df.detected_language.isna()) & (search_df.finalized_language.isna())]
         existing_search_df = search_df[(search_df.detected_language.notna()) & (search_df.finalized_language.notna())]
         if len(subset_search_df) > 0:
-            subset_search_df = get_languages(subset_search_df, search_type)
+            subset_search_df = get_languages(subset_search_df, search_type, is_repo)
 
         search_df = pd.concat([existing_search_df, subset_search_df])
-        search_df = clean_languages(search_df, join_field)
+        search_df = clean_languages(search_df, join_field, grouped_translated_terms_output_path, use_set_search_cleaning)
     return search_df
 
 def fill_missing_language_data(rows: pd.DataFrame, is_repo: bool) -> pd.DataFrame:

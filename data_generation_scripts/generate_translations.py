@@ -26,6 +26,32 @@ credentials = service_account.Credentials.from_service_account_file(
 
 translate_client = translate.Client(credentials=credentials)
 
+def check_detect_language(row: pd.Series, is_repo:bool=False) -> pd.Series:
+    """
+    Checks the detected language of a row of text using Google Cloud Translate API
+
+    Parameters
+    ----------
+    row : pd.Series
+        A row of a dataframe with a text column
+    is_repo : bool
+        A boolean indicating whether the text is a repo description or a bio
+    Returns a series with the detected language and confidence score
+    """
+    text = row.description if is_repo else row.bio
+    if pd.notna(text) and len(text) > 1:  # Additional check if text is not NaN
+        try:
+            result = translate_client.detect_language(text)
+            row['detected_language'] = result['language']
+            row['detected_language_confidence'] = result['confidence']
+        except:
+            row['detected_language'] = None
+            row['detected_language_confidence'] = None
+    else:
+        row['detected_language'] = None
+        row['detected_language_confidence'] = None
+    return row
+
 def get_directionality(directionality_path: str) -> pd.DataFrame:
     """
     Function to get language directionality from Wikimedia
