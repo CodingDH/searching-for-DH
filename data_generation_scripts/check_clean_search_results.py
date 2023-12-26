@@ -151,45 +151,99 @@ def clean_search_queries_data(search_df: object, join_field: str, search_type: s
     return search_df
 
 def fill_missing_language_data(rows: pd.DataFrame, is_repo: bool) -> pd.DataFrame:
-    """Fill in the missing language data for the search queries data.
+    """
+    Fills in the missing language data for the search queries data. 
+
     :param rows: The search queries data
-    :type rows: pandas.DataFrame
     :param is_repo: Whether the search queries data is for repos or users
-    :type is_repo: bool
-    :return: The search queries data with the missing language data filled in"""
+    :return: The search queries data with the missing language data filled in
+    """
+    console = Console()
+
     if len(rows[rows.finalized_language.notna()]) == 0:
         entity_type = 'Repo' if is_repo else 'User'
         field = 'full_name' if is_repo else 'login'
-        print(f"No finalized language {len(rows)}, {rows.finalized_language.unique()}, {entity_type} {rows[rows[field].notna()][field].unique()[0]}") 
-    detected_language = rows[rows.detected_language.notnull()].detected_language.unique()
-    rows.detected_language = detected_language[0] if len(detected_language) > 0 else None
-    detected_language_confidence = rows[rows.detected_language_confidence.notnull()].detected_language_confidence.unique()
-    if len(detected_language_confidence) > 1:
-        detected_language_confidence = [rows[rows.detected_language_confidence.notnull()].detected_language_confidence.max()]
-    rows.detected_language_confidence = detected_language_confidence[0] if len(detected_language_confidence) > 0 else None
-    finalized_language = rows[rows.finalized_language.notna()].finalized_language.unique()
-    if len(finalized_language) > 1:
-        print(finalized_language)
-        finalized_language = [lang for lang in finalized_language if lang != None]
-        print(finalized_language)
-    rows.finalized_language = finalized_language[0] if len(finalized_language) > 0 else None
+        console.print(f"No finalized language {len(rows)}, {rows.finalized_language.unique()}, {entity_type} {rows[rows[field].notna()][field].unique()[0]}") 
+
+    detected_languages = rows[rows.detected_language.notnull()].detected_language.unique()
+    if len(detected_languages) > 0:
+        for i, language in enumerate(detected_languages, start=1):
+            console.print(f"{i}: {language}")
+        selected_number = console.input("If correct language, press enter. Else please enter the number of the detected language: ")
+        if selected_number:
+            selected_number = int(selected_number)
+            if 1 <= selected_number <= len(detected_languages):
+                selected_language = detected_languages[selected_number - 1]
+                rows.detected_language = selected_language
+                rows.detected_language_confidence = rows[rows.detected_language == selected_language].detected_language_confidence.max()
+            else:
+                rows.detected_language = detected_languages[0]
+                rows.detected_language_confidence = rows[rows.detected_language == detected_languages[0]].detected_language_confidence.max()
+    else:
+        rows.detected_language = None
+        rows.detected_language_confidence = None
+
+    finalized_languages = rows[rows.finalized_language.notna()].finalized_language.unique()
+    if len(finalized_languages) > 1:
+        # Display each language with a number
+        for i, language in enumerate(finalized_languages, start=1):
+            console.print(f"{i}: {language}")
+
+        # Ask the user to enter the number of the language
+        selected_number = console.input("If correct language, press enter. Else please enter the number of the finalized language: ")
+
+        # If the user entered a number, update the finalized language
+        if selected_number:
+            selected_number = int(selected_number)
+            if 1 <= selected_number <= len(finalized_languages):
+                selected_language = finalized_languages[selected_number - 1]
+                rows.finalized_language = selected_language
+            else:
+                rows.finalized_language = finalized_language[0] if len(finalized_language) > 0 else None
+    else:
+        rows.finalized_language = None
+
     keep_resource = rows[rows.keep_resource.notna()].keep_resource.unique()
     rows.keep_resource = keep_resource[0] if len(keep_resource) > 0 else None
-    if (len(detected_language) > 1) | (len(detected_language_confidence) > 1) | (len(finalized_language) > 1) | (len(keep_resource) > 1):
-        entity_type = 'Repo' if is_repo else 'User'
-        field = 'full_name' if is_repo else 'login'
-        unique_id = rows[rows[field].notna()][field].unique()[0]
-        print(f"{entity_type} {unique_id}: Detected: {len(detected_language)}, Confidence: {detected_language_confidence}, Finalized: {len(finalized_language)}, Keep: {len(keep_resource)}")
  
     return rows
 
+def fix_queries(df: pd.DataFrame, query: str, search_term_source: str, id_field: str) -> pd.DataFrame:
+    """
+    Fixes the queries in a DataFrame.
+
+    :param df: The DataFrame to fix
+    :param query: The query to look for
+    :param search_term_source: The search term source to look for
+    :param id_field: The ID field to use ('full_name' for repos, 'login' for users)
+    :return: The DataFrame with the queries fixed
+    """
+    fix_queries = df[(df.cleaned_search_query.str.contains(query)) & (df.search_term_source == search_term_source)]
+    if len(fix_queries) > 0:
+        replace_queries = df[(df[id_field].isin(fix_queries[id_field])) & (df.search_term_source == search_term_source)][[id_field, 'search_query']]
+        df.loc[df[id_field].isin(fix_queries[id_field]), 'cleaned_search_query'] = df.loc[df[id_field].isin(fix_queries[id_field]), id_field].map(replace_queries.set_index(id_field).to_dict()['search_query'])
+    return df
+
 def fix_results(search_queries_repo_df: pd.DataFrame, search_queries_user_df: pd.DataFrame) -> pd.DataFrame:
-    """Fix the results of the search queries to ensure that the results are correct.
+    """
+    Fixes the results of the search queries to ensure that the results are correct.
+
     :param search_queries_repo_df: The search queries data for repos
-    :type search_queries_repo_df: pandas.DataFrame
     :param search_queries_user_df: The search queries data for users
-    :type search_queries_user_df: pandas.DataFrame
-    :return: The fixed search queries data"""
+    :return: The fixed search queries data
+    """
+    search_queries_repo_df = fix_queries(search_queries_repo_df, 'q="Humanities"', "Digital Humanities", 'full_name')
+    search_queries_user_df = fix_queries(search_queries_user_df, 'q="Humanities"', "Digital Humanities", 'login')
+    return search_queries_repo_df, search_queries_user_df
+
+def fix_results(search_queries_repo_df: pd.DataFrame, search_queries_user_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Fixes the results of the search queries to ensure that the results are correct.
+
+    :param search_queries_repo_df: The search queries data for repos
+    :param search_queries_user_df: The search queries data for users
+    :return: The fixed search queries data
+    """
 
     fix_repo_queries = search_queries_repo_df[(search_queries_repo_df.cleaned_search_query.str.contains('q="Humanities"')) & (search_queries_repo_df.search_term_source == "Digital Humanities")]
     fix_user_queries = search_queries_user_df[(search_queries_user_df.cleaned_search_query.str.contains('q="Humanities"')) & (search_queries_user_df.search_term_source == "Digital Humanities")]
