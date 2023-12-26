@@ -1,24 +1,29 @@
+# Standard library imports
+import os
 import re
+import shutil
 import time
+import warnings
+from datetime import datetime
+from typing import List, Optional, Union
+
+# Related third-party imports
+import altair as alt
+import apikey
+import numpy as np
 import pandas as pd
 import requests
-import apikey
-import os
-import shutil
-from tqdm import tqdm
-from datetime import datetime
-import altair as alt
-import warnings
-warnings.filterwarnings('ignore')
-import vl_convert as vlc
-from typing import Optional, List, Any
-import numpy as np
 from rich import print
 from rich.console import Console
-from typing import List, Union, Dict, Any
-from requests.models import Response
-import altair as alt
+from tqdm import tqdm
 
+# Local application/library specific imports
+import vl_convert as vlc
+
+# Filter warnings
+warnings.filterwarnings('ignore')
+
+# Load auth token
 auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
 
 auth_headers = {'Authorization': f'token {auth_token}','User-Agent': 'request'}
@@ -576,6 +581,84 @@ def combined_updated_entities(entity_output_path: str, updated_entity_output_pat
                 os.remove(updated_entity_output_path)
         if return_df:
             return combined_entities_df
+        
+def get_missing_entries(df: pd.DataFrame, older_df: pd.DataFrame, subset_fields: List) -> pd.DataFrame:
+    """
+    Checks for missing entries in a dataframe
+
+    :param df: Current dataframe
+    :param older_df: Older existing dataframe
+    :param subset_fields: List of columns to subset
+    :return: Missing values dataframe
+    """
+    # Check for missing entries in a dataframe
+    merged_df = pd.merge(df[subset_fields], older_df[subset_fields], on=subset_fields, how='outer', indicator=True)
+    # Subset missing values
+    missing_values = merged_df[merged_df._merge == 'right_only']
+    double_check = missing_values[subset_fields]
+    combined_condition = np.ones(len(older_df), dtype=bool)
+    for field in subset_fields:
+        combined_condition = combined_condition & older_df[field].isin(double_check[field])
+    older_df['double_check'] = np.where(combined_condition, 1, 0)
+    final_missing_values = older_df[(older_df.double_check == 1) & (older_df[subset_fields[0]].isin(double_check[subset_fields[0]]))]
+    if len(final_missing_values) > 0:
+        final_missing_values = final_missing_values.drop(columns=['double_check'])
+        return final_missing_values
+    else:
+        return pd.DataFrame()
+
+def check_for_joins_in_older_queries(join_file_path: str, join_files_df: pd.DataFrame, join_unique_field: str, filter_fields: List, subset_terms: Optional[List]=[], is_large: bool=False) -> pd.DataFrame:
+    """
+    Checks if joins from GitHub API exist in older queries and add them to our most recent version of the file
+
+    :param join_file_path: Path to join file
+    :param join_files_df: Current join dataframe
+    :param join_unique_field: Unique field to join on
+    :param filter_fields: Fields to filter on
+    :param subset_terms: Optional subset terms to filter on
+    :param is_large: Boolean to check if file is large or not
+    :return: Final joined dataframe
+    """
+    # Needs to check if older repos exist and then find their values in older join_files_df
+    join_type = join_file_path.split("/")[-1].split("_dataset")[0]
+
+    older_join_file_path = join_file_path.replace(f"{data_directory_path}/", f"{data_directory_path}/older_files/")
+    older_join_file_dir = os.path.dirname(older_join_file_path) + "/"
+
+    older_join_df = read_combine_files(dir_path=older_join_file_dir, check_all_dirs=True, file_path_contains=join_type, large_files=is_large) 
+    
+    # entity_type = "" if "search" in join_file_path else "repo" if "repo" in join_file_path else "user"
+    entity_type = join_file_path.split("/")[-1].split("_")[0]
+
+    if "comments" in join_file_path:
+        entity_type = "repo"
+
+    if "search" in join_file_path:
+        entity_type = ""
+
+    if "search" in join_file_path:
+        join_files_df = join_files_df[join_files_df.search_term_source.isin(subset_terms)]
+        older_join_df = older_join_df[older_join_df.search_term_source.isin(subset_terms)]
+
+    if len(older_join_df) > 0:
+        if join_unique_field in older_join_df.columns:
+            older_join_df = older_join_df[older_join_df[join_unique_field].notna()]
+            
+            combined_join_df = pd.concat([join_files_df, older_join_df])
+            time_field = 'search_query_time' if 'search_query' in join_unique_field else f'{entity_type}_query_time'
+            cleaned_field = 'cleaned_search_query_time' if 'search_query' in join_unique_field else f'cleaned_{entity_type}_query_time'
+            combined_join_df[cleaned_field] = None
+            combined_join_df.loc[combined_join_df[time_field].isna(), cleaned_field] = '2022-10-10'
+            combined_join_df[cleaned_field] = pd.to_datetime(combined_join_df[time_field], errors='coerce')
+            combined_join_df = combined_join_df.sort_values(by=[cleaned_field]).drop_duplicates(subset=filter_fields, keep='first').drop(columns=[cleaned_field])
+
+            missing_values = get_missing_entries(join_files_df, older_join_df, filter_fields)
+
+            if len(missing_values) > 0:
+                join_files_df = pd.concat([join_files_df, missing_values])
+                # join_files_df.to_csv(join_file_path, index=False)
+
+    return join_files_df
 
 def get_core_users_repos(combine_files: bool =True) -> Union[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
