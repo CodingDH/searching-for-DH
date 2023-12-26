@@ -543,6 +543,40 @@ def check_add_new_entities(potential_new_entities_df: pd.DataFrame, output_path:
         combined_df = get_entity_df(output_path)
         return combined_df
 
+def combined_updated_entities(entity_output_path: str, updated_entity_output_path: str, entity_column: str, query_time_column: str, overwrite_existing_temp_files: bool, return_df: bool, is_large: bool) -> Optional[pd.DataFrame]:
+    """
+    Combines updated entities and existing entities. Removes duplicates and checks for entities in older queries.
+
+    :param entity_output_path: Path to entity file
+    :param updated_entity_output_path: Path to updated entity file
+    :param entity_column: Entity column
+    :param query_time_column: Query time column
+    :param overwrite_existing_temp_files: Boolean indicating whether to overwrite existing temporary files. Defaults to True.
+    :param return_df: Boolean to return the DataFrame or not.
+    :param is_large: Boolean indicating whether to handle large files differently. If True, only metadata is collected initially. Defaults to True.
+    :return: Combined entity dataframe
+    """
+    # Combine updated entities and existing entities
+    if (os.path.exists(entity_output_path)) and (os.path.exists(updated_entity_output_path)):
+        # Read in files
+        entity_df = read_csv_file(entity_output_path)
+        # Check if updated entity file exists
+        check_if_older_file_exists(entity_output_path)
+        updated_entity_df = read_csv_file(updated_entity_output_path)
+        existing_entities_df = entity_df[~entity_df[entity_column].isin(updated_entity_df[entity_column])]
+        combined_entities_df = pd.concat([updated_entity_df, existing_entities_df])
+        # Sort by query time and drop duplicates
+        combined_entities_df = combined_entities_df[updated_entity_df.columns.tolist()]
+        combined_entities_df = combined_entities_df.fillna(np.nan).replace([np.nan], [None])
+        combined_entities_df = combined_entities_df.sort_values(by=[query_time_column]).drop_duplicates(subset=[entity_column], keep='first')
+        cleaned_entities_df = check_for_entity_in_older_queries(entity_output_path, combined_entities_df, is_large)
+        if overwrite_existing_temp_files:
+            double_check = check_file_created(entity_output_path, cleaned_entities_df)
+            if double_check:
+                os.remove(updated_entity_output_path)
+        if return_df:
+            return combined_entities_df
+
 def get_core_users_repos(combine_files: bool =True) -> Union[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
     Gets core users, repos, and orgs.
