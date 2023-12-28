@@ -85,19 +85,20 @@ def handle_join_field(search_df: pd.DataFrame, join_field: str, field: str) -> p
         search_df.loc[(search_df.detected_language.isna()) & (search_df.description.isna()) & (search_df['size'] < 1) & (search_df.finalized_language.isna()), 'keep_resource'] = False
     return search_df
 
-def clean_languages(search_df: pd.DataFrame, join_field: str, grouped_translated_terms_output_path: str, use_defined_search_cleaning: bool=True) -> pd.DataFrame:
+def clean_languages(search_df: pd.DataFrame, join_field: str, grouped_translated_terms_df: pd.DataFrame, use_defined_search_cleaning: bool=True) -> pd.DataFrame:
     """
     Cleans the languages for the search queries data.
 
     :param search_df: The search queries data for repos
     :param join_field: The field to join the search queries data to the repo data
+    :param grouped_translated_terms_df: Grouped translated terms dataframe
+    :param use_defined_search_cleaning: Whether to use the SET search cleaning method
     :return: The search queries data with the languages cleaned"""
     if use_defined_search_cleaning:
         search_df = use_set_search_cleaning(search_df)
     else:
         # check if columns need renaming
         columns_to_rename = ['language_code', 'term', 'term_source']
-        grouped_translated_terms_df = read_csv_file(grouped_translated_terms_output_path)
         if set(columns_to_rename).issubset(grouped_translated_terms_df.columns) == False:
             grouped_translated_terms_df = grouped_translated_terms_df.rename(columns={'language_code': 'natural_language', 'term': 'search_term', 'term_source': 'search_term_source'})
         contains_multiple_languages = grouped_translated_terms_df[grouped_translated_terms_df.search_term.str.contains(',', na=False)]
@@ -112,7 +113,7 @@ def clean_languages(search_df: pd.DataFrame, join_field: str, grouped_translated
         search_df = handle_join_field(search_df, join_field, 'bio')
     return search_df
 
-def clean_search_queries_data(search_df: object, join_field: str, search_type: str, is_repo: bool, grouped_translated_terms_output_path: str, use_set_search_cleaning: bool) -> object:
+def clean_search_queries_data(search_df: object, join_field: str, search_type: str, is_repo: bool, grouped_translated_terms_df: pd.DataFrame, use_set_search_cleaning: bool) -> object:
     """
     Cleans the search queries data and tries to determine as much as possible the exact language using automated language detection and natural language processing.
 
@@ -120,7 +121,7 @@ def clean_search_queries_data(search_df: object, join_field: str, search_type: s
     :param join_field: The field to join the search queries data to the repo data
     :param search_type: The type of search queries data
     :param is_repo: Whether the search queries data is for repos or users
-    :param grouped_translated_terms_output_path: The path to the grouped translated terms data
+    :param grouped_translated_terms_df: Grouped translated terms dataframe
     :param use_set_search_cleaning: Whether to use the SET search cleaning method
     :return: The cleaned search queries data
     """
@@ -139,7 +140,7 @@ def clean_search_queries_data(search_df: object, join_field: str, search_type: s
     
     if 'detected_language' not in search_df.columns:
         search_df = get_languages(search_df, search_type, is_repo)
-        search_df = clean_languages(search_df, join_field, grouped_translated_terms_output_path, use_set_search_cleaning)
+        search_df = clean_languages(search_df, join_field, grouped_translated_terms_df, use_set_search_cleaning)
     else:
         subset_search_df = search_df[(search_df.detected_language.isna()) & (search_df.finalized_language.isna())]
         existing_search_df = search_df[(search_df.detected_language.notna()) & (search_df.finalized_language.notna())]
@@ -147,7 +148,7 @@ def clean_search_queries_data(search_df: object, join_field: str, search_type: s
             subset_search_df = get_languages(subset_search_df, search_type, is_repo)
 
         search_df = pd.concat([existing_search_df, subset_search_df])
-        search_df = clean_languages(search_df, join_field, grouped_translated_terms_output_path, use_set_search_cleaning)
+        search_df = clean_languages(search_df, join_field, grouped_translated_terms_df, use_set_search_cleaning)
     return search_df
 
 def fill_missing_language_data(rows: pd.DataFrame, is_repo: bool) -> pd.DataFrame:
@@ -224,7 +225,7 @@ def fix_queries(df: pd.DataFrame, query: str, search_term_source: str, id_field:
         df.loc[df[id_field].isin(fix_queries[id_field]), 'cleaned_search_query'] = df.loc[df[id_field].isin(fix_queries[id_field]), id_field].map(replace_queries.set_index(id_field).to_dict()['search_query'])
     return df
 
-def fix_results(search_queries_repo_df: pd.DataFrame, search_queries_user_df: pd.DataFrame) -> pd.DataFrame:
+def fix_results(search_queries_repo_df: pd.DataFrame, search_queries_user_df: pd.DataFrame, grouped_translated_terms_df: pd.DataFrame) -> pd.DataFrame:
     """
     Fixes the results of the search queries to ensure that the results are correct.
 
@@ -232,36 +233,19 @@ def fix_results(search_queries_repo_df: pd.DataFrame, search_queries_user_df: pd
     :param search_queries_user_df: The search queries data for users
     :return: The fixed search queries data
     """
+    # Still need to fix this so it isn't hardcoding search_query and search_term_source, but is instead checking for any disconnect between search_term_source, search_term, and search_query
     search_queries_repo_df = fix_queries(search_queries_repo_df, 'q="Humanities"', "Digital Humanities", 'full_name')
     search_queries_user_df = fix_queries(search_queries_user_df, 'q="Humanities"', "Digital Humanities", 'login')
     return search_queries_repo_df, search_queries_user_df
 
-def fix_results(search_queries_repo_df: pd.DataFrame, search_queries_user_df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Fixes the results of the search queries to ensure that the results are correct.
 
-    :param search_queries_repo_df: The search queries data for repos
-    :param search_queries_user_df: The search queries data for users
-    :return: The fixed search queries data
-    """
-
-    fix_repo_queries = search_queries_repo_df[(search_queries_repo_df.cleaned_search_query.str.contains('q="Humanities"')) & (search_queries_repo_df.search_term_source == "Digital Humanities")]
-    fix_user_queries = search_queries_user_df[(search_queries_user_df.cleaned_search_query.str.contains('q="Humanities"')) & (search_queries_user_df.search_term_source == "Digital Humanities")]
-    if len(fix_repo_queries) > 0:
-        replace_repo_queries = search_queries_repo_df[(search_queries_repo_df.full_name.isin(fix_repo_queries.full_name)) & (search_queries_repo_df.search_term_source == "Digital Humanities")][['full_name', 'search_query']]
-        search_queries_repo_df.loc[search_queries_repo_df.full_name.isin(fix_repo_queries.full_name), 'cleaned_search_query'] = search_queries_repo_df.loc[search_queries_repo_df.full_name.isin(fix_repo_queries.full_name), 'full_name'].map(replace_repo_queries.set_index('full_name').to_dict()['search_query'])
-        
-    if len(fix_user_queries) > 0:
-        replace_user_queries = search_queries_user_df[(search_queries_user_df.full_name.isin(fix_user_queries.login)) & (search_queries_user_df.search_term_source == "Digital Humanities")][['login', 'search_query']]
-        search_queries_user_df.loc[search_queries_user_df.login.isin(fix_user_queries.login), 'cleaned_search_query'] = search_queries_user_df.loc[search_queries_user_df.login.isin(fix_user_queries.login), 'login'].map(replace_user_queries.set_index('login').to_dict()['search_query'])
-    return search_queries_repo_df, search_queries_user_df
-
-def verify_results_exist(initial_search_queries_repo_file_path: str, exisiting_search_queries_repo_file_path: str, initial_search_queries_user_file_path: str, existing_search_queries_user_file_path: str, subset_terms: List) -> pd.DataFrame:
+def verify_results_exist(initial_search_queries_repo_file_path: str, exisiting_search_queries_repo_file_path: str, initial_search_queries_user_file_path: str, existing_search_queries_user_file_path: str, subset_terms: List, grouped_translated_terms_output_path: str) -> pd.DataFrame:
     repo_join_output_path = "search_queries_repo_join_dataset.csv"
     user_join_output_path = "search_queries_user_join_dataset.csv"
     join_unique_field = 'search_query'
     repo_filter_fields = ['full_name', 'cleaned_search_query']
     user_filter_fields = ['login', 'cleaned_search_query']
+    grouped_translated_terms_df = read_csv_file(grouped_translated_terms_output_path)
     if (os.path.exists(existing_search_queries_user_file_path)) and (os.path.exists(exisiting_search_queries_repo_file_path)):
         search_queries_user_df = pd.read_csv(existing_search_queries_user_file_path)
         search_queries_repo_df = pd.read_csv(exisiting_search_queries_repo_file_path)
