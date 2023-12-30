@@ -201,7 +201,7 @@ def generate_translated_terms_for_dh_others(directory_path: str, directionality_
 if __name__ == '__main__':
     directory_path = "../../datasets" # Change this to the path to your datasets directory
     directionality_path = f"{directory_path}/metadata_files/iso_639_choices_directionality_wikimedia.csv"
-    target_terms: list = ["Humanities", "Public History", "Digital History", "Digital Cultural Heritage", "Cultural Analytics", "Computational Humanities"]
+    target_terms: list = ["Humanities", "Public History", "Digital History", "Digital Cultural Heritage", "Cultural Analytics", "Computational Humanities", "Computational Social Science"]
     rerun_code = True
     directionality_df = get_directionality(directionality_path)
     generate_translated_terms_for_dh_others(directory_path, directionality_df, target_terms, rerun_code)
