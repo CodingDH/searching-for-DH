@@ -414,36 +414,37 @@ def generate_initial_search_datasets(rates_df: pd.DataFrame, initial_repo_output
         os.makedirs(initial_user_output_path)
     
     final_terms = prepare_terms_and_directories(f'{data_directory_path}/derived_files/grouped_cleaned_translated_dh_terms.csv', f'{data_directory_path}/derived_files/threshold_search_errors.csv')
-    for _, row in final_terms.iterrows():
-        try:
-            # Update the search term to be displayed correctly
-            display_term = get_display(row.search_term) if row.directionality == 'rtl' else row.search_term
-            console.print(f"Getting repos with this term {display_term} in this language {row.natural_language}", style="bold blue")
+    print(final_terms)
+    # for _, row in final_terms.iterrows():
+    #     try:
+    #         # Update the search term to be displayed correctly
+    #         display_term = get_display(row.search_term) if row.directionality == 'rtl' else row.search_term
+    #         console.print(f"Getting repos with this term {display_term} in this language {row.natural_language}", style="bold blue")
             
-            search_query = row.search_term.replace(' ', '+')
-            search_query = '"' + search_query + '"'
-            source_type = row.search_term_source.lower().replace(' ', '_')
-            """First check if search term exists as a topic"""
-            search_for_topics(row, rates_df, initial_repo_output_path, search_query, source_type)
-            """Now search for repos that contain query string"""
-            search_for_repos(row, search_query, rates_df, initial_repo_output_path, source_type)
-            """Now search for users that contain query string"""
-            search_for_users(row, search_query, rates_df, initial_user_output_path, source_type)
-        except Exception as e:
-            console.print(f"Error with {row.search_term}: {e}", style="bold red")
-            log_error_to_csv(row.row_index, row.search_term, f'{data_directory_path}/derived_files/thershold_search_errors.csv')
-            continue
+    #         search_query = row.search_term.replace(' ', '+')
+    #         search_query = '"' + search_query + '"'
+    #         source_type = row.search_term_source.lower().replace(' ', '_')
+    #         """First check if search term exists as a topic"""
+    #         search_for_topics(row, rates_df, initial_repo_output_path, search_query, source_type)
+    #         """Now search for repos that contain query string"""
+    #         search_for_repos(row, search_query, rates_df, initial_repo_output_path, source_type)
+    #         """Now search for users that contain query string"""
+    #         search_for_users(row, search_query, rates_df, initial_user_output_path, source_type)
+    #     except Exception as e:
+    #         console.print(f"Error with {row.search_term}: {e}", style="bold red")
+    #         log_error_to_csv(row.row_index, row.search_term, f'{data_directory_path}/derived_files/thershold_search_errors.csv')
+    #         continue
 
-    # Combine the dataframes
-    repo_df, repo_join_df, user_df, user_join_df, org_df = combine_search_df(initial_repo_output_path, repo_output_path, repo_join_output_path, initial_user_output_path, user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files)
-    join_unique_field = 'search_query'
-    repo_filter_fields = ["full_name", "cleaned_search_query"]
-    user_filter_fields = ["login", "cleaned_search_query"]
-    repo_join_df["cleaned_search_query"] = repo_join_df['search_query'].str.replace('%22', '"').str.replace('"', '').str.replace('%3A', ':').str.split('&page').str[0]
-    user_join_df["cleaned_search_query"] = user_join_df['search_query'].str.replace('%22', '"').str.replace('"', '').str.replace('%3A', ':').str.split('&page').str[0]
-    repo_join_df = check_for_joins_in_older_queries(repo_join_output_path, repo_join_df, join_unique_field, repo_filter_fields)
-    user_join_df = check_for_joins_in_older_queries(user_join_output_path, user_join_df, join_unique_field, user_filter_fields)
-    return repo_df, repo_join_df, user_df, user_join_df, org_df
+    # # Combine the dataframes
+    # repo_df, repo_join_df, user_df, user_join_df, org_df = combine_search_df(initial_repo_output_path, repo_output_path, repo_join_output_path, initial_user_output_path, user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files)
+    # join_unique_field = 'search_query'
+    # repo_filter_fields = ["full_name", "cleaned_search_query"]
+    # user_filter_fields = ["login", "cleaned_search_query"]
+    # repo_join_df["cleaned_search_query"] = repo_join_df['search_query'].str.replace('%22', '"').str.replace('"', '').str.replace('%3A', ':').str.split('&page').str[0]
+    # user_join_df["cleaned_search_query"] = user_join_df['search_query'].str.replace('%22', '"').str.replace('"', '').str.replace('%3A', ':').str.split('&page').str[0]
+    # repo_join_df = check_for_joins_in_older_queries(repo_join_output_path, repo_join_df, join_unique_field, repo_filter_fields)
+    # user_join_df = check_for_joins_in_older_queries(user_join_output_path, user_join_df, join_unique_field, user_filter_fields)
+    # return repo_df, repo_join_df, user_df, user_join_df, org_df
 
 def get_initial_search_datasets(rates_df, initial_repo_output_path,  repo_output_path, repo_join_output_path, initial_user_output_path,  user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files, load_existing_data):
     """Gets the search repo data from Github API and stores it in a dataframe
