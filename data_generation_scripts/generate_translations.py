@@ -171,20 +171,20 @@ def generate_translated_terms_for_dh_others(data_directory_path: str, directiona
 
     Returns a dataframe with translated terms
     """
-    cleaned_dh_output_path = f"{data_directory_path}/derived_files/cleaned_translated_dh_terms.csv"
+    cleaned_terms_output_path = f"{data_directory_path}/derived_files/cleaned_translated_terms.csv"
 
-    grouped_dh_output_path = f"{data_directory_path}/derived_files/grouped_cleaned_translated_dh_terms.csv"
-    grouped_others_output_path = f"{data_directory_path}/derived_files/grouped_translated_others_terms.csv"
+    grouped_terms_output_path = f"{data_directory_path}/derived_files/grouped_cleaned_translated_terms.csv"
     # Load the existing datasets if they exist and rerun_code is False
-    if os.path.exists(cleaned_dh_output_path) and os.path.exists(grouped_dh_output_path) and rerun_code == False:
-        cleaned_dh = pd.read_csv(cleaned_dh_output_path)
-        grouped_dh_terms = pd.read_csv(grouped_dh_output_path)
+    if os.path.exists(cleaned_terms_output_path) and os.path.exists(grouped_terms_output_path) and rerun_code == False:
+        cleaned_terms_df = pd.read_csv(cleaned_terms_output_path)
+        grouped_terms_df = pd.read_csv(grouped_terms_output_path)
     else:
         # Load existing translations if they exist
-        if os.path.exists(cleaned_dh_output_path):
-            print("Loading existing cleaned DH terms")
-            cleaned_dh = pd.read_csv(cleaned_dh_output_path)
-            existing_target_terms = cleaned_dh.term_source.unique().tolist()
+        if os.path.exists(cleaned_terms_df):
+            print("Loading existing cleaned terms")
+            cleaned_terms_df = pd.read_csv(cleaned_terms_df)
+            existing_target_terms = cleaned_terms_df.term_source.unique().tolist()
+            # Handle Digital Humanities slightly differently because we generate the translations from existing files from other scholars
             dh_exists = ['Digital Humanities' in term for term in existing_target_terms]
             dh_exists = True if len(dh_exists) > 0 else False
             # Find any target terms
@@ -192,50 +192,42 @@ def generate_translated_terms_for_dh_others(data_directory_path: str, directiona
             print(f"Missing terms: {updated_target_terms}")
         else:
             # If no existing translations, all target terms are considered "missing"
-            cleaned_dh = pd.DataFrame()
+            cleaned_terms_df = pd.DataFrame()
             updated_target_terms = target_terms
             dh_exists = False
         print(f"Generating initial terms for {updated_target_terms}")
         # Generate initial terms for any updated_target_terms
         if len(updated_target_terms) > 0:
-            new_cleaned_dh = generate_initial_terms(updated_target_terms, data_directory_path, dh_exists)
-            if ('code' not in cleaned_dh.columns) and len(cleaned_dh) > 0:
-                cleaned_dh = cleaned_dh.rename(columns={'language': 'code'})
-            cleaned_dh = pd.concat([cleaned_dh, new_cleaned_dh])
+            new_cleaned_terms_df = generate_initial_terms(updated_target_terms, data_directory_path, dh_exists)
+            if ('code' not in cleaned_terms_df.columns) and len(cleaned_terms_df) > 0:
+                cleaned_terms_df = cleaned_terms_df.rename(columns={'language': 'code'})
+            cleaned_terms_df = pd.concat([cleaned_terms_df, new_cleaned_terms_df])
             # Save the cleaned terms
-            cleaned_dh.to_csv(f'{cleaned_dh_output_path}', index=False)
-        cleaned_dh = pd.read_csv(f'{cleaned_dh_output_path}')
+            cleaned_terms_df.to_csv(f'{cleaned_terms_output_path}', index=False)
+        cleaned_terms_df = pd.read_csv(f'{cleaned_terms_output_path}')
         # Subset directionality to LTR and RTL languages
         directionality_df = directionality_df[directionality_df.directionality.isin(['ltr', 'rtl'])]
 
         # Merge the directionality data with the cleaned terms
-        merged_lang_terms = pd.merge(directionality_df[['code', 'directionality', 'English language name', 'local language name']], cleaned_dh, on='code', how="outer")
-        merged_lang_terms = merged_lang_terms[merged_lang_terms.code != "see also Test languages"]
-        print(f"Our data now contains info for {merged_lang_terms[merged_lang_terms.term.notna()]['English language name'].nunique()} but we also are missing terms for the following number of languages {merged_lang_terms[merged_lang_terms.term.isna()]['English language name'].nunique()}")
+        merged_lang_terms_df = pd.merge(directionality_df[['code', 'directionality', 'English language name', 'local language name']], cleaned_terms_df, on='code', how="outer")
+        merged_lang_terms_df = merged_lang_terms_df[merged_lang_terms_df.code != "see also Test languages"]
+        
+        print(f"Our data now contains info for {merged_lang_terms_df[merged_lang_terms_df.term.notna()]['English language name'].nunique()} but we also are missing terms for the following number of languages {merged_lang_terms_df[merged_lang_terms_df.term.isna()]['English language name'].nunique()}")
 
-        # Subset to just Digital Humanities
-        subset_dh = merged_lang_terms[merged_lang_terms.term_source == 'Digital Humanities']
-        print(f"If we subset to just Digital Humanities to our data now contains info for {subset_dh[subset_dh.term.notna()]['English language name'].nunique()} but we also are missing terms for the following number of languages {subset_dh[subset_dh.term.isna()]['English language name'].nunique()}")
-        subset_dh.to_csv("test.csv", index=False)
-        grouped_dh_terms = subset_dh.groupby(['term_source','term']).agg({'code': ','.join, 'term': 'count', 'English language name': ', '.join }).reset_index(level=0)
-        grouped_dh_terms['final_term'] = grouped_dh_terms.index
-        grouped_dh_terms = grouped_dh_terms.reset_index(level=0, drop=True).sort_values(by='term', ascending=False)
+        grouped_terms_df = merged_lang_terms_df.groupby(['term_source','term']).agg({
+            'code': ','.join, 
+            'term': 'count', 
+            'English language name': ', '.join, 
+            'directionality': lambda x: ','.join(set(x))
+        }).reset_index(level=0)
+        grouped_terms_df = grouped_terms_df.rename(columns={'term': 'counts'})
+        grouped_terms_df['term'] = grouped_terms_df.index
+        grouped_terms_df = grouped_terms_df.reset_index(drop=True)
+        grouped_terms_df['directionality_counts'] = grouped_terms_df.directionality.str.split(',').str.len()
+        
 
-        grouped_dh_terms[grouped_dh_terms.code.str.contains(',')][[ 'English language name', 'final_term']].to_csv(f'{data_directory_path}/derived_files/dh_terms_with_multiple_codes.csv', index=False)
-        grouped_dh_terms.to_csv(f'{grouped_dh_output_path}', index=False)
-
-        # Subset to non-DH terms
-        subset_others = merged_lang_terms[merged_lang_terms.term_source != 'Digital Humanities']
-        print(f"If we subset to just non-Digital Humanities to our data now contains info for {subset_others[subset_others.term.notna()]['English language name'].nunique()} but we also are missing terms for the following number of languages {subset_others[subset_others.term.isna()]['English language name'].nunique()}")
-
-        grouped_others_terms = subset_others.groupby(['term_source','term']).agg({'code': ','.join, 'term': 'count', 'English language name': ', '.join }).reset_index(level=0)
-        grouped_others_terms['final_term'] = grouped_others_terms.index
-        grouped_others_terms = grouped_others_terms.reset_index(level=0, drop=True).sort_values(by='term', ascending=False)
-
-        grouped_others_terms[grouped_others_terms.code.str.contains(',')][[ 'English language name', 'final_term']].to_csv(f'{data_directory_path}/derived_files/others_terms_with_multiple_codes.csv', index=False)
-
-        grouped_others_terms.to_csv(f'{grouped_others_output_path}', index=False)
-    return cleaned_dh, grouped_dh_terms
+        grouped_terms_df.to_csv(f'{grouped_terms_output_path}', index=False)
+    return cleaned_terms_df, grouped_terms_df
 
 if __name__ == '__main__':
     data_directory_path = "../../datasets" # Change this to the path to your datasets directory
