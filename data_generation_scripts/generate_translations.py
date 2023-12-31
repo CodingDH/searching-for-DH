@@ -12,6 +12,8 @@ from bs4 import BeautifulSoup
 from google.cloud import translate_v2 as translate
 from google.oauth2 import service_account
 from tqdm import tqdm
+from rich import print
+from rich.console import Console
 
 # Local application/library specific imports
 import apikey
@@ -25,6 +27,8 @@ credentials = service_account.Credentials.from_service_account_file(
 )
 
 translate_client = translate.Client(credentials=credentials)
+
+console = Console()
 
 def check_detect_language(row: pd.Series, is_repo:bool=False) -> pd.Series:
     """
@@ -93,7 +97,7 @@ def get_translation(row: pd.Series) -> pd.Series:
             dh_term, target_language=target_language)
         row['translated_term'] = text_result['translatedText']
     except Exception as e:
-        print(f"Error translating {dh_term} in {target_language}: {e}")
+        console.print(f"Error translating {dh_term} in {target_language}: {e}", style="bold red")
         row['translated_term'] = None
     return row
 
@@ -180,22 +184,22 @@ def generate_translated_terms_for_dh_others(data_directory_path: str, directiona
         grouped_terms_df = pd.read_csv(grouped_terms_output_path)
     else:
         # Load existing translations if they exist
-        if os.path.exists(cleaned_terms_df):
-            print("Loading existing cleaned terms")
-            cleaned_terms_df = pd.read_csv(cleaned_terms_df)
+        if os.path.exists(cleaned_terms_output_path):
+            console.print("Loading existing cleaned terms", style="bold green")
+            cleaned_terms_df = pd.read_csv(cleaned_terms_output_path)
             existing_target_terms = cleaned_terms_df.term_source.unique().tolist()
             # Handle Digital Humanities slightly differently because we generate the translations from existing files from other scholars
             dh_exists = ['Digital Humanities' in term for term in existing_target_terms]
             dh_exists = True if len(dh_exists) > 0 else False
             # Find any target terms
             updated_target_terms = [term for term in target_terms if term not in existing_target_terms]
-            print(f"Missing terms: {updated_target_terms}")
+            console.print(f"Missing terms: {updated_target_terms}", style="bold red")
         else:
             # If no existing translations, all target terms are considered "missing"
             cleaned_terms_df = pd.DataFrame()
             updated_target_terms = target_terms
             dh_exists = False
-        print(f"Generating initial terms for {updated_target_terms}")
+        console.print(f"Generating initial terms for {updated_target_terms}", style="bold green")
         # Generate initial terms for any updated_target_terms
         if len(updated_target_terms) > 0:
             new_cleaned_terms_df = generate_initial_terms(updated_target_terms, data_directory_path, dh_exists)
@@ -211,8 +215,8 @@ def generate_translated_terms_for_dh_others(data_directory_path: str, directiona
         # Merge the directionality data with the cleaned terms
         merged_lang_terms_df = pd.merge(directionality_df[['code', 'directionality', 'English language name', 'local language name']], cleaned_terms_df, on='code', how="outer")
         merged_lang_terms_df = merged_lang_terms_df[merged_lang_terms_df.code != "see also Test languages"]
-        
-        print(f"Our data now contains info for {merged_lang_terms_df[merged_lang_terms_df.term.notna()]['English language name'].nunique()} but we also are missing terms for the following number of languages {merged_lang_terms_df[merged_lang_terms_df.term.isna()]['English language name'].nunique()}")
+
+        console.print(f"Our data now contains info for {merged_lang_terms_df[merged_lang_terms_df.term.notna()]['English language name'].nunique()} but we also are missing terms for the following number of languages {merged_lang_terms_df[merged_lang_terms_df.term.isna()]['English language name'].nunique()}", style="bold green")
 
         grouped_terms_df = merged_lang_terms_df.groupby(['term_source','term']).agg({
             'code': ','.join, 
@@ -224,8 +228,19 @@ def generate_translated_terms_for_dh_others(data_directory_path: str, directiona
         grouped_terms_df['term'] = grouped_terms_df.index
         grouped_terms_df = grouped_terms_df.reset_index(drop=True)
         grouped_terms_df['directionality_counts'] = grouped_terms_df.directionality.str.split(',').str.len()
+        needs_directional_specifications = grouped_terms_df[grouped_terms_df.directionality_counts > 1]
         
-
+        for index, row in needs_directional_specifications.iterrows():
+            console.print(f"Need to specify directionality for {row.term} in {row['English language name']}", style="bold blue")
+            languages = row['English language name'].split(', ')
+            for direction in ['ltr', 'rtl']:
+                console.print(f"Directionality: {direction}", style="bold green")
+                total_directionalities = directionality_df[(directionality_df['English language name'].isin(languages)) & (directionality_df.directionality == direction)]
+                console.print(f"Total languages with directionality {direction}: {len(total_directionalities)}", style="bold green")
+                console.print(f"Languages: {total_directionalities['English language name'].tolist()}", style="bold blue")
+            input_directionality = console.input("Enter directionality (ltr or rtl): ")
+            grouped_terms_df.loc[index, 'directionality'] = input_directionality
+        grouped_terms_df = grouped_terms_df.drop(columns=['directionality_counts'])
         grouped_terms_df.to_csv(f'{grouped_terms_output_path}', index=False)
     return cleaned_terms_df, grouped_terms_df
 
