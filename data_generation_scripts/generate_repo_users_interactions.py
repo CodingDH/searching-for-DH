@@ -6,7 +6,7 @@ from tqdm import tqdm
 import apikey
 import sys
 sys.path.append("..")
-from data_generation_scripts.utils import *
+from data_generation_scripts.general_utils import *
 from data_generation_scripts.generate_repo_metadata import get_counts
 import shutil
 

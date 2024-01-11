@@ -235,31 +235,35 @@ def combine_search_df(initial_repo_output_path: str, repo_output_path: str, repo
                             return_df, overwrite_existing_temp_files)
 
     # Return the processed DataFrames
-    return repo_df, repo_join_df, user_df, user_join_df, org_df
+    return repo_df, repo_join_df, user_df, user_join_df, org_df    
 
-def prepare_terms_and_directories(translated_terms_output_path: str, threshold_file_path: str) -> Tuple[pd.DataFrame, int]:
+def prepare_terms_and_directories(translated_terms_output_path: str, threshold_file_path: str, target_terms: List) -> Tuple[pd.DataFrame, int]:
     """
     Prepares the terms and directories necessary for use with the search API. This function processes 
     translated terms, storing them in a specified output path, and reads threshold values from a given 
     file if the code has previously errorer out, setting up the environment for subsequent API searches.
 
     :param translated_terms_output_path: String specifying the path to the file where translated terms are stored. 
-    :param threshold_file_path: String specifying the path to the file containing threshold values. 
+    :param threshold_file_path: String specifying the path to the file containing threshold values.
+    :param target_terms: List of terms to be searched in the API. Used in the `generate_translations.py` file. 
     :return: A tuple containing:
         1. DataFrame: Contains the processed and translated terms ready for API search.
         2. Integer: A threshold value read from the threshold file, used for filtering or other purposes in the API search.
     """
     # Load in the translated terms
-    cleaned_dh_terms = read_csv_file(translated_terms_output_path, encoding='utf-8-sig')
+    cleaned_terms = read_csv_file(translated_terms_output_path, encoding='utf-8-sig')
     # check if columns need renaming
     columns_to_rename = ['language_code', 'term', 'term_source']
-    if set(columns_to_rename).issubset(cleaned_dh_terms.columns) == False:
-        cleaned_dh_terms = cleaned_dh_terms.rename(columns={'language_code': 'natural_language', 'term': 'search_term', 'term_source': 'search_term_source'})
+    if set(columns_to_rename).issubset(cleaned_terms.columns) == False:
+        cleaned_terms = cleaned_terms.rename(columns={'language_code': 'natural_language', 'term': 'search_term', 'term_source': 'search_term_source'})
+    
+    cleaned_terms = cleaned_terms[cleaned_terms.search_term_source.isin(target_terms)]
+    cleaned_terms = cleaned_terms.reset_index(drop=True)
     # Subset the terms to only those that are RTL and update them to be displayed correctly
-    rtl = cleaned_dh_terms[cleaned_dh_terms.directionality == 'rtl']
+    rtl = cleaned_terms[cleaned_terms.directionality == 'rtl']
     rtl['search_term'] = rtl['search_term'].apply(lambda x: arabic_reshaper.reshape(x))
     # Concatenate the RTL and LTR terms
-    ltr = cleaned_dh_terms[cleaned_dh_terms.directionality == 'ltr']
+    ltr = cleaned_terms[cleaned_terms.directionality == 'ltr']
     final_terms = pd.concat([ltr, rtl])
     # Subset to just the terms that are in the threshold file
     if os.path.exists(threshold_file_path):
@@ -384,7 +388,7 @@ def search_for_users(row: pd.Series, search_query: str, rates_df: pd.DataFrame, 
             final_searched_output_path = initial_user_output_path + f'{source_type}/' + f'users_searched_{output_term}.csv'
             process_search_data(rates_df, search_users_query, final_searched_output_path, total_search_results, row)
 
-def generate_initial_search_datasets(rates_df: pd.DataFrame, initial_repo_output_path: str,  repo_output_path: str, repo_join_output_path: str, initial_user_output_path: str,  user_output_path: str, user_join_output_path: str, org_output_path: str, overwrite_existing_temp_files: bool) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def generate_initial_search_datasets(rates_df: pd.DataFrame, initial_repo_output_path: str,  repo_output_path: str, repo_join_output_path: str, initial_user_output_path: str,  user_output_path: str, user_join_output_path: str, org_output_path: str, overwrite_existing_temp_files: bool, target_terms: List) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
     Generates initial datasets for the search API by processing and organizing data into various output files.
     This function handles data related to repositories, users, and organizations, ensuring they are formatted 
@@ -399,6 +403,7 @@ def generate_initial_search_datasets(rates_df: pd.DataFrame, initial_repo_output
     :param user_join_output_path: String specifying the path to the user join output file.
     :param org_output_path: String specifying the path to the organization output file.
     :param overwrite_existing_temp_files: Boolean indicating whether to overwrite existing temporary files during processing.
+    :param target_terms: List of terms to be searched in the API. Used in the `generate_translations.py` file.
     :return: A tuple of five DataFrames, each representing a different aspect of the search API data:
         1. `repo_df` DataFrame for repository entities
         2. `repo_join_df` DataFrame for repositories joined with search query data
@@ -413,7 +418,7 @@ def generate_initial_search_datasets(rates_df: pd.DataFrame, initial_repo_output
     if os.path.exists(initial_user_output_path) == False:
         os.makedirs(initial_user_output_path)
     
-    final_terms = prepare_terms_and_directories(f'{data_directory_path}/derived_files/grouped_cleaned_translated_dh_terms.csv', f'{data_directory_path}/derived_files/threshold_search_errors.csv')
+    final_terms = prepare_terms_and_directories(f'{data_directory_path}/derived_files/grouped_cleaned_translated_terms.csv', f'{data_directory_path}/derived_files/threshold_search_errors.csv', target_terms)
     for _, row in final_terms.iterrows():
         try:
             # Update the search term to be displayed correctly
@@ -445,14 +450,27 @@ def generate_initial_search_datasets(rates_df: pd.DataFrame, initial_repo_output
     user_join_df = check_for_joins_in_older_queries(user_join_output_path, user_join_df, join_unique_field, user_filter_fields)
     return repo_df, repo_join_df, user_df, user_join_df, org_df
 
-def get_initial_search_datasets(rates_df, initial_repo_output_path,  repo_output_path, repo_join_output_path, initial_user_output_path,  user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files, load_existing_data):
-    """Gets the search repo data from Github API and stores it in a dataframe
-    :param final_output_path: path to store final dataframe
-    :param initial_output_path: path to store initial dataframes
-    :param rates_df: dataframe of rate limits
-    :param load_existing_data: boolean to indicate whether to load existing data
-    :param load_existing_temp_files: boolean to indicate whether to load existing temp files
-    :return: dataframe of search repo data
+def get_initial_search_datasets(rates_df, initial_repo_output_path,  repo_output_path, repo_join_output_path, initial_user_output_path,  user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files, load_existing_data, target_terms):
+    """
+    Gets the search repo data from Github API and stores it in a dataframe. If the data already exists, it loads it in.
+
+    :param rates_df: DataFrame containing the rate limit data from the API.
+    :param initial_repo_output_path: String specifying the path to the initial repository output file.
+    :param repo_output_path: String specifying the path to the processed repository output file.
+    :param repo_join_output_path: String specifying the path to the repository join output file.
+    :param initial_user_output_path: String specifying the path to the initial user output file.
+    :param user_output_path: String specifying the path to the processed user output file.
+    :param user_join_output_path: String specifying the path to the user join output file.
+    :param org_output_path: String specifying the path to the organization output file.
+    :param overwrite_existing_temp_files: Boolean indicating whether to overwrite existing temporary files during processing.
+    :param load_existing_data: Boolean indicating whether to load existing data or generate new data.
+    :param target_terms: List of terms to be searched in the API. Used in the `generate_translations.py` file.
+    :return: A tuple of five DataFrames, each representing a different aspect of the search API data:
+        1. `repo_df` DataFrame for repository entities
+        2. `repo_join_df` DataFrame for repositories joined with search query data
+        3. `user_df` DataFrame for user entities
+        4. `user_join_df` DataFrame for users joined with search query data
+        5. `org_df` DataFrame for organization entities
     """
     if load_existing_data:
         if os.path.exists(repo_output_path):
@@ -462,9 +480,9 @@ def get_initial_search_datasets(rates_df, initial_repo_output_path,  repo_output
             user_join_df = read_csv_file(user_join_output_path)
             org_df = read_csv_file(org_output_path)
         else:
-            repo_df, join_df, user_df, user_join_df, org_df = generate_initial_search_datasets(rates_df, initial_repo_output_path,  repo_output_path, repo_join_output_path, initial_user_output_path,  user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files)
+            repo_df, join_df, user_df, user_join_df, org_df = generate_initial_search_datasets(rates_df, initial_repo_output_path,  repo_output_path, repo_join_output_path, initial_user_output_path,  user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files, target_terms)
     else:
-        repo_df, join_df, user_df, user_join_df, org_df  = generate_initial_search_datasets(rates_df, initial_repo_output_path,  repo_output_path, repo_join_output_path, initial_user_output_path,  user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files)
+        repo_df, join_df, user_df, user_join_df, org_df  = generate_initial_search_datasets(rates_df, initial_repo_output_path,  repo_output_path, repo_join_output_path, initial_user_output_path,  user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files, target_terms)
     return repo_df, join_df, user_df, user_join_df, org_df 
 
 
@@ -481,6 +499,6 @@ if __name__ == '__main__':
     load_existing_data = False
     overwrite_existing_temp_files = False
     org_output_path = f"{data_directory_path}/entity_files/orgs_dataset.csv"
-
-    get_initial_search_datasets(rates_df, initial_repo_output_path,  repo_output_path, repo_join_output_path, initial_user_output_path, user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files, load_existing_data)
+    target_terms = ['Digital Humanities']
+    get_initial_search_datasets(rates_df, initial_repo_output_path,  repo_output_path, repo_join_output_path, initial_user_output_path, user_output_path, user_join_output_path, org_output_path, overwrite_existing_temp_files, load_existing_data, target_terms)
   

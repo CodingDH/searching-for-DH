@@ -1,8 +1,3 @@
-# pylint: disable=missing-module-docstring
-# pylint: disable=missing-class-docstring
-# pylint: disable=missing-function-docstring
-# pylint: disable=wildcard-import
-# pylint: disable=W0614
 import os
 import sys
 import time
@@ -18,7 +13,6 @@ from datetime import datetime
 sys.path.append("..")
 
 from data_generation_scripts.utils import *
-from data_generation_scripts.generate_user_metadata import check_total_results
 
 warnings.filterwarnings('ignore')
 
