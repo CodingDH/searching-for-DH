@@ -120,13 +120,13 @@ def process_search_data(rates_df: pd.DataFrame, query: str, output_path: str, to
     # Check if the file already exists
     if os.path.exists(output_path):
         # If it does load it in
-        searched_df = read_csv_file(output_path, encoding="ISO-8859-1", error_bad_lines=False)
-        # Check if the number of rows is less than the total number of results
-        if searched_df.shape[0] != int(total_results):
-            # If it is not, move the older file to a backup location and then remove existing file
-            check_if_older_file_exists(output_path)
-            # Could refactor this to combine new and old data rather than removing it
-            os.remove(output_path)
+        existing_searched_df = read_csv_file(output_path, encoding="ISO-8859-1", error_bad_lines=False)
+        # # Check if the number of rows is less than the total number of results
+        # if searched_df.shape[0] != int(total_results):
+        #     # If it is not, move the older file to a backup location and then remove existing file
+        #     check_if_older_file_exists(output_path)
+        #     # Could refactor this to combine new and old data rather than removing it
+        #     os.remove(output_path)
     # If the file doesn't exist or if the numbers don't match, get the data from the API
     searched_df = get_search_api_data(query, total_pages)
     searched_df = searched_df.reset_index(drop=True)
