@@ -253,7 +253,6 @@ def create_file_dict(directory: str, file_name: str) -> dict:
     file_dict['directory'] = directory
     return file_dict
 
-
 def read_combine_files(dir_path: str, check_all_dirs: bool = False, file_path_contains: Optional[str] = None, large_files: bool = False) -> pd.DataFrame:
     """
     Combines all relevant files within a specified directory into a single pandas DataFrame. This function can optionally exclude certain directories, filter files by name, and handle large files differently.
@@ -349,7 +348,7 @@ def check_for_entity_in_older_queries(entity_path: str, entity_df: pd.DataFrame,
         missing_entities = older_entity_df[~older_entity_df[entity_field].isin(entity_df[entity_field])]
 
         if entity_type == "users":
-            missing_entities = handle_entity_type("users", missing_entities, f"{data_directory_path}/error_logs/potential_users_errors.csv", f"{data_directory_path}/metadata_files/users_dataset_cols.csv")
+            missing_entities = handle_entity_type("users", missing_entities, f"{data_directory_path}/error_logs/potential_users_errors.csv", f"{data_directory_path}/metadata_files/user_headers.csv")
         if entity_type == "repos":
             missing_entities = handle_entity_type("repos", missing_entities, f"{data_directory_path}/error_logs/potential_repos_errors.csv", f"{data_directory_path}/metadata_files/repo_headers.csv")
 
@@ -375,7 +374,7 @@ def get_headers(entity_type: str) -> pd.DataFrame:
     """
     # Get headers for entity type
     if entity_type == 'users':
-        headers = pd.read_csv(f'{data_directory_path}/metadata_files/users_dataset_cols.csv')
+        headers = pd.read_csv(f'{data_directory_path}/metadata_files/user_headers.csv')
     elif entity_type == 'repos':
         headers = pd.read_csv(f'{data_directory_path}/metadata_files/repo_headers.csv')
     elif entity_type == 'orgs':
