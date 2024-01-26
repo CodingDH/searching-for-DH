@@ -1,19 +1,30 @@
 import os
-import pandas as pd
+import sys
+
 import numpy as np
+import pandas as pd
 from tqdm import tqdm
+
+sys.path.append("..")
+from data_generation_scripts.general_utils import read_csv_file
 import rich
 from rich.console import Console
+
 console = Console()
 
-def group_file_paths():
-    current_path = "../../datasets/"
-    older_path = "../../datasets/older_files/"
+def group_file_paths(current_path: str, older_path: str) -> pd.DataFrame:
+    """
+    Group file paths based on their full name. The function reads files,
+    formats dates, and groups the data, keeping unique entries or the oldest entry per group.
+
+    Returns:
+    pd.DataFrame: Grouped and processed DataFrame.
+    """
     file_paths_dfs = []
 
-    for dir, _, files in os.walk(current_path):
-        older_dir = dir.replace(current_path, older_path)
-        if os.path.exists(older_dir) and ('archived_data' not in dir):
+    for main_dir, _, files in os.walk(current_path):
+        older_dir = main_dir.replace(current_path, older_path)
+        if os.path.exists(older_dir) and ('archived_data' not in main_dir):
             older_files = os.listdir(older_dir)
             for file in files:
                 if file.endswith(".csv"):
@@ -22,53 +33,41 @@ def group_file_paths():
                         subset_older_file = older_file.split("_202")[0]
                         if subset_file == subset_older_file:
                             file_dict = {
-                                'file_path': os.path.join(dir, file),
+                                'file_path': os.path.join(main_dir, file),
                                 'subset_file': subset_file,
-                                'dir_path': dir,
+                                'dir_path': main_dir,
                                 'older_file_path': os.path.join(older_dir, older_file)
                             }
                             file_paths_dfs.append(file_dict)
-    files_df = pd.DataFrame(file_paths_dfs)
-    files_df['grouped_dir_path'] = files_df.dir_path.str.split("datasets/").str[1].str.split("/").str[0]
-    return files_df
-
-def annotate_file_paths(files_df):
-    subset_files_df = files_df[['grouped_dir_path', 'subset_file']].drop_duplicates()
-    for index, row in subset_files_df.iterrows():
-        console.print(f"Annotating file: [bold blue]{row['grouped_dir_path']}[/bold blue], subset_file_path [bold blue]{row['subset_file']}[/bold blue], row [bold blue]{index}[/bold blue] of [bold blue]{len(subset_files_df)}[/bold blue]", style="bold green")
-
-        sample_files_df = files_df[(files_df.grouped_dir_path == row['grouped_dir_path']) & (files_df.subset_file == row['subset_file'])]
-        console.print(sample_files_df.file_path.values, style="bold blue")
-
-        has_search_query = False
-        has_search_query_input = console.input("Does the file have a search query column? (y/n): ")
-        if has_search_query_input == 'y':
-            has_search_query = True
-        
-        random_file = sample_files_df.sample(1)
-        existing_df = pd.read_csv(random_file.iloc[0]['file_path'])
-        console.print(existing_df.columns, style="bold blue")
-        grouped_column_input = console.input("What column should the file be grouped by? (e.g. 'url'): ")
-
-        console.print(f"Current grouped dir {row['grouped_dir_path']}", style="bold green")
-        new_grouped_dir_path_input = console.input("What should the new grouped dir be? (e.g. 'coding_dh'): ")
-
-        files_df.loc[(files_df.grouped_dir_path == row['grouped_dir_path']) & (files_df.subset_file == row['subset_file']), 'grouped_dir_path'] = new_grouped_dir_path_input
-        files_df.loc[(files_df.grouped_dir_path == row['grouped_dir_path']) & (files_df.subset_file == row['subset_file']), 'grouped_column'] = grouped_column_input
-        files_df.loc[(files_df.grouped_dir_path == row['grouped_dir_path']) & (files_df.subset_file == row['subset_file']), 'has_search_query'] = has_search_query
-    return files_df
-
-        
+    processed_files_df = pd.DataFrame(file_paths_dfs)
+    processed_files_df['grouped_dir_path'] = processed_files_df.dir_path.str.split("datasets/").str[1].str.split("/").str[0]
+    return processed_files_df
 
 def format_file(file_path, date):
-        """
-        Read a CSV file and add a formatted date column.
-        """
-        file_df = pd.read_csv(file_path)
-        file_df['coding_dh_date'] = pd.to_datetime(date)
-        return file_df
+    """
+    Read a CSV file and add a formatted date column.
+    """
+    file_df = read_csv_file(file_path)
+    file_df['coding_dh_date'] = pd.to_datetime(date)
+    return file_df
 
-def process_and_group_files(file_group, group_column, new_grouped_dir_path, has_search_query=False):
+def sort_groups_add_id(group, subset_columns):
+    group = group.drop_duplicates(subset=group.columns.difference(subset_columns))
+    if (group.drop(columns=subset_columns).nunique() > 1).any():
+        group = group.sort_values('coding_dh_date')
+        group['coding_dh_id'] = np.arange(len(group))
+    else:
+        group = group.sort_values('coding_dh_date').iloc[0:1]
+        group['coding_dh_id'] = 0
+    return group
+
+def drop_columns(df, columns):
+    for col in columns:
+        if col in df.columns:
+            df = df.drop(columns=[col])
+    return df
+
+def process_and_group_files(file_group, overwrite_files=False):
     """
     Process and group files based on their full name. The function reads files,
     formats dates, and groups the data, keeping unique entries or the oldest entry per group.
@@ -80,61 +79,124 @@ def process_and_group_files(file_group, group_column, new_grouped_dir_path, has_
     pd.DataFrame: Grouped and processed DataFrame.
     """
 
-    
-    console.print(f"Processing file: {file_group.iloc[0]['subset_file']}", style="bold green")
-    # Process the current file
-    current_date = "2024-01-13"
-    existing_file = format_file(file_group.iloc[0]['file_path'], current_date)
+    new_grouped_dir_path = file_group.iloc[0]['new_grouped_dir_path']
+    final_path = file_group.iloc[0]['file_path'].replace(file_group["grouped_dir_path"].iloc[0], new_grouped_dir_path)
+    if (os.path.exists(final_path)) and (not overwrite_files):
+        console.print(f"File already exists: {final_path}", style="bold red")
+        return
+    else:
+        console.print(f"Processing file: {file_group.iloc[0]['subset_file']}", style="bold green")
+        # Process the current file
+        current_date = "2024-01-13"
 
-    # Process older files
-    older_files = []
-    for _, row in file_group.iterrows():
-        older_date = "202" + row['older_file_path'].split('_202')[1].replace("_", "-").split(".")[0]
-        older_file = format_file(row['older_file_path'], older_date)
-        older_files.append(older_file)
 
-    # Combine and group files
-    combined_files = pd.concat([existing_file] + older_files)
+        columns_to_drop = ['org_query_time', 'user_query_time', 'repo_query_time', 'search_query_time']
 
-    if has_search_query:
-        if 'search_query' not in combined_files.columns:
-            final_path = file_group.iloc[0]['file_path'].replace(row['grouped_dir_path'], new_grouped_dir_path)
-            console.print(final_path)
-            if not os.path.exists(os.path.dirname(final_path)):
-                os.makedirs(os.path.dirname(final_path))
-            existing_file.to_csv(final_path, index=False)
-            return
+        # Process the existing file
+        existing_file = format_file(file_group.iloc[0]['file_path'], current_date)
+        existing_file = drop_columns(existing_file, columns_to_drop)
 
-        combined_files['cleaned_search_query'] = combined_files.search_query.str.replace('%22', '"').str.replace('"', '').str.replace('%3A', ':').str.split('&page').str[0]
+        print(file_group['older_file_path'])
+        print(file_group)
+        # Process the older file
+        older_date = "202" + file_group['older_file_path'].iloc[0].split('_202')[1].replace("_", "-").split(".")[0]
+        older_date = older_date.split(" ")[0]
 
-    grouped_files = combined_files.groupby(group_column)
-    processed_files = []
-    for name, group in grouped_files:
+        older_file = format_file(file_group['older_file_path'], older_date)
+        older_file = drop_columns(older_file, columns_to_drop)
+
+        # Combine and group files
+        combined_files = pd.concat([existing_file, older_file])
+        has_search_query = file_group.iloc[0]['has_search_query']
+
         if has_search_query:
-            subset_columns = ['coding_dh_date', 'search_query']
-        else:
-            subset_columns = ['coding_dh_date']
-        group = group.drop_duplicates(subset=group.columns.difference(subset_columns))
-        if (group.drop(columns=subset_columns).nunique() > 1).any():
-            group = group.sort_values('coding_dh_date')
-            group['coding_dh_id'] = np.arange(len(group))
-        else:
-            group = group.sort_values('coding_dh_date').iloc[0:1]
-            group['coding_dh_id'] = 0
-        processed_files.append(group)
+            if 'search_query' not in combined_files.columns:
+                final_path = file_group.iloc[0]['file_path'].replace(file_group.iloc[0]['grouped_dir_path'], new_grouped_dir_path)
+                console.print(final_path)
+                if not os.path.exists(os.path.dirname(final_path)):
+                    os.makedirs(os.path.dirname(final_path))
+                existing_file.to_csv(final_path, index=False)
+                return
+            
+            combined_files['cleaned_search_query'] = combined_files.search_query.str.replace('%22', '"').str.replace('"', '').str.replace('%3A', ':').str.split('&page').str[0]
 
-    final_df = pd.concat(processed_files).reset_index(drop=True)
-    final_path = file_group.iloc[0]['file_path'].replace(row["grouped_dir_path"], new_grouped_dir_path)
-    console.print(final_path)
-    if not os.path.exists(os.path.dirname(final_path)):
-        os.makedirs(os.path.dirname(final_path))
-    final_df.to_csv(final_path, index=False)
+        group_column = file_group.iloc[0]['grouped_column']
+
+        if file_group.target.isnull().all():
+            grouped_columns = [group_column]
+        else:
+            grouped_columns = [group_column, file_group.target.iloc[0]]
+        grouped_files = combined_files.groupby(grouped_columns)
+        processed_files = []
+        for _, group in tqdm(grouped_files, desc="Grouping files"):
+            if has_search_query:
+                subset_columns = ['coding_dh_date', 'search_query']
+            else:
+                subset_columns = ['coding_dh_date']
+            group = sort_groups_add_id(group, subset_columns)
+            processed_files.append(group)
+
+        final_df = pd.concat(processed_files).reset_index(drop=True)
+        
+        if not os.path.exists(os.path.dirname(final_path)):
+            os.makedirs(os.path.dirname(final_path))
+        # Append to the final file if it exists, otherwise create a new file
+        console.print(final_path)
+        if os.path.exists(final_path):
+            final_df.to_csv(final_path, mode='a', header=False, index=False)
+        else:
+            final_df.to_csv(final_path, index=False)
+
+def deduplicate_final_file(file_group):
+    new_grouped_dir_path = file_group.iloc[0]['new_grouped_dir_path']
+    final_path = file_group.iloc[0]['file_path'].replace(file_group["grouped_dir_path"].iloc[0], new_grouped_dir_path)
+    final_df = read_csv_file(final_path)
+    group_column = file_group.iloc[0]['grouped_column']
+
+    if file_group.target.isnull().all():
+        grouped_columns = [group_column]
+    else:
+        grouped_columns = [group_column, file_group.target.iloc[0]]
+    duplicated_files = final_df[final_df.duplicated(subset=grouped_columns + ['coding_dh_date'], keep=False)]
+    if len(duplicated_files) > 0:
+        console.print(f"Removing {len(duplicated_files)} duplicated files from {final_path}", style="bold red")
+        final_df = final_df.drop(columns=['coding_dh_id'])
+        tqdm.pandas(desc="Sorting groups")
+        final_df = final_df.groupby(grouped_columns).progress_apply(sort_groups_add_id, subset_columns=grouped_columns + ['coding_dh_date']).reset_index(drop=True)
+        final_path = final_path.replace("updated_join", "updated_deduped_join")
+        final_df.to_csv(final_path, index=False)
+    else:
+        console.print(f"No duplicated files in {final_path}", style="bold green")
+    return
+
+
 
 if '__main__' == __name__:
 
     # Get the file paths
-    files_df = group_file_paths()
-    files_df = annotate_file_paths(files_df)
+    local_current_path = "../../datasets/large_files/join_files/"
+    local_older_path = "../../datasets/older_files/large_files/join_files/"
+    original_files_df = group_file_paths(local_current_path, local_older_path)
+    if 'join_files' in local_current_path:
+        cols_df = pd.read_csv("../../datasets/derived_files/file_totals.csv")
+        df = cols_df[['file_name', 'source', 'target']]
+        df = df.rename(columns={'file_name': 'file_path', 'target': 'grouped_column', 'source': 'target'})
+        original_files_df = original_files_df.merge(df, on='file_path', how='left')
+        original_files_df.loc[original_files_df.subset_file.str.contains("search_queries_user"), "grouped_column"] = "login"
+        original_files_df.loc[(original_files_df.grouped_column.isna()) & original_files_df.subset_file.str.contains("org"), "grouped_column"] = "login"
+        original_files_df.loc[original_files_df.subset_file.str.contains("search_queries_repo"), "grouped_column"] = "full_name"
+        original_files_df["has_search_query"] = False
+        original_files_df.loc[original_files_df.subset_file.str.contains("search_queries"), "has_search_query"] = True
+        original_files_df["new_grouped_dir_path"] = "updated_join_files"
+    if ('repo_data' in local_current_path) or ('user_data' in local_current_path):
+        original_files_df["grouped_column"] = "full_name" if 'repo_data' in local_current_path else "login"
+        original_files_df["has_search_query"] = True
+        original_files_df["new_grouped_dir_path"] = "searched_repo_data" if 'repo_data' in local_current_path else "searched_user_data"
+    
     # tqdm.pandas(desc="Processing files")
-    # # Apply the function to the grouped DataFrame
-    # files_df.groupby('subset_file').progress_apply(process_and_group_files)
+    # overwrite_files = False
+    # original_files_df.groupby(['subset_file', 'older_file_path']).progress_apply(process_and_group_files, overwrite_files=overwrite_files)
+
+    tqdm.pandas(desc="Deduplicating files")
+    exclude_files = ['user_subscriptions_join_dataset', 'user_starred_join_dataset']
+    original_files_df[~original_files_df.subset_file.isin(exclude_files)].groupby(['subset_file', 'older_file_path']).progress_apply(deduplicate_final_file)

@@ -406,7 +406,7 @@ def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, t
     
     # Subset headers for orgs and users
     user_cols = ['bio', 'followers_url', 'following_url', 'gists_url', 'gravatar_id', 'hireable', 'organizations_url','received_events_url', 'site_admin', 'starred_url',
-    'subscriptions_url','user_query_time', 'login',]
+    'subscriptions_url','login',]
 
     # Get headers
     headers = get_headers(entity_type)
@@ -426,8 +426,9 @@ def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, t
             temp_entities_path = f"{row[entity_column].replace('/', '')}_potential_{entity_type}.csv"
             # Check if file exists
             if os.path.exists(f"{temp_entity_dir}/{temp_entities_path}"):
-                entity_progress_bar.update(1)
-                continue
+                existing_entities_df = read_csv_file(f"{temp_entity_dir}/{temp_entities_path}")
+            else:
+                existing_entities_df = pd.DataFrame()
             # Get query
             query = row.url
             if entity_type == "orgs":

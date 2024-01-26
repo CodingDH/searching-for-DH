@@ -12,14 +12,12 @@ import pandas as pd
 import requests
 import arabic_reshaper
 from bidi.algorithm import get_display
-from rich import print
 from rich.console import Console
 from tqdm import tqdm
 
 # Local application/library specific imports
 import apikey
 sys.path.append("..")
-from data_generation_scripts.utils import *
 from data_generation_scripts.general_utils import  read_csv_file, check_total_pages, check_total_results, check_rate_limit, make_request_with_rate_limiting
 
 # Load in the API key
