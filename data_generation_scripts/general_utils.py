@@ -43,7 +43,7 @@ def check_rate_limit() -> pd.DataFrame:
     # Make request
     response = requests.get(url, headers=auth_headers, timeout=10)
     if response.status_code != 200:
-        console.print(f'Failed to retrieve rate limit with status code: {response.status_code}', style='bold red')
+        console.print(f'Failed to retrieve rate limit with status code: {response.status_code}. Error from check_rate_limit function', style='bold red')
         return pd.DataFrame()
     # Convert to dataframe
     rates_df = pd.json_normalize(response.json())
@@ -64,27 +64,28 @@ def make_request_with_rate_limiting(url: str, auth_headers: dict, number_of_atte
     # Set range for number of attempts
     for index in range(number_of_attempts):
         response = requests.get(url, headers=auth_headers, timeout=timeout)
+        console.print("Status code", response.status_code)
         # Check if response is valid and return it if it is
         if response.status_code == 200:
             return response
         elif response.status_code == 401:
-            console.print("response code 401 - unauthorized access. check api key", style='bold red')
+            console.print("Response status code 401: unauthorized access. Recommend checking api key. Error from make_request_with_rate_limiting function", style='bold red')
             return None
         elif response.status_code == 204:
-            console.print(f'No data for {url}', style='bold red')
+            console.print(f'Response status code 204: No data for {url}.  Error from make_request_with_rate_limiting function', style='bold red')
             return None
         # If not, check if it's a rate limit issue
         if index == 0:
-            console.print('hit rate limiting. trying to sleep...', style='bold red')
+            console.print('Hitting rate limiting set by number of attempts. Sleeping for 120 seconds to ensure that queries are not blocked by API. Message from make_request_with_rate_limiting function', style='bold red')
             time.sleep(120)
         # If it is, wait for an hour and try again
         if index == 1:
             rates_df = check_rate_limit()
             if rates_df['resources.core.remaining'].values[0] == 0:
-                console.print('rate limit reached. sleeping for 1 hour', style='bold red')
+                console.print('GitHub 5000 query rate limit reached. Sleeping for 1 hour and then restarting. Message from make_request_with_rate_limiting function', style='bold red')
                 time.sleep(3600)
     # If it's not a rate limit issue, return None
-    console.print(f'query failed after {number_of_attempts} attempts with code {response.status_code}. Failing URL: {url}', style='bold red')
+    console.print(f'Query failed after {number_of_attempts} attempts with code {response.status_code}. Failing URL: {url}. Error from make_request_with_rate_limiting function', style='bold red')
     return None
 
 def check_total_pages(url: str, auth_headers: dict) -> int:
@@ -214,70 +215,6 @@ def read_combine_files(dir_path: str, file_path: str, grouped_columns: Optional[
     
     return read_csv_file(file_path)
 
-def handle_entity_type(entity_type: str, missing_entities: pd.DataFrame, error_file_path: str, headers_file_path: str) -> pd.DataFrame:
-    """
-    Handles entity type by checking for errors and removing entities that have errors.
-
-    :param entity_type: Type of entity
-    :param missing_entities: Missing entities dataframe
-    :param error_file_path: Path to error file
-    :param headers_file_path: Path to headers file
-    :return: Missing entities dataframe
-    """
-    # Read in error file and headers file
-    headers = read_csv_file(headers_file_path)
-    if set(missing_entities.columns) != set(headers.columns):
-        error_df = check_return_error_file(error_file_path)
-        now = pd.Timestamp('now')
-        error_df['error_time'] = pd.to_datetime(error_df['error_time'], errors='coerce')
-        error_df = error_df.dropna(subset=['error_time'])  # Drop any rows where 'error_time' is NaT
-        error_df['time_since_error'] = (now - error_df['error_time']).dt.days
-        error_df = error_df[error_df.time_since_error > 7]
-        entity_field = 'full_name' if entity_type == 'repos' else 'login'
-        # Drop entities that have errors
-        missing_entities = missing_entities[~missing_entities[entity_field].isin(error_df[entity_field])]
-        # Drop columns that are not in headers
-        missing_entities = missing_entities[headers.columns]
-    return missing_entities
-
-def check_for_entity_in_older_queries(entity_path: str, entity_df: pd.DataFrame, is_large: bool =True) -> pd.DataFrame:
-    """
-    Checks for entity in older queries and adds it to the entity dataframe if it is not there.
-
-    :param entity_path: Path to entity file
-    :param entity_df: Entity dataframe
-    :param is_large: Boolean indicating whether to handle large files differently. If True, only metadata is collected initially. Defaults to True.
-    :return: Entity dataframe
-    """
-    # Extract entity type
-    entity_type = entity_path.split("/")[-1].split("_dataset")[0]
-    console.print(f"Checking for {entity_type} in older queries", style="bold blue")
-    # Check for entity in older queries
-    older_entity_file_path = entity_path.replace(f"{data_directory_path}/", f"{data_directory_path}/older_files/")
-    older_entity_file_dir = os.path.dirname(older_entity_file_path) + "/"
-    older_entity_df = read_combine_files(dir_path=older_entity_file_dir, check_all_dirs=True, file_path_contains=entity_type, large_files=is_large)
-    console.print(f"older entity df shape: {older_entity_df.shape}", style="bold blue")
-    if len(older_entity_df) > 0:
-        entity_field = "full_name" if entity_type == "repos" else "login"
-        missing_entities = older_entity_df[~older_entity_df[entity_field].isin(entity_df[entity_field])]
-
-        if entity_type == "users":
-            missing_entities = handle_entity_type("users", missing_entities, f"{data_directory_path}/error_logs/potential_users_errors.csv", f"{data_directory_path}/metadata_files/user_headers.csv")
-        if entity_type == "repos":
-            missing_entities = handle_entity_type("repos", missing_entities, f"{data_directory_path}/error_logs/potential_repos_errors.csv", f"{data_directory_path}/metadata_files/repo_headers.csv")
-
-        if len(missing_entities) > 0:
-            missing_entities = missing_entities[missing_entities.id.notna()]
-            entity_df = pd.concat([entity_df, missing_entities])
-            cleaned_field = 'cleaned_repo_query_time' if entity_type == 'repos' else 'cleaned_user_query_time'
-            time_field = 'repo_query_time' if entity_type == 'repos' else 'user_query_time'
-            entity_df[cleaned_field] = pd.to_datetime(entity_df[time_field], errors='coerce')
-            entity_field = 'full_name' if 'repo' in entity_type else 'login'
-            entity_df = entity_df.sort_values(by=[cleaned_field], ascending=False).drop_duplicates(subset=[entity_field], keep='first').drop(columns=[cleaned_field])
-
-    check_if_older_file_exists(entity_path)
-    entity_df.to_csv(entity_path, index=False)
-    return entity_df
 
 def get_headers(entity_type: str) -> pd.DataFrame:
     """
@@ -311,6 +248,11 @@ def sort_groups_add_coding_dh_id(group: pd.DataFrame, subset_columns: List) -> p
     Returns:
     pd.DataFrame: The sorted DataFrame group with the new 'coding_dh_id' column.
     """
+    # Convert lists to comma-separated strings
+    for col in group.columns:
+        if group[col].apply(lambda x: isinstance(x, list)).any():
+            group[col] = group[col].apply(lambda x: ', '.join(map(str, x)) if isinstance(x, list) else x)
+
     group = group.drop_duplicates(subset=group.columns.difference(subset_columns))
     if (group.drop(columns=subset_columns).nunique() > 1).any():
         group = group.sort_values('coding_dh_date')
