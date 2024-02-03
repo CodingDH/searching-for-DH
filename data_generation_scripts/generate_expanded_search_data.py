@@ -3,7 +3,7 @@ import os
 import sys
 import time
 from datetime import datetime
-from typing import List, Dict, Any, Union, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -18,7 +18,7 @@ from tqdm import tqdm
 # Local application/library specific imports
 import apikey
 sys.path.append("..")
-from data_generation_scripts.general_utils import  read_csv_file, check_total_pages, check_total_results, check_rate_limit, make_request_with_rate_limiting
+from data_generation_scripts.general_utils import  read_csv_file, check_total_pages, check_total_results, check_rate_limit, make_request_with_rate_limiting, sort_groups_add_coding_dh_id
 
 # Load in the API key
 auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
@@ -96,14 +96,13 @@ def get_search_api_data(query: str, total_pages: int) -> pd.DataFrame:
     search_df = pd.concat(dfs)
     return search_df
 
-def process_search_data(rates_df: pd.DataFrame, query: str, output_path: str, total_results: int, row_data: Dict[str, Any]) -> pd.DataFrame:
+def process_search_data(rates_df: pd.DataFrame, query: str, output_path: str, row_data: Dict[str, Any]) -> pd.DataFrame:
     """
     Processes data obtained from the search API. It uses the specified query to fetch data, adhering to the given rate limits, and then processes this data according to the row data from the search terms CSV.
 
     :param rates_df: DataFrame containing the current rate limit information.
     :param query: Query string to be passed to the search API.
     :param output_path: Path to the file where processed data will be saved.
-    :param total_results: Total number of results expected from the API.
     :param row_data: Dictionary representing a row of data from the search terms CSV.
     :return: DataFrame containing the processed data from the API.
     """
@@ -116,27 +115,35 @@ def process_search_data(rates_df: pd.DataFrame, query: str, output_path: str, to
         updated_rates_df = check_rate_limit()
         calls_remaining = updated_rates_df['resources.search.remaining'].values[0]
     # Check if the file already exists
-    if os.path.exists(output_path):
-        # If it does load it in
-        existing_searched_df = read_csv_file(output_path, encoding="ISO-8859-1", error_bad_lines=False)
-        # # Check if the number of rows is less than the total number of results
-        # if searched_df.shape[0] != int(total_results):
-        #     # If it is not, move the older file to a backup location and then remove existing file
-        #     check_if_older_file_exists(output_path)
-        #     # Could refactor this to combine new and old data rather than removing it
-        #     os.remove(output_path)
-    # If the file doesn't exist or if the numbers don't match, get the data from the API
+    
     searched_df = get_search_api_data(query, total_pages)
     searched_df = searched_df.reset_index(drop=True)
     searched_df['search_term'] = row_data['search_term']
     searched_df['search_term_source'] = row_data['search_term_source']
     searched_df['natural_language'] = row_data['natural_language']
     searched_df['search_type'] = 'tagged' if 'topic' in query else 'searched'
-    check_if_older_file_exists(output_path)
-    searched_df.to_csv(output_path, index=False)
+    searched_df['cleaned_search_query'] = searched_df.search_query.str.replace('%22', '"').str.replace('"', '').str.replace('%3A', ':').str.split('&page').str[0]
+    searched_df['coding_dh_date'] = datetime.now().strftime("%Y-%m-%d")
+    if os.path.exists(output_path):
+        # If it does load it in
+        existing_searched_df = read_csv_file(output_path, encoding="ISO-8859-1", error_bad_lines=False)
+    else:
+        # If it doesn't exist, create an empty dataframe
+        existing_searched_df = pd.DataFrame()
+    combined_dfs = pd.concat([existing_searched_df, searched_df])
+    grouped_column = "full_name" if "repositories" in query else "login"
+    grouped_dfs = combined_dfs.groupby(grouped_column)
+    processed_files = []
+    for _, group in tqdm(grouped_dfs, desc=f"Grouping files"):
+        subset_columns = ['coding_dh_date', 'search_query']
+        group = sort_groups_add_coding_dh_id(group, subset_columns)
+        processed_files.append(group)
+
+    final_searched_df = pd.concat(processed_files).reset_index(drop=True)
+    final_searched_df.to_csv(output_path, index=False)
 
 
-def process_large_search_data(rates_df: pd.DataFrame, search_url: str, dh_term: str, params: str, initial_output_path: str, total_results: int, row_data: Dict[str, Any]) -> Optional[pd.DataFrame]:
+def process_large_search_data(rates_df: pd.DataFrame, search_url: str, dh_term: str, params: str, initial_output_path: str, row_data: Dict[str, Any]) -> Optional[pd.DataFrame]:
     """
     Processes large datasets from the search API, specifically designed for queries expected to return over 1000 results. It constructs the query using the provided parameters and processes the resulting data. An example query looks like: https://api.github.com/search/repositories?q=%22Digital+Humanities%22+created%3A2017-01-01..2017-12-31+sort:updated
 
@@ -145,7 +152,6 @@ def process_large_search_data(rates_df: pd.DataFrame, search_url: str, dh_term: 
     :param dh_term: String indicating the term to be searched within the API.
     :param params: String detailing additional parameters to be passed to the search API. These parameters should be formatted as a query string.
     :param initial_output_path: String specifying the file path where the output data will be stored.
-    :param total_results: Integer indicating the total number of results expected from the API.
     :param row_data: Dictionary representing a single row from the search terms CSV, used for further processing.
     :return: Optionally returns a DataFrame containing the processed data from the API. Returns None if there are no results or in case of an error.
     """
@@ -167,7 +173,7 @@ def process_large_search_data(rates_df: pd.DataFrame, search_url: str, dh_term: 
             query = search_url + \
                 f"{dh_term}+created%3A{year}-01-01..{year}-12-31+sort:created{params}"
         # Get the data from the API
-        process_search_data(rates_df, query, yearly_output_path, total_results, row_data)
+        process_search_data(rates_df, query, yearly_output_path, row_data)
 
 def combine_search_df(initial_repo_output_path: str, repo_output_path: str, repo_join_output_path: str, initial_user_output_path: str, user_output_path: str, user_join_output_path: str, org_output_path: str, overwrite_existing_temp_files: bool) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
@@ -327,11 +333,11 @@ def search_for_topics(row: pd.Series, rates_df: pd.DataFrame, initial_repo_outpu
                     params = "&per_page=100&page=1"
                     initial_tagged_output_path = initial_repo_output_path + \
                         f'{source_type}/' + f'repos_tagged_{output_term}'
-                    process_large_search_data(rates_df, search_url, tagged_query, params, initial_tagged_output_path, total_tagged_results, row)
+                    process_large_search_data(rates_df, search_url, tagged_query, params, initial_tagged_output_path, row)
                 else:
                     # If fewer than a 1000 proceed to normal search calls
                     final_tagged_output_path = initial_repo_output_path + f'{source_type}/' + f'repos_tagged_{output_term}.csv'
-                    process_search_data(rates_df, repos_tagged_query, final_tagged_output_path, total_tagged_results, row)
+                    process_search_data(rates_df, repos_tagged_query, final_tagged_output_path, row)
 
 def search_for_repos(row: pd.Series, search_query: str, rates_df: pd.DataFrame, initial_repo_output_path: str, source_type: str):
     """
@@ -355,10 +361,10 @@ def search_for_repos(row: pd.Series, search_query: str, rates_df: pd.DataFrame, 
             dh_term = search_query
             params = "&per_page=100&page=1"
             initial_searched_output_path = initial_repo_output_path + f'{source_type}/' + f'repos_searched_{output_term}'
-            process_large_search_data(rates_df, search_url, dh_term, params, initial_searched_output_path, total_search_results, row)
+            process_large_search_data(rates_df, search_url, dh_term, params, initial_searched_output_path, row)
         else:
             final_searched_output_path = initial_repo_output_path + f'{source_type}/' + f'repos_searched_{output_term}.csv'
-            process_search_data(rates_df, search_repos_query, final_searched_output_path, total_search_results, row)
+            process_search_data(rates_df, search_repos_query, final_searched_output_path, row)
 
 def search_for_users(row: pd.Series, search_query: str, rates_df: pd.DataFrame, initial_user_output_path: str, source_type: str):
     """
@@ -381,10 +387,10 @@ def search_for_users(row: pd.Series, search_query: str, rates_df: pd.DataFrame, 
             dh_term = search_query
             params = "&per_page=100&page=1"
             initial_searched_output_path = initial_user_output_path + f'{source_type}/' + f'users_searched_{output_term}'
-            process_large_search_data(rates_df, search_url, dh_term, params, initial_searched_output_path, total_search_results, row)
+            process_large_search_data(rates_df, search_url, dh_term, params, initial_searched_output_path, row)
         else:
             final_searched_output_path = initial_user_output_path + f'{source_type}/' + f'users_searched_{output_term}.csv'
-            process_search_data(rates_df, search_users_query, final_searched_output_path, total_search_results, row)
+            process_search_data(rates_df, search_users_query, final_searched_output_path, row)
 
 def generate_initial_search_datasets(rates_df: pd.DataFrame, initial_repo_output_path: str,  repo_output_path: str, repo_join_output_path: str, initial_user_output_path: str,  user_output_path: str, user_join_output_path: str, org_output_path: str, overwrite_existing_temp_files: bool, target_terms: List) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
@@ -434,7 +440,7 @@ def generate_initial_search_datasets(rates_df: pd.DataFrame, initial_repo_output
             search_for_users(row, search_query, rates_df, initial_user_output_path, source_type)
         except Exception as e:
             console.print(f"Error with {row.search_term}: {e}", style="bold red")
-            log_error_to_csv(row.row_index, row.search_term, f'{data_directory_path}/derived_files/thershold_search_errors.csv')
+            log_error_to_csv(row.row_index, row.search_term, f'{data_directory_path}/derived_files/search_errors.csv')
             continue
 
     # Combine the dataframes

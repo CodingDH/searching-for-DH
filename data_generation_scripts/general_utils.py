@@ -252,53 +252,54 @@ def create_file_dict(directory: str, file_name: str) -> dict:
     file_dict['file_size'] = file_size
     file_dict['directory'] = directory
     return file_dict
-
-def read_combine_files(dir_path: str, check_all_dirs: bool = False, file_path_contains: Optional[str] = None, large_files: bool = False) -> pd.DataFrame:
+    
+def read_combine_files(dir_path: str, file_path: str, grouped_columns: Optional[list] = None , return_all: bool = False) -> pd.DataFrame:
     """
-    Combines all relevant files within a specified directory into a single pandas DataFrame. This function can optionally exclude certain directories, filter files by name, and handle large files differently.
-
-    :param dir_path: String specifying the directory path to search for files.
-    :param check_all_dirs: Boolean indicating whether to check all subdirectories within the specified directory. Defaults to False.
-    :param file_path_contains: Optional string for filtering files by name. Only files containing this string are processed.
-    :param large_files: Boolean indicating whether to handle large files differently. If True, only metadata is collected initially. Defaults to False.
-    :return: A pandas DataFrame combining data from all relevant files.
+    Reads all CSV files in a directory, combines them into a single DataFrame, and writes the result to a file. Items are organized by most recent coding_dh_date.
+    If return_all is False, only the most recent entry for each group (defined by grouped_columns) is kept.
+    
+    Parameters:
+    dir_path (str): The path to the directory containing the CSV files.
+    file_path (str): The path to the file where the combined DataFrame will be written.
+    grouped_columns (list, optional): The columns to group by when return_all is False. Defaults to None.
+    return_all (bool, optional): Whether to return all rows or only the most recent for each group. Defaults to False.
+    
+    Returns:
+    pd.DataFrame: The combined DataFrame.
     """
-    # List of directories to exclude
-    excluded_dirs = ['temp', 'derived_files', 'metadata_files', 'repo_data', 'user_data', 'derived_files', 'archived_data', 'error_logs', 'archived_files']
-    rows = []
-    relevant_files = []
-    # Walk through the directory
-    for directory, _, files in os.walk(dir_path):
-        # If check_all_dirs is False or directory is data directory or excluded directory, skip it
-        if check_all_dirs and (directory == data_directory_path or any(excluded_dir in directory for excluded_dir in excluded_dirs)):
+    
+    # Remove the output file if it already exists
+    if os.path.exists(file_path):
+        os.remove(file_path)
+    
+    files = os.listdir(dir_path)
+    
+    for file in tqdm(files, desc=f"Reading files in {dir_path}"):
+        # Skip .DS_Store files
+        if '.DS_Store' in file:
+            os.remove(os.path.join(dir_path, file))
             continue
-        # Check all files in directory
-        for file_name in files:
-            # If file_path_contains is None or file_name contains file_path_contains, process it
-            if file_path_contains is None or file_path_contains in file_name:
-                file_path = os.path.join(directory, file_name)
-                if large_files:
-                    relevant_files.append(create_file_dict(directory, file_name))  # 
-                else:
-                    try:
-                        row = read_csv_file(file_path)  # Assuming read_csv_file is capable of reading a file given its path
-                        if row is not None:
-                            rows.append(row)
-                    except Exception as e:
-                        print(f"Error reading file {file_path}: {e}")
-    # If large_files is True, then turn relevant_files into a dataframe and sort by file_size and date
-    if large_files:
-        files_df = pd.DataFrame(relevant_files)
-        if len(files_df) == 0:
-            return pd.DataFrame()
-        files_df['date'] = "202" + files_df['file_name'].str.split('202').str[1].str.split('.').str[0]
-        files_df.date = files_df.date.str.replace("_", "-")
-        files_df.date = pd.to_datetime(files_df.date)
-        top_files = files_df.sort_values(by=['file_size', 'date'], ascending=[False, False]).head(2)
-        rows = [read_csv_file(row.directory, row.file_name) for _, row in top_files.iterrows() if row is not None]
-    # Combine all rows into a single dataframe
-    combined_df = pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()
-    return combined_df
+        
+        df = read_csv_file(os.path.join(dir_path, file))
+        
+        if df is not None:
+            try:
+                if not return_all:
+                    df['coding_dh_date'] = pd.to_datetime(df['coding_dh_date'], errors='coerce')
+                    df = df.sort_values(by="coding_dh_date", ascending=False)
+                    # get the latest date
+                    if 'entity' not in file_path and grouped_columns is not None:
+                        df = df.groupby(grouped_columns).first().reset_index()
+                    else:
+                        df = df[0:1]
+                
+                # Write DataFrame to file
+                mode = "a" if os.path.exists(file_path) else "w"
+                df.to_csv(file_path, mode=mode, header=(mode=="w"), index=False)
+            except:
+                console.print(f"Error with file {file}", style="bold red")
+    
+    return read_csv_file(file_path)
 
 def handle_entity_type(entity_type: str, missing_entities: pd.DataFrame, error_file_path: str, headers_file_path: str) -> pd.DataFrame:
     """
@@ -374,17 +375,51 @@ def get_headers(entity_type: str) -> pd.DataFrame:
     """
     # Get headers for entity type
     if entity_type == 'users':
-        headers = pd.read_csv(f'{data_directory_path}/metadata_files/user_headers.csv')
+        headers = read_csv_file(f'{data_directory_path}/metadata_files/user_headers.csv')
     elif entity_type == 'repos':
-        headers = pd.read_csv(f'{data_directory_path}/metadata_files/repo_headers.csv')
+        headers = read_csv_file(f'{data_directory_path}/metadata_files/repo_headers.csv')
     elif entity_type == 'orgs':
-        headers = pd.read_csv(f'{data_directory_path}/metadata_files/org_headers.csv')
+        headers = read_csv_file(f'{data_directory_path}/metadata_files/org_headers.csv')
     else:
         console.print(f'No headers for {entity_type}', style='bold red')
         return None
     return headers
 
-def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, temp_entity_dir: str, entity_progress_bar: tqdm, error_file_path: str, overwrite_existing_temp_files:bool = True) -> pd.DataFrame:
+def sort_groups_add_coding_dh_id(group: pd.DataFrame, subset_columns: List) -> pd.DataFrame:
+    """
+    Sorts a DataFrame group based on 'coding_dh_date' and adds a new column 'coding_dh_id' with unique identifiers.
+    If the group has more than one unique row (excluding subset_columns), each row gets a unique identifier.
+    If the group has only one unique row (excluding subset_columns), it gets the identifier 0.
+
+    Parameters:
+    group (pd.DataFrame): DataFrame group to sort and add identifiers to.
+    subset_columns (List[str]): List of column names to exclude when checking for unique rows.
+
+    Returns:
+    pd.DataFrame: The sorted DataFrame group with the new 'coding_dh_id' column.
+    """
+    group = group.drop_duplicates(subset=group.columns.difference(subset_columns))
+    if (group.drop(columns=subset_columns).nunique() > 1).any():
+        group = group.sort_values('coding_dh_date')
+        group['coding_dh_id'] = np.arange(len(group))
+    else:
+        group = group.sort_values('coding_dh_date').iloc[0:1]
+        group['coding_dh_id'] = 0
+    return group
+
+def get_entity_df(entity_type: str) -> pd.DataFrame:
+    """
+    Gets entity dataframe.
+
+    :param entity_path: Path to entity file
+    :return: Entity dataframe
+    """
+    # Get entity dataframe
+    entity_df = read_csv_file(f"{data_directory_path}/large_files/entity_files/{entity_type}_dataset.csv")
+
+    return entity_df
+
+def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, temp_entity_dir: str, entity_progress_bar: tqdm, error_file_path: str, rerun_errors: bool, overwrite_existing_temp_files:bool = True) -> pd.DataFrame:
     """
     Gets new entities from GitHub API. 
 
@@ -405,8 +440,20 @@ def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, t
         os.makedirs(temp_entity_dir)
     
     # Subset headers for orgs and users
-    user_cols = ['bio', 'followers_url', 'following_url', 'gists_url', 'gravatar_id', 'hireable', 'organizations_url','received_events_url', 'site_admin', 'starred_url',
-    'subscriptions_url','login',]
+    user_cols = ["bio", "followers_url", "following_url", "gists_url", "gravatar_id", "hireable", "organizations_url","received_events_url", "site_admin", "starred_url",
+    "subscriptions_url","login",]
+
+    excluded_file_path = f'{data_directory_path}/metadata_files/excluded_{entity_type}.csv'
+    error_file_path = f"{data_directory_path}/error_logs/potential_{entity_type}_errors.csv"
+
+    # Get entity column based on entity type
+    entity_column = "full_name" if entity_type == "repos" else "login"
+
+    if os.path.exists(excluded_file_path):
+        excluded_entities = read_csv_file(excluded_file_path)
+        # Exclude entities and check for errors
+        potential_new_entities_df = potential_new_entities_df[~potential_new_entities_df[entity_column].isin(excluded_entities[entity_column])]
+    error_df = check_return_error_file(error_file_path)
 
     # Get headers
     headers = get_headers(entity_type)
@@ -414,25 +461,23 @@ def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, t
     # Update progress bar
     entity_progress_bar.total = len(potential_new_entities_df)
     entity_progress_bar.refresh()
-    # org_progress_bar = tqdm(total=len(org_df), desc="Cleaning Orgs", position=0)
 
-    # Get entity column based on entity type
-    entity_column = 'full_name' if entity_type == 'repos' else 'login'
+    entity_df = get_entity_df(entity_type)
 
     # Loop through potential new entities
     for _, row in potential_new_entities_df.iterrows():
         try:
             # Create temporary file path
-            temp_entities_path = f"{row[entity_column].replace('/', '')}_potential_{entity_type}.csv"
+            temp_entities_path = f"{row[entity_column].replace('/', '_').replace(' ', '_')}_coding_dh_{entity_type}.csv"
             # Check if file exists
             if os.path.exists(f"{temp_entity_dir}/{temp_entities_path}"):
-                existing_entities_df = read_csv_file(f"{temp_entity_dir}/{temp_entities_path}")
+                existing_temp_entities_df = read_csv_file(f"{temp_entity_dir}/{temp_entities_path}")
             else:
-                existing_entities_df = pd.DataFrame()
+                existing_temp_entities_df = pd.DataFrame()
             # Get query
             query = row.url
             if entity_type == "orgs":
-                query = row.url if '/users/' in row.url else row.url.replace('/orgs/', '/users/')
+                query = row.url if "/users/" in row.url else row.url.replace("/orgs/", "/users/")
             # Make request
             response = make_request_with_rate_limiting(query, auth_headers)
             # If response is None, update progress bar and continue
@@ -445,17 +490,16 @@ def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, t
             else:
                 response_data = response.json()
                 response_df = pd.json_normalize(response_data)
-                if 'message' in response_df.columns:
-                    console.print(f"Error for {row[entity_column]}: {response_df.message.values[0]}", style='bold red')
+                if "message" in response_df.columns:
+                    console.print(f"Error for {row[entity_column]}: {response_df.message.values[0]}", style="bold red")
                     entity_progress_bar.update(1)
                     continue
             
             if entity_type != "orgs":
-                response_df = response_df[headers.columns]
-                response_df.to_csv(f"{temp_entity_dir}/{temp_entities_path}", index=False)
+                final_df = response_df[headers.columns]
             else:
                 response_df = response_df[user_cols]
-                query = row.url.replace('/users/', '/orgs/') if '/users/' in row.url else row.url
+                query = row.url.replace("/users/", "/orgs/") if "/users/" in row.url else row.url
                 response = make_request_with_rate_limiting(query, auth_headers)
                 if response is None:
                     expanded_df = pd.DataFrame(columns=headers.columns, data=None, index=None)
@@ -465,12 +509,21 @@ def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, t
                 expanded_df = expanded_df[headers.columns]
                 common_columns = list(set(response_df.columns).intersection(set(expanded_df.columns)))
                 final_df = pd.merge(response_df, expanded_df, on=common_columns, how='left')
-                final_df.to_csv(f"{temp_entity_dir}/{temp_entities_path}", index=False)
-
-                entity_progress_bar.update(1)
+                
+            final_df["coding_dh_date"] = datetime.now().strftime("%Y-%m-%d")
+            combined_df = pd.concat([existing_temp_entities_df, final_df])
+            grouped_dfs = combined_df.groupby(entity_column)
+            processed_files = []
+            for _, group in tqdm(grouped_dfs, desc=f"Grouping files"):
+                subset_columns = ["coding_dh_date"]
+                group = sort_groups_add_coding_dh_id(group, subset_columns)
+                processed_files.append(group)
+            final_processed_df = pd.concat(processed_files).reset_index(drop=True)
+            final_processed_df.to_csv(f"{temp_entity_dir}/{temp_entities_path}", index=False)
+            entity_progress_bar.update(1)
         except Exception as e:
-            console.print(f"Error for {row[entity_column]}: {e}", style='bold red')
-            error_df = pd.DataFrame([{entity_column: row[entity_column], 'error_time': time.time(), 'error_url': row.url}])
+            console.print(f"Error for {row[entity_column]}: {e}", style="bold red")
+            error_df = pd.DataFrame([{entity_column: row[entity_column], "error_time": time.time(), "error_url": row.url}])
             if os.path.exists(error_file_path):
                 error_df.to_csv(error_file_path, mode='a', header=False, index=False)
             else:
@@ -485,18 +538,9 @@ def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, t
     entity_progress_bar.close()
     return combined_entity_df
 
-def get_entity_df(entity_path: str) -> pd.DataFrame:
-    """
-    Gets entity dataframe.
 
-    :param entity_path: Path to entity file
-    :return: Entity dataframe
-    """
-    # Get entity dataframe
-    entity_df = read_csv_file(entity_path)
-    return entity_df
 
-def check_add_new_entities(potential_new_entities_df: pd.DataFrame, output_path: str, entity_type: str, return_df: bool, overwrite_existing_temp_files: bool) -> Optional[pd.DataFrame]:
+def check_add_new_entities(potential_new_entities_df: pd.DataFrame, output_path: str, entity_type: str, return_df: bool, overwrite_existing_temp_files: bool, check_for_updates: bool) -> Optional[pd.DataFrame]:
     """
     Function to check if entities (users, organizations, or repositories) are already in the respective file and add them if not.
 
@@ -511,17 +555,17 @@ def check_add_new_entities(potential_new_entities_df: pd.DataFrame, output_path:
     temp_dir = f"{data_directory_path}/temp/temp_{entity_type}/"
     excluded_file_path = f'{data_directory_path}/metadata_files/excluded_{entity_type}.csv'
     error_file_path = f"{data_directory_path}/error_logs/potential_{entity_type}_errors.csv"
-    headers_file_path = f'{data_directory_path}/metadata_files/{entity_type}_headers.csv'
+
     identifier = 'full_name' if entity_type == 'repos' else 'login'
     # Load headers and excluded entities
-    headers_df = read_csv_file(headers_file_path)
+    headers_df = get_headers(entity_type)
     if os.path.exists(excluded_file_path):
         excluded_entities = read_csv_file(excluded_file_path)
         # Exclude entities and check for errors
         potential_new_entities_df = potential_new_entities_df[~potential_new_entities_df[identifier].isin(excluded_entities[identifier])]
     error_df = check_return_error_file(error_file_path)
 
-    if os.path.exists(output_path):
+    if os.path.exists(output_path) and (not check_for_updates):
         existing_df = read_csv_file(output_path)
         new_entities_df = potential_new_entities_df[~potential_new_entities_df[identifier].isin(existing_df[identifier])]
         if len(error_df) > 0:
@@ -548,117 +592,6 @@ def check_add_new_entities(potential_new_entities_df: pd.DataFrame, output_path:
         combined_df = get_entity_df(output_path)
         return combined_df
 
-def combined_updated_entities(entity_output_path: str, updated_entity_output_path: str, entity_column: str, query_time_column: str, overwrite_existing_temp_files: bool, return_df: bool, is_large: bool) -> Optional[pd.DataFrame]:
-    """
-    Combines updated entities and existing entities. Removes duplicates and checks for entities in older queries.
-
-    :param entity_output_path: Path to entity file
-    :param updated_entity_output_path: Path to updated entity file
-    :param entity_column: Entity column
-    :param query_time_column: Query time column
-    :param overwrite_existing_temp_files: Boolean indicating whether to overwrite existing temporary files. Defaults to True.
-    :param return_df: Boolean to return the DataFrame or not.
-    :param is_large: Boolean indicating whether to handle large files differently. If True, only metadata is collected initially. Defaults to True.
-    :return: Combined entity dataframe
-    """
-    # Combine updated entities and existing entities
-    if (os.path.exists(entity_output_path)) and (os.path.exists(updated_entity_output_path)):
-        # Read in files
-        entity_df = read_csv_file(entity_output_path)
-        # Check if updated entity file exists
-        check_if_older_file_exists(entity_output_path)
-        updated_entity_df = read_csv_file(updated_entity_output_path)
-        existing_entities_df = entity_df[~entity_df[entity_column].isin(updated_entity_df[entity_column])]
-        combined_entities_df = pd.concat([updated_entity_df, existing_entities_df])
-        # Sort by query time and drop duplicates
-        combined_entities_df = combined_entities_df[updated_entity_df.columns.tolist()]
-        combined_entities_df = combined_entities_df.fillna(np.nan).replace([np.nan], [None])
-        combined_entities_df = combined_entities_df.sort_values(by=[query_time_column]).drop_duplicates(subset=[entity_column], keep='first')
-        cleaned_entities_df = check_for_entity_in_older_queries(entity_output_path, combined_entities_df, is_large)
-        if overwrite_existing_temp_files:
-            double_check = check_file_created(entity_output_path, cleaned_entities_df)
-            if double_check:
-                os.remove(updated_entity_output_path)
-        if return_df:
-            return combined_entities_df
-        
-def get_missing_entries(df: pd.DataFrame, older_df: pd.DataFrame, subset_fields: List) -> pd.DataFrame:
-    """
-    Checks for missing entries in a dataframe
-
-    :param df: Current dataframe
-    :param older_df: Older existing dataframe
-    :param subset_fields: List of columns to subset
-    :return: Missing values dataframe
-    """
-    # Check for missing entries in a dataframe
-    merged_df = pd.merge(df[subset_fields], older_df[subset_fields], on=subset_fields, how='outer', indicator=True)
-    # Subset missing values
-    missing_values = merged_df[merged_df._merge == 'right_only']
-    double_check = missing_values[subset_fields]
-    combined_condition = np.ones(len(older_df), dtype=bool)
-    for field in subset_fields:
-        combined_condition = combined_condition & older_df[field].isin(double_check[field])
-    older_df['double_check'] = np.where(combined_condition, 1, 0)
-    final_missing_values = older_df[(older_df.double_check == 1) & (older_df[subset_fields[0]].isin(double_check[subset_fields[0]]))]
-    if len(final_missing_values) > 0:
-        final_missing_values = final_missing_values.drop(columns=['double_check'])
-        return final_missing_values
-    else:
-        return pd.DataFrame()
-
-def check_for_joins_in_older_queries(join_file_path: str, join_files_df: pd.DataFrame, join_unique_field: str, filter_fields: List, subset_terms: Optional[List]=[], is_large: bool=False) -> pd.DataFrame:
-    """
-    Checks if joins from GitHub API exist in older queries and add them to our most recent version of the file
-
-    :param join_file_path: Path to join file
-    :param join_files_df: Current join dataframe
-    :param join_unique_field: Unique field to join on
-    :param filter_fields: Fields to filter on
-    :param subset_terms: Optional subset terms to filter on
-    :param is_large: Boolean to check if file is large or not
-    :return: Final joined dataframe
-    """
-    # Needs to check if older repos exist and then find their values in older join_files_df
-    join_type = join_file_path.split("/")[-1].split("_dataset")[0]
-
-    older_join_file_path = join_file_path.replace(f"{data_directory_path}/", f"{data_directory_path}/older_files/")
-    older_join_file_dir = os.path.dirname(older_join_file_path) + "/"
-
-    older_join_df = read_combine_files(dir_path=older_join_file_dir, check_all_dirs=True, file_path_contains=join_type, large_files=is_large) 
-    
-    # entity_type = "" if "search" in join_file_path else "repo" if "repo" in join_file_path else "user"
-    entity_type = join_file_path.split("/")[-1].split("_")[0]
-
-    if "comments" in join_file_path:
-        entity_type = "repo"
-
-    if "search" in join_file_path:
-        entity_type = ""
-
-    if "search" in join_file_path:
-        join_files_df = join_files_df[join_files_df.search_term_source.isin(subset_terms)]
-        older_join_df = older_join_df[older_join_df.search_term_source.isin(subset_terms)]
-
-    if len(older_join_df) > 0:
-        if join_unique_field in older_join_df.columns:
-            older_join_df = older_join_df[older_join_df[join_unique_field].notna()]
-            
-            combined_join_df = pd.concat([join_files_df, older_join_df])
-            time_field = 'search_query_time' if 'search_query' in join_unique_field else f'{entity_type}_query_time'
-            cleaned_field = 'cleaned_search_query_time' if 'search_query' in join_unique_field else f'cleaned_{entity_type}_query_time'
-            combined_join_df[cleaned_field] = None
-            combined_join_df.loc[combined_join_df[time_field].isna(), cleaned_field] = '2022-10-10'
-            combined_join_df[cleaned_field] = pd.to_datetime(combined_join_df[time_field], errors='coerce')
-            combined_join_df = combined_join_df.sort_values(by=[cleaned_field]).drop_duplicates(subset=filter_fields, keep='first').drop(columns=[cleaned_field])
-
-            missing_values = get_missing_entries(join_files_df, older_join_df, filter_fields)
-
-            if len(missing_values) > 0:
-                join_files_df = pd.concat([join_files_df, missing_values])
-                # join_files_df.to_csv(join_file_path, index=False)
-
-    return join_files_df
 
 def get_core_users_repos(combine_files: bool =True) -> Union[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
