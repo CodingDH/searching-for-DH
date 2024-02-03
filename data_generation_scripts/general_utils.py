@@ -147,20 +147,6 @@ def read_csv_file(file_name: str, directory: Optional[str] = None, encoding: Opt
         console.print(f'Failed to read {file_name} with {encoding} encoding. Error: {e}', style='bold red')
         return None
 
-def check_return_error_file(error_file_path:str) -> pd.DataFrame():
-    """
-    Checks if error file exists and returns it if it does.
-    
-    :param error_file_path: Path to error file
-    :return: Error dataframe
-    """
-    # Check if error file exists and return it if it does
-    if os.path.exists(error_file_path):
-        error_df = read_csv_file(error_file_path)
-        return error_df
-    else:
-        return pd.DataFrame()
-
 def clean_write_error_file(error_file_path: str, drop_field: str) -> None:
     """
     Cleans error file and writes it. Drops duplicates if error_time column exists. Also drops duplicates based on drop_field column.
@@ -179,79 +165,6 @@ def clean_write_error_file(error_file_path: str, drop_field: str) -> None:
         error_df.to_csv(error_file_path, index=False)
     else:
         console.print('No error file to clean', style='bold blue')
-
-def check_file_size_and_move(file_dir: str) -> None:
-    """
-    Checks file size and moves it if it is too large.
-
-    :param file_dir: Directory of file
-    """
-    # Check if file size is too large and move it
-    for dir, _, files in os.walk(file_dir):
-        for file in files:
-            file_path = os.path.join(dir, file)
-            size = os.path.getsize(file_path)
-            size = round(size/(1024*1024), 2)
-            if size > 50:
-                console.print(f'File {file_path} is {size} MB', style='bold red')
-                new_file_path = file_path.replace(f'{data_directory_path}/', f'{data_directory_path}/large_files/')
-                if not os.path.exists(new_file_path):
-                    shutil.copy2(file_path, new_file_path)
-                    os.remove(file_path)
-
-def check_file_created(file_path :str, existing_df: pd.DataFrame) -> bool:
-    """
-    Checks if csv file was created correctly and that it has the same length as its current DataFrame.
-
-    :param file_path: Path to file
-    :param existing_df: Existing dataframe
-    :return: Boolean indicating whether file was created correctly
-    """
-    # Check if file was created correctly
-    df = read_csv_file(file_path)
-    if len(df) == len(existing_df):
-        return True
-    else:
-        console.print(f'File {file_path} not created correctly', style='bold red')
-        return False
-    
-def check_if_older_file_exists(file_path: str) -> None:
-    """
-    Checks if older file exists and moves it if it does.
-
-    :param file_path: Path to file
-    """
-    # Check if older file exists and move it
-    if os.path.exists(file_path):
-        src = file_path 
-        # Create new file path
-        new_file_path = file_path.replace(f'{data_directory_path}/',f'{data_directory_path}/older_files/')
-        time_stamp = datetime.now().strftime("%Y_%m_%d")
-        dst = new_file_path.replace('.csv', f'_{time_stamp}.csv')
-        # Create new directory if it doesn't exist
-        new_dir = os.path.dirname(new_file_path)
-        if not os.path.exists(new_dir):
-            os.makedirs(new_dir)
-        # Move file
-        if not os.path.exists(dst):
-            shutil.copy2(src, dst)  
-
-def create_file_dict(directory: str, file_name: str) -> dict:
-    """
-    Creates a file dictionary with name, size, and directory.
-
-    :param directory: Directory of file
-    :param file_name: Name of file
-    :return: File dictionary
-    """
-    # Create a file dictionary with name, size, and directory
-    file_dict = {}
-    loaded_file = os.path.join(directory, file_name)
-    file_size = os.path.getsize(loaded_file)
-    file_dict['file_name'] = file_name
-    file_dict['file_size'] = file_size
-    file_dict['directory'] = directory
-    return file_dict
     
 def read_combine_files(dir_path: str, file_path: str, grouped_columns: Optional[list] = None , return_all: bool = False) -> pd.DataFrame:
     """

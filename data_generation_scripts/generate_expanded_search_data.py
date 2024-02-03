@@ -173,73 +173,7 @@ def process_large_search_data(rates_df: pd.DataFrame, search_url: str, dh_term: 
             query = search_url + \
                 f"{dh_term}+created%3A{year}-01-01..{year}-12-31+sort:created{params}"
         # Get the data from the API
-        process_search_data(rates_df, query, yearly_output_path, row_data)
-
-def combine_search_df(initial_repo_output_path: str, repo_output_path: str, repo_join_output_path: str, initial_user_output_path: str, user_output_path: str, user_join_output_path: str, org_output_path: str, overwrite_existing_temp_files: bool) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """
-    Combines various dataframes containing search API data into consolidated datasets. This function 
-    processes and merges data from repositories, users, and organizations into separate, structured dataframes.
-
-    :param initial_repo_output_path: String specifying the path to the initial repository output file.
-    :param repo_output_path: String specifying the path to the processed repository output file.
-    :param repo_join_output_path: String specifying the path to the repository join output file.
-    :param initial_user_output_path: String specifying the path to the initial user output file.
-    :param user_output_path: String specifying the path to the processed user output file.
-    :param user_join_output_path: String specifying the path to the user join output file.
-    :param org_output_path: String specifying the path to the organization output file.
-    :param overwrite_existing_temp_files: Boolean indicating whether to overwrite existing temporary files during processing.
-    :return: A tuple of five DataFrames, each representing a different aspect of the combined data:
-        1. `repo_df` DataFrame for repository entities
-        2. `repo_join_df` DataFrame for repositories joined with search query data
-        3. `user_df` DataFrame for user entities
-        4. `user_join_df` DataFrame for users joined with search query data
-        5. `org_df` DataFrame for organization entities
-    """
-    # Flag to indicate whether to return a DataFrame
-    return_df = True
-
-    # Combine repo files
-    console.print("Combining repo files", style="bold blue")
-    repo_searched_files = read_combine_files(
-        dir_path=initial_repo_output_path, check_all_dirs=False, file_path_contains='searched', large_files=False)
-    repo_tagged_files = read_combine_files(dir_path=initial_repo_output_path, check_all_dirs=False, file_path_contains='tagged', large_files=False)
-
-    # Concatenate searched and tagged files, add search query time, check if older file exists, and write to CSV
-    repo_join_df = pd.concat([repo_searched_files, repo_tagged_files])
-    repo_join_df['search_query_time'] = datetime.now().strftime("%Y-%m-%d")
-    console.print("Checking if older file exists", style="green")
-    check_if_older_file_exists(repo_join_output_path)
-    repo_join_df.to_csv(repo_join_output_path, index=False)
-
-    # Drop duplicates, reset index, drop search query column, and add repos
-    repo_df = repo_join_df.drop_duplicates(subset='id')
-    repo_df = repo_df.reset_index(drop=True)
-    repo_df = repo_df.drop(columns=['search_query'])
-    console.print("Adding repos", style="bold blue")
-    repo_df = check_add_repos(repo_df, repo_output_path, return_df=True)
-
-    # Combine user files
-    console.print("Combining user files", style="bold blue")
-    user_join_df = read_combine_files(dir_path=initial_user_output_path, check_all_dirs=False, file_path_contains='searched', large_files=False)
-    user_join_df['search_query_time'] = datetime.now().strftime("%Y-%m-%d")
-    console.print("Checking if older file exists", style="green")
-    check_if_older_file_exists(user_join_output_path)
-    user_join_df.to_csv(user_join_output_path, index=False)
-
-    # Drop duplicates, reset index, drop search query column, and add users and orgs
-    user_df = user_join_df.drop_duplicates(subset='id')
-    user_df = user_df.reset_index(drop=True)
-    user_df = user_df.drop(columns=['search_query'])
-    org_df = user_df[user_df.type == "Organization"]
-    console.print("Adding users", style="bold blue")
-    user_df = check_add_users(
-        user_df, user_output_path, return_df, overwrite_existing_temp_files)
-    console.print("Adding orgs", style="bold blue")
-    org_df = check_add_orgs(org_df, org_output_path,
-                            return_df, overwrite_existing_temp_files)
-
-    # Return the processed DataFrames
-    return repo_df, repo_join_df, user_df, user_join_df, org_df    
+        process_search_data(rates_df, query, yearly_output_path, row_data)   
 
 def prepare_terms_and_directories(translated_terms_output_path: str, threshold_file_path: str, target_terms: List) -> Tuple[pd.DataFrame, int]:
     """
