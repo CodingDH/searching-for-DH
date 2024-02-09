@@ -30,7 +30,7 @@ auth_headers = {'Authorization': f'token {auth_token}','User-Agent': 'request'}
 
 console = Console()
 
-data_directory_path = "../../datasets"
+data_directory_path = "../../new_datasets"
 
 def check_rate_limit() -> pd.DataFrame:
     """
@@ -248,10 +248,21 @@ def sort_groups_add_coding_dh_id(group: pd.DataFrame, subset_columns: List) -> p
     Returns:
     pd.DataFrame: The sorted DataFrame group with the new 'coding_dh_id' column.
     """
+    # Initialize list to keep track of columns with lists
+    list_cols = []
+
     # Convert lists to comma-separated strings
     for col in group.columns:
         if group[col].apply(lambda x: isinstance(x, list)).any():
-            group[col] = group[col].apply(lambda x: ', '.join(map(str, x)) if isinstance(x, list) else x)
+            # Replace nulls with empty lists
+            group[col] = group[col].apply(lambda x: x if isinstance(x, list) else [])
+            
+            # Sort lists alphabetically and join into a string
+            group[f'combined_{col}'] = group[col].apply(lambda x: ', '.join(sorted(map(str, x))))
+            
+            # Add column to list_cols
+            subset_columns.append(col)
+            list_cols.append(f'combined_{col}')
 
     group = group.drop_duplicates(subset=group.columns.difference(subset_columns))
     if (group.drop(columns=subset_columns).nunique() > 1).any():
@@ -260,6 +271,10 @@ def sort_groups_add_coding_dh_id(group: pd.DataFrame, subset_columns: List) -> p
     else:
         group = group.sort_values('coding_dh_date').iloc[0:1]
         group['coding_dh_id'] = 0
+
+    # Drop the combined columns
+    group = group.drop(columns=list_cols)
+
     return group
 
 def get_entity_df(entity_type: str) -> pd.DataFrame:
@@ -274,7 +289,7 @@ def get_entity_df(entity_type: str) -> pd.DataFrame:
 
     return entity_df
 
-def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, temp_entity_dir: str, entity_progress_bar: tqdm, error_file_path: str, rerun_errors: bool, overwrite_existing_temp_files:bool = True) -> pd.DataFrame:
+def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, temp_entity_dir: str, entity_progress_bar: tqdm, error_file_path: str):
     """
     Gets new entities from GitHub API. 
 
@@ -287,12 +302,9 @@ def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, t
     :return: Combined entity dataframe
     """
 
-    # Delete existing temporary directory and create it again if overwrite_existing_temp_files is True
-    if (os.path.exists(temp_entity_dir) )and (overwrite_existing_temp_files):
-        shutil.rmtree(temp_entity_dir)
     # Create temporary directory if it doesn't exist
     if not os.path.exists(temp_entity_dir):
-        os.makedirs(temp_entity_dir)
+        os.makedirs(temp_entity_dir, exist_ok=True)
     
     # Subset headers for orgs and users
     user_cols = ["bio", "followers_url", "following_url", "gists_url", "gravatar_id", "hireable", "organizations_url","received_events_url", "site_admin", "starred_url",
@@ -308,7 +320,6 @@ def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, t
         excluded_entities = read_csv_file(excluded_file_path)
         # Exclude entities and check for errors
         potential_new_entities_df = potential_new_entities_df[~potential_new_entities_df[entity_column].isin(excluded_entities[entity_column])]
-    error_df = check_return_error_file(error_file_path)
 
     # Get headers
     headers = get_headers(entity_type)
@@ -316,8 +327,6 @@ def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, t
     # Update progress bar
     entity_progress_bar.total = len(potential_new_entities_df)
     entity_progress_bar.refresh()
-
-    entity_df = get_entity_df(entity_type)
 
     # Loop through potential new entities
     for _, row in potential_new_entities_df.iterrows():
@@ -387,65 +396,10 @@ def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, t
             continue
 
     # Read in all temporary files
-    combined_entity_df = read_combine_files(temp_entity_dir)
-    if overwrite_existing_temp_files:
-        shutil.rmtree(temp_entity_dir)
+    # combined_entity_df = read_combine_files(temp_entity_dir)
     entity_progress_bar.close()
-    return combined_entity_df
+    # return combined_entity_df
 
-
-
-def check_add_new_entities(potential_new_entities_df: pd.DataFrame, output_path: str, entity_type: str, return_df: bool, overwrite_existing_temp_files: bool, check_for_updates: bool) -> Optional[pd.DataFrame]:
-    """
-    Function to check if entities (users, organizations, or repositories) are already in the respective file and add them if not.
-
-    :param potential_new_entities_df: DataFrame of new identified entities (users, organizations, or repositories).
-    :param output_path: Path to the output file for entities.
-    :param entity_type: Type of entity ('users', 'orgs', or 'repos').
-    :param return_df: Boolean to return the DataFrame or not.
-    :param overwrite_existing_temp_files: Boolean to overwrite existing temp files or not.
-    :return: DataFrame of entities if return_df is True, otherwise None.
-    """
-
-    temp_dir = f"{data_directory_path}/temp/temp_{entity_type}/"
-    excluded_file_path = f'{data_directory_path}/metadata_files/excluded_{entity_type}.csv'
-    error_file_path = f"{data_directory_path}/error_logs/potential_{entity_type}_errors.csv"
-
-    identifier = 'full_name' if entity_type == 'repos' else 'login'
-    # Load headers and excluded entities
-    headers_df = get_headers(entity_type)
-    if os.path.exists(excluded_file_path):
-        excluded_entities = read_csv_file(excluded_file_path)
-        # Exclude entities and check for errors
-        potential_new_entities_df = potential_new_entities_df[~potential_new_entities_df[identifier].isin(excluded_entities[identifier])]
-    error_df = check_return_error_file(error_file_path)
-
-    if os.path.exists(output_path) and (not check_for_updates):
-        existing_df = read_csv_file(output_path)
-        new_entities_df = potential_new_entities_df[~potential_new_entities_df[identifier].isin(existing_df[identifier])]
-        if len(error_df) > 0:
-            new_entities_df = new_entities_df[~new_entities_df[identifier].isin(error_df[identifier])]
-        if len(new_entities_df) > 0:
-            progress_bar = tqdm(total=len(new_entities_df), desc=f'Getting {entity_type.capitalize()}', position=1)
-
-            expanded_new_entities = get_new_entities(entity_type, new_entities_df, temp_dir, progress_bar, error_file_path, overwrite_existing_temp_files)
-        else:
-            expanded_new_entities = new_entities_df
-        combined_df = pd.concat([existing_df, expanded_new_entities])
-        combined_df = combined_df.drop_duplicates(subset=[identifier])
-    else:
-        new_entities_df = potential_new_entities_df.copy()
-        progress_bar = tqdm(total=len(new_entities_df), desc=f'{entity_type.capitalize()}', position=1)
-        combined_df = get_new_entities(entity_type, new_entities_df, temp_dir, progress_bar, error_file_path, overwrite_existing_temp_files)
-    
-    clean_write_error_file(error_file_path, identifier)
-    check_if_older_file_exists(output_path)
-    combined_df[f'{entity_type}_query_time'] = datetime.now().strftime("%Y-%m-%d")
-    combined_df.to_csv(output_path, index=False)
-
-    if return_df:
-        combined_df = get_entity_df(output_path)
-        return combined_df
 
 
 def get_core_users_repos(combine_files: bool =True) -> Union[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
