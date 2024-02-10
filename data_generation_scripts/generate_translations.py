@@ -16,7 +16,9 @@ from google.cloud import translate_v2 as translate
 from google.oauth2 import service_account
 from rich.console import Console
 from tqdm import tqdm
-
+import sys
+sys.path.append("..")
+from data_generation_scripts.general_utils import get_data_directory_path
 warnings.filterwarnings('ignore')
 # Load Google Cloud credentials. You can get your own credentials by following the instructions here: https://cloud.google.com/translate/docs/setup and saving them with apikey.save("GOOGLE_TRANSLATE_CREDENTIALS", "path/to/your/credentials.json")
 key_path = apikey.load("GOOGLE_TRANSLATE_CREDENTIALS")
@@ -240,7 +242,7 @@ def generate_translated_terms(data_directory_path: str, directionality_df: pd.Da
     return cleaned_terms_df, grouped_terms_df
 
 if __name__ == '__main__':
-    local_data_directory_path = "../../datasets" # Change this to the path to your datasets directory
+    local_data_directory_path = get_data_directory_path()
     existing_directionality_path = f"{local_data_directory_path}/metadata_files/iso_639_choices_directionality_wikimedia.csv"
     local_target_terms: list = ["Humanities", "Public History", "Digital History", "Digital Cultural Heritage", "Cultural Analytics", "Computational Humanities", "Computational Social Science"]
     should_rerun_code = True

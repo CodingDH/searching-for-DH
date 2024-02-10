@@ -30,7 +30,21 @@ auth_headers = {'Authorization': f'token {auth_token}','User-Agent': 'request'}
 
 console = Console()
 
-data_directory_path = "../../new_datasets"
+def set_data_directory_path(path: str) -> None:
+    """
+    Sets data directory path.
+
+    :param path: Path to data directory
+    """
+    os.environ['CODING_DH_DATA_DIRECTORY_PATH'] = path
+
+def get_data_directory_path() -> str:
+    """
+    Gets data directory path.
+
+    :return: Data directory path
+    """
+    return os.getenv('CODING_DH_DATA_DIRECTORY_PATH')
 
 def check_rate_limit() -> pd.DataFrame:
     """
@@ -230,6 +244,7 @@ def get_headers(entity_type: str) -> pd.DataFrame:
     :param entity_type: Type of entity
     :return: Headers dataframe
     """
+    data_directory_path = get_data_directory_path()
     # Get headers for entity type
     if entity_type == 'users':
         headers = read_csv_file(f'{data_directory_path}/metadata_files/user_headers.csv')
@@ -291,6 +306,7 @@ def get_entity_df(entity_type: str) -> pd.DataFrame:
     :param entity_path: Path to entity file
     :return: Entity dataframe
     """
+    data_directory_path = get_data_directory_path()
     # Get entity dataframe
     entity_df = read_csv_file(f"{data_directory_path}/large_files/entity_files/{entity_type}_dataset.csv")
 
@@ -335,7 +351,7 @@ def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, t
     :param overwrite_existing_temp_files: Boolean indicating whether to overwrite existing temporary files. Defaults to True.
     :return: Combined entity dataframe
     """
-
+    data_directory_path = get_data_directory_path()
     # Create temporary directory if it doesn't exist
     if not os.path.exists(temp_entity_dir):
         os.makedirs(temp_entity_dir, exist_ok=True)
@@ -450,6 +466,7 @@ def create_queries_directories(entity_type: str, cleaned_terms: pd.DataFrame) ->
     :param cleaned_terms: Cleaned terms dataframe
     :return: Search Queries dataframe
     """
+    data_directory_path = get_data_directory_path()
     queries = []
     for _, subdir, _ in tqdm(os.walk(data_directory_path + f"/searched_{entity_type}_data"), desc="Walking through directories"):
         for directory in subdir:
@@ -538,46 +555,4 @@ def save_chart(chart: alt.Chart, filename: str, scale_factor=2.0) -> None:
         
 if __name__ == "__main__":
     data_directory_path = "../../new_datasets"
-    target_terms: list = ["Public History", "Digital History", "Digital Cultural Heritage", "Cultural Analytics", "Computational Humanities", "Computational Social Science", "Digital Humanities"]
-
-    # Load in the translated terms
-    cleaned_terms = pd.read_csv(f'{data_directory_path}/derived_files/grouped_cleaned_translated_terms.csv', encoding='utf-8-sig')
-
-    if 'keep_term' in cleaned_terms.columns:
-        cleaned_terms = cleaned_terms[cleaned_terms.keep_term == True]
-    # check if columns need renaming
-    columns_to_rename = ['code', 'term', 'term_source']
-    if all(elem in cleaned_terms.columns for elem in columns_to_rename):
-        cleaned_terms = cleaned_terms.rename(columns={'code': 'natural_language', 'term': 'search_term', 'term_source': 'search_term_source'})
-    cleaned_terms = cleaned_terms[cleaned_terms.search_term_source.isin(target_terms)]
-    cleaned_terms = cleaned_terms.reset_index(drop=True)
-
-    cleaned_terms.loc[cleaned_terms.search_term.str.contains("&#39;"), "search_term"] = cleaned_terms.search_term.str.replace("&#39;", "'")
-    cleaned_terms['lower_search_term'] = cleaned_terms.search_term.str.lower()
-
-    search_user_queries_df = create_queries_directories("user", cleaned_terms)
-    search_org_queries_df = search_user_queries_df[search_user_queries_df['type'] == 'Organization']
-    search_org_queries_df = search_org_queries_df[search_org_queries_df.search_term_source.isin(cleaned_terms.search_term_source.unique())]
-    search_user_queries_df = search_user_queries_df[search_user_queries_df['type'] == 'User']
-    search_user_queries_df = search_user_queries_df[search_user_queries_df.search_term_source.isin(cleaned_terms.search_term_source.unique())]
-    search_repo_queries_df = create_queries_directories("repo", cleaned_terms)
-    search_repo_queries_df = search_repo_queries_df[search_repo_queries_df.search_term_source.isin(cleaned_terms.search_term_source.unique())]
-    user_files = os.listdir(f"{data_directory_path}/historic_data/entity_files/all_users/")
-    org_files = os.listdir(f"{data_directory_path}/historic_data/entity_files/all_orgs/")
-    repo_files = os.listdir(f"{data_directory_path}/historic_data/entity_files/all_repos/")
-    cleaned_user_files = [f.split("_coding_dh_")[0] for f in user_files if f.endswith(".csv")]
-    cleaned_org_files = [f.split("_coding_dh_")[0] for f in org_files if f.endswith(".csv")]
-    cleaned_repo_files = [f.split("_coding_dh_")[0].replace("_", "/", 1) for f in repo_files if f.endswith(".csv")]
-    existing_search_user_queries_df = search_user_queries_df[search_user_queries_df.login.isin(cleaned_user_files)]
-    existing_search_org_queries_df = search_org_queries_df[search_org_queries_df.login.isin(cleaned_org_files)]
-    existing_search_repo_queries_df = search_repo_queries_df[search_repo_queries_df.full_name.isin(cleaned_repo_files)]
-    finalized_user_logins = existing_search_user_queries_df.login.unique().tolist()
-    finalized_org_logins = existing_search_org_queries_df.login.unique().tolist()
-    finalized_repo_full_names = existing_search_repo_queries_df.full_name.unique().tolist()
-
-    finalized_user_files = [f"{login}_coding_dh_user.csv" for login in finalized_user_logins]
-    finalized_org_files = [f"{login}_coding_dh_org.csv" for login in finalized_org_logins]
-    finalized_repo_files = [f"{full_name.replace('/', '_')}_coding_dh_repo.csv" for full_name in finalized_repo_full_names]
-    initial_core_users = read_combine_files(f"{data_directory_path}/historic_data/entity_files/all_users/", finalized_user_files[0:2])
-    # initial_core_orgs = read_combine_files(f"{data_directory_path}/historic_data/entity_files/all_orgs/", finalized_org_files)
-    # initial_core_repos = read_combine_files(f"{data_directory_path}/historic_data/entity_files/all_repos/", finalized_repo_files)
+    set_data_directory_path(data_directory_path)

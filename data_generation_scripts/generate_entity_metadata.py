@@ -11,10 +11,6 @@ import os
 sys.path.append("..")
 from data_generation_scripts.general_utils import check_rate_limit, check_total_pages, read_csv_file
 
-auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
-
-auth_headers = {'Authorization': f'token {auth_token}',
-                'User-Agent': 'request'}
 
 def write_results_to_csv(count_column: str, row: pd.DataFrame, entity_type: str, dir_path: str):
     """Function to write results to csv
@@ -80,6 +76,14 @@ def get_counts(df: pd.DataFrame, url_column: str, count_column: str, entity_type
     return df
 
 def process_counts(df: pd.DataFrame, cols_df: pd.DataFrame, auth_headers: dict, entity_type: str, dir_path: str) -> pd.DataFrame:
+    """Function to process counts for users, organizations, and repositories
+
+    :param df: DataFrame with user or organization or repository data
+    :param cols_df: DataFrame with the count columns and url columns
+    :param auth_headers: Authorization headers
+    :param entity_type: Type of entity (users or orgs or repos)
+    :param dir_path: Directory path to existing csv files
+    :return: DataFrame with the total results"""
     for _, row in cols_df.iterrows():
         if (row['count_column'] not in df.columns) or (df[df[row.count_column].isna()].shape[0] > 0):
             if 'url' in row.url_column:
@@ -92,7 +96,17 @@ def process_counts(df: pd.DataFrame, cols_df: pd.DataFrame, auth_headers: dict, 
                 print(f'Counts already exist {row.count_column} for {entity_type}')
     return df
 
-def get_count_metadata(entity_df, entity_type, dir_path):
+def get_count_metadata(entity_df: pd.DataFrame, entity_type: str, dir_path: str) -> pd.DataFrame:
+    """Function to get count metadata for users, organizations, and repositories
+
+    :param entity_df: DataFrame with user or organization or repository data
+    :param entity_type: Type of entity (users or orgs or repos)
+    :param dir_path: Directory path to existing csv files
+    :return: DataFrame with the total results"""
+    auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
+
+    auth_headers = {'Authorization': f'token {auth_token}',
+                'User-Agent': 'request'}
     if entity_type == "repos":
         cols_df = read_csv_file("../data/metadata_files/repo_url_cols.csv")
         skip_types = ['review_comments_url', 'commits_url', 'collaborators_url']
@@ -110,10 +124,11 @@ def get_count_metadata(entity_df, entity_type, dir_path):
             cols_df = pd.concat([cols_df, add_cols])
             entity_df["members_url"] = entity_df["url"].apply(lambda x: x + "/public_members")
             entity_df.members_url = entity_df.members_url.str.replace('users', 'orgs')
-        entity_df = process_counts(entity_df, f"../data/derived_files/firstpass_core_{entity_type}.csv", cols_df, auth_headers, entity_type, dir_path)
+        entity_df = process_counts(entity_df, cols_df, auth_headers, entity_type, dir_path)
+    return entity_df
             
 
-if __name__ == "__main__":
+# if __name__ == "__main__":
 
 
 
