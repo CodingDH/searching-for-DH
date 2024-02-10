@@ -289,6 +289,33 @@ def get_entity_df(entity_type: str) -> pd.DataFrame:
 
     return entity_df
 
+def check_headers_exist(df: pd.DataFrame, headers: pd.DataFrame) -> pd.DataFrame:
+    """
+    Checks if headers exist in dataframe and adds them if they don't.
+
+    :param df: Dataframe
+    :param headers: Headers dataframe
+    :return: Dataframe with headers
+    """
+    # Check if each column in headers exists in the response data
+    for column in headers.columns:
+        if column not in df.columns:
+            df[column] = None  # If not, assign None
+    return df
+
+def drop_columns(df: pd.DataFrame, columns: List) -> pd.DataFrame:
+    """
+    Drops columns from dataframe.
+
+    :param df: Dataframe
+    :param columns: Columns to drop
+    :return: Dataframe with dropped columns
+    """
+    for col in columns:
+        if col in df.columns:
+            df = df.drop(columns=[col])
+    return df
+
 def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, temp_entity_dir: str, entity_progress_bar: tqdm, error_file_path: str):
     """
     Gets new entities from GitHub API. 
@@ -315,6 +342,7 @@ def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, t
 
     # Get entity column based on entity type
     entity_column = "full_name" if entity_type == "repos" else "login"
+    entity_type_singular = entity_type[:-1]
 
     if os.path.exists(excluded_file_path):
         excluded_entities = read_csv_file(excluded_file_path)
@@ -327,15 +355,18 @@ def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, t
     # Update progress bar
     entity_progress_bar.total = len(potential_new_entities_df)
     entity_progress_bar.refresh()
+    columns_to_drop = ['org_query_time', 'user_query_time', 'repo_query_time', 'search_query_time', 'coding_dh_id']
 
     # Loop through potential new entities
     for _, row in potential_new_entities_df.iterrows():
         try:
             # Create temporary file path
-            temp_entities_path = f"{row[entity_column].replace('/', '_').replace(' ', '_')}_coding_dh_{entity_type}.csv"
+            temp_entities_path = f"{row[entity_column].replace('/', '_').replace(' ', '_')}_coding_dh_{entity_type_singular}.csv"
+            console.print(temp_entities_path)
             # Check if file exists
             if os.path.exists(f"{temp_entity_dir}/{temp_entities_path}"):
                 existing_temp_entities_df = read_csv_file(f"{temp_entity_dir}/{temp_entities_path}")
+                existing_temp_entities_df = drop_columns(existing_temp_entities_df, columns_to_drop)
             else:
                 existing_temp_entities_df = pd.DataFrame()
             # Get query
@@ -360,7 +391,8 @@ def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, t
                     continue
             
             if entity_type != "orgs":
-                final_df = response_df[headers.columns]
+                final_df = check_headers_exist(response_df, headers)
+                final_df = final_df[headers.columns]
             else:
                 response_df = response_df[user_cols]
                 query = row.url.replace("/users/", "/orgs/") if "/users/" in row.url else row.url
@@ -370,7 +402,9 @@ def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, t
                 else:
                     response_data = response.json()
                     expanded_df = pd.json_normalize(response_data)
-                expanded_df = expanded_df[headers.columns]
+                    expanded_df = check_headers_exist(expanded_df, headers)            
+                    expanded_df = expanded_df[headers.columns]
+             
                 common_columns = list(set(response_df.columns).intersection(set(expanded_df.columns)))
                 final_df = pd.merge(response_df, expanded_df, on=common_columns, how='left')
                 
@@ -383,6 +417,7 @@ def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, t
                 group = sort_groups_add_coding_dh_id(group, subset_columns)
                 processed_files.append(group)
             final_processed_df = pd.concat(processed_files).reset_index(drop=True)
+            console.print("Length final_df", len(final_processed_df))
             final_processed_df.to_csv(f"{temp_entity_dir}/{temp_entities_path}", index=False)
             entity_progress_bar.update(1)
         except Exception as e:

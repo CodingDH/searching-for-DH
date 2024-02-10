@@ -29,8 +29,8 @@ def create_queries_directories(entity_type: str, cleaned_terms: pd.DataFrame) ->
     """
     queries = []
     for _, subdir, _ in tqdm(os.walk(data_directory_path + f"/searched_{entity_type}_data"), desc="Walking through directories"):
-        for directory in tqdm(subdir, desc="Processing subdirectories"):
-            for file in tqdm(os.listdir(data_directory_path + f"/searched_{entity_type}_data/" + directory), desc="Processing files"):
+        for directory in subdir:
+            for file in os.listdir(data_directory_path + f"/searched_{entity_type}_data/" + directory):
                 if file.endswith(".csv"):
                     search_term_source = directory.replace("_", " ").title()
                     if 'searched' in file:
@@ -57,8 +57,7 @@ def create_queries_directories(entity_type: str, cleaned_terms: pd.DataFrame) ->
 
 if __name__ == "__main__":
     data_directory_path = "../../new_datasets"
-    target_terms: list = ["Digital Humanities"]
-    # "Public History", "Digital History", "Digital Cultural Heritage", "Cultural Analytics", "Computational Humanities", "Computational Social Science"
+    target_terms: list = ["Public History", "Digital History", "Digital Cultural Heritage", "Cultural Analytics", "Computational Humanities", "Computational Social Science", "Digital Humanities"]
 
     # Load in the translated terms
     cleaned_terms = pd.read_csv(f'{data_directory_path}/derived_files/grouped_cleaned_translated_terms.csv', encoding='utf-8-sig')
@@ -82,3 +81,11 @@ if __name__ == "__main__":
     search_user_queries_df = search_user_queries_df[search_user_queries_df.search_term_source.isin(cleaned_terms.search_term_source.unique())]
     search_repo_queries_df, repo_queries_df = create_queries_directories("repo", cleaned_terms)
     search_repo_queries_df = search_repo_queries_df[search_repo_queries_df.search_term_source.isin(cleaned_terms.search_term_source.unique())]
+
+    # entity_type = "repos"
+    # potential_new_entities_df = search_repo_queries_df.drop_duplicates(subset=['full_name'])
+    # # potential_new_entities_df = potential_new_entities_df[0:10]
+    # temp_entity_dir = f"{data_directory_path}/historic_data/entity_files/all_repos/"
+    # entity_progress_bar = tqdm(total=potential_new_entities_df.shape[0], desc="Processing entities")
+    # error_file_path = f"{data_directory_path}/error_logs/repo_errors.csv"
+    # get_new_entities(entity_type, potential_new_entities_df, temp_entity_dir, entity_progress_bar, error_file_path)

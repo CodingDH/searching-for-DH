@@ -9,7 +9,7 @@ warnings.filterwarnings('ignore')
 import pandas as pd
 import os
 sys.path.append("..")
-from data_generation_scripts.utils import check_rate_limit
+from data_generation_scripts.general_utils import check_rate_limit, make_request_with_rate_limiting
 
 auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
 
