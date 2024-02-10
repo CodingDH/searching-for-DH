@@ -331,8 +331,7 @@ def get_repo_counts(row, url_field, overwrite_existing):
         pd.DataFrame(row).T.to_csv(
             f'../data/temp/{field_name}_counts.csv', header=True, index=False)
     else:
-        pd.DataFrame(row).T.to_csv(f'../data/temp/{field_name}_counts.csv',
-                                   mode='a', header=False, index=False)
+        pd.DataFrame(row).T.to_csv(f'../data/temp/{field_name}_counts.csv', mode='a', header=False, index=False)
     return row
 
 
@@ -361,26 +360,26 @@ def get_counts(repo_df, url_type, count_type, overwrite_existing_temp_files = Fa
         return repo_df
 
 if __name__ == "__main__":
-    # repo_file_path = "../data/derived_files/initial_core_repos.csv"
-    # core_repos = pd.read_csv(repo_file_path)
-    # counts_fields = pd.read_csv('../data/metadata_files/repo_url_cols.csv')
-    # counts_fields.loc[counts_fields.url_type == 'review_comments_url', 'count_type'] = 'review_count'
+    repo_file_path = "../data/derived_files/initial_core_repos.csv"
+    core_repos = pd.read_csv(repo_file_path)
+    counts_fields = pd.read_csv('../data/metadata_files/repo_url_cols.csv')
+    counts_fields.loc[counts_fields.url_type == 'review_comments_url', 'count_type'] = 'review_count'
     
     
-    # skip_types = ['review_comments_url', 'commits_url', 'collaborators_url']
-    # overwrite_existing_temp_files = True
-    # for index, row in counts_fields.iterrows():
-    #     if (row.url_type not in skip_types):
-    #         count_type = row.url_type.split("_")[0] + "_count"
-    #         print(f"Getting {count_type} for {row['url_type']}")
-    #         core_repos = get_counts(core_repos, row['url_type'], count_type, overwrite_existing_temp_files)
-    #         core_repos.to_csv(repo_file_path, index=False)
-    #         row['count_type'] = count_type
-    # core_repos.to_csv(repo_file_path, index=False)
-    # pulls_df = pd.read_csv('../data/large_files/join_files/repo_pulls_join_dataset.csv')
-    # url_type = "review_comments_url"
-    # count_type = "review_count"
-    # pulls_df = get_counts(pulls_df, url_type, count_type, overwrite_existing_temp_files=False)
+    skip_types = ['review_comments_url', 'commits_url', 'collaborators_url']
+    overwrite_existing_temp_files = True
+    for index, row in counts_fields.iterrows():
+        if (row.url_type not in skip_types):
+            count_type = row.url_type.split("_")[0] + "_count"
+            print(f"Getting {count_type} for {row['url_type']}")
+            core_repos = get_counts(core_repos, row['url_type'], count_type, overwrite_existing_temp_files)
+            core_repos.to_csv(repo_file_path, index=False)
+            row['count_type'] = count_type
+    core_repos.to_csv(repo_file_path, index=False)
+    pulls_df = pd.read_csv('../data/large_files/join_files/repo_pulls_join_dataset.csv')
+    url_type = "review_comments_url"
+    count_type = "review_count"
+    pulls_df = get_counts(pulls_df, url_type, count_type, overwrite_existing_temp_files=False)
     # pulls_df.to_csv('../data/large_files/join_files/repo_pulls_join_dataset.csv', index=False)
     finalpass_core_repos = pd.read_csv("../data/large_files/derived_files/finalpass_core_repos.csv")
    

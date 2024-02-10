@@ -167,7 +167,8 @@ def clean_write_error_file(error_file_path: str, drop_field: str) -> None:
     else:
         console.print('No error file to clean', style='bold blue')
     
-def read_combine_files(dir_path: str, file_path: str, grouped_columns: Optional[list] = None , return_all: bool = False) -> pd.DataFrame:
+    
+def read_combine_files(dir_path: str, files: Optional[List] = None, file_path: Optional[str] = None, grouped_columns: Optional[List] = [] , return_all: bool = False) -> pd.DataFrame:
     """
     Reads all CSV files in a directory, combines them into a single DataFrame, and writes the result to a file. Items are organized by most recent coding_dh_date.
     If return_all is False, only the most recent entry for each group (defined by grouped_columns) is kept.
@@ -183,17 +184,15 @@ def read_combine_files(dir_path: str, file_path: str, grouped_columns: Optional[
     """
     
     # Remove the output file if it already exists
-    if os.path.exists(file_path):
-        os.remove(file_path)
+    if files is None:
+        files = os.listdir(dir_path)
     
-    files = os.listdir(dir_path)
-    
+    dfs = []
     for file in tqdm(files, desc=f"Reading files in {dir_path}"):
         # Skip .DS_Store files
         if '.DS_Store' in file:
             os.remove(os.path.join(dir_path, file))
             continue
-        
         df = read_csv_file(os.path.join(dir_path, file))
         
         if df is not None:
@@ -202,18 +201,26 @@ def read_combine_files(dir_path: str, file_path: str, grouped_columns: Optional[
                     df['coding_dh_date'] = pd.to_datetime(df['coding_dh_date'], errors='coerce')
                     df = df.sort_values(by="coding_dh_date", ascending=False)
                     # get the latest date
-                    if 'entity' not in file_path and grouped_columns is not None:
+                    if ('entity' not in dir_path) and (len(grouped_columns) > 0):
                         df = df.groupby(grouped_columns).first().reset_index()
                     else:
                         df = df[0:1]
-                
-                # Write DataFrame to file
-                mode = "a" if os.path.exists(file_path) else "w"
-                df.to_csv(file_path, mode=mode, header=(mode=="w"), index=False)
+                    
+                if file_path is not None and os.path.exists(file_path):
+                    # Write DataFrame to file
+                    mode = "a" if os.path.exists(file_path) else "w"
+                    df.to_csv(file_path, mode=mode, header=(mode=="w"), index=False)
+                else:
+                    dfs.append(df)
             except:
                 console.print(f"Error with file {file}", style="bold red")
+                continue
     
-    return read_csv_file(file_path)
+    if file_path is not None and os.path.exists(file_path):
+        combined_df = read_csv_file(file_path)
+    else:
+        combined_df = pd.concat(dfs)
+    return combined_df
 
 
 def get_headers(entity_type: str) -> pd.DataFrame:
@@ -435,6 +442,41 @@ def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, t
     entity_progress_bar.close()
     # return combined_entity_df
 
+def create_queries_directories(entity_type: str, cleaned_terms: pd.DataFrame) -> pd.DataFrame:
+    """
+    Function to create directories for the queries
+
+    :param entity_type: Type of entity
+    :param cleaned_terms: Cleaned terms dataframe
+    :return: Search Queries dataframe
+    """
+    queries = []
+    for _, subdir, _ in tqdm(os.walk(data_directory_path + f"/searched_{entity_type}_data"), desc="Walking through directories"):
+        for directory in subdir:
+            for file in os.listdir(data_directory_path + f"/searched_{entity_type}_data/" + directory):
+                if file.endswith(".csv"):
+                    search_term_source = directory.replace("_", " ").title()
+                    if 'searched' in file:
+                        search_term = file.replace(".csv", "").split(f'{entity_type}s_searched_')[1].replace("+", " ").replace("&#39;", "'")
+                        if '20' in search_term:
+                            search_term = search_term.split("_20")[0]
+                    else:
+                        search_term = search_term_source
+                    
+                    subset_cleaned_terms = cleaned_terms[(cleaned_terms.search_term_source == search_term_source) & (cleaned_terms.search_term == search_term)]
+                    if not subset_cleaned_terms.empty:
+                        subset_cleaned_terms['file_path'] = f"{data_directory_path}/searched_{entity_type}_data/{directory}/{file}"
+                        subset_cleaned_terms["file_name"] = file
+                        queries.append(subset_cleaned_terms)
+    queries_df = pd.concat(queries)
+    queries_df = queries_df.reset_index(drop=True)
+    search_queries_dfs = []
+    for _, row in tqdm(queries_df.iterrows(), total=queries_df.shape[0], desc="Processing queries"):
+        df = pd.read_csv(row.file_path, encoding='utf-8-sig')
+        df["search_file_name"] = row.file_name
+        search_queries_dfs.append(df)
+    search_queries_df = pd.concat(search_queries_dfs)
+    return search_queries_df
 
 
 def get_core_users_repos(combine_files: bool =True) -> Union[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -493,3 +535,49 @@ def save_chart(chart: alt.Chart, filename: str, scale_factor=2.0) -> None:
                 f.write(vlc.vegalite_to_png(chart.to_dict(), scale=scale_factor))
         else:
             raise ValueError("Only svg and png formats are supported")
+        
+if __name__ == "__main__":
+    data_directory_path = "../../new_datasets"
+    target_terms: list = ["Public History", "Digital History", "Digital Cultural Heritage", "Cultural Analytics", "Computational Humanities", "Computational Social Science", "Digital Humanities"]
+
+    # Load in the translated terms
+    cleaned_terms = pd.read_csv(f'{data_directory_path}/derived_files/grouped_cleaned_translated_terms.csv', encoding='utf-8-sig')
+
+    if 'keep_term' in cleaned_terms.columns:
+        cleaned_terms = cleaned_terms[cleaned_terms.keep_term == True]
+    # check if columns need renaming
+    columns_to_rename = ['code', 'term', 'term_source']
+    if all(elem in cleaned_terms.columns for elem in columns_to_rename):
+        cleaned_terms = cleaned_terms.rename(columns={'code': 'natural_language', 'term': 'search_term', 'term_source': 'search_term_source'})
+    cleaned_terms = cleaned_terms[cleaned_terms.search_term_source.isin(target_terms)]
+    cleaned_terms = cleaned_terms.reset_index(drop=True)
+
+    cleaned_terms.loc[cleaned_terms.search_term.str.contains("&#39;"), "search_term"] = cleaned_terms.search_term.str.replace("&#39;", "'")
+    cleaned_terms['lower_search_term'] = cleaned_terms.search_term.str.lower()
+
+    search_user_queries_df = create_queries_directories("user", cleaned_terms)
+    search_org_queries_df = search_user_queries_df[search_user_queries_df['type'] == 'Organization']
+    search_org_queries_df = search_org_queries_df[search_org_queries_df.search_term_source.isin(cleaned_terms.search_term_source.unique())]
+    search_user_queries_df = search_user_queries_df[search_user_queries_df['type'] == 'User']
+    search_user_queries_df = search_user_queries_df[search_user_queries_df.search_term_source.isin(cleaned_terms.search_term_source.unique())]
+    search_repo_queries_df = create_queries_directories("repo", cleaned_terms)
+    search_repo_queries_df = search_repo_queries_df[search_repo_queries_df.search_term_source.isin(cleaned_terms.search_term_source.unique())]
+    user_files = os.listdir(f"{data_directory_path}/historic_data/entity_files/all_users/")
+    org_files = os.listdir(f"{data_directory_path}/historic_data/entity_files/all_orgs/")
+    repo_files = os.listdir(f"{data_directory_path}/historic_data/entity_files/all_repos/")
+    cleaned_user_files = [f.split("_coding_dh_")[0] for f in user_files if f.endswith(".csv")]
+    cleaned_org_files = [f.split("_coding_dh_")[0] for f in org_files if f.endswith(".csv")]
+    cleaned_repo_files = [f.split("_coding_dh_")[0].replace("_", "/", 1) for f in repo_files if f.endswith(".csv")]
+    existing_search_user_queries_df = search_user_queries_df[search_user_queries_df.login.isin(cleaned_user_files)]
+    existing_search_org_queries_df = search_org_queries_df[search_org_queries_df.login.isin(cleaned_org_files)]
+    existing_search_repo_queries_df = search_repo_queries_df[search_repo_queries_df.full_name.isin(cleaned_repo_files)]
+    finalized_user_logins = existing_search_user_queries_df.login.unique().tolist()
+    finalized_org_logins = existing_search_org_queries_df.login.unique().tolist()
+    finalized_repo_full_names = existing_search_repo_queries_df.full_name.unique().tolist()
+
+    finalized_user_files = [f"{login}_coding_dh_user.csv" for login in finalized_user_logins]
+    finalized_org_files = [f"{login}_coding_dh_org.csv" for login in finalized_org_logins]
+    finalized_repo_files = [f"{full_name.replace('/', '_')}_coding_dh_repo.csv" for full_name in finalized_repo_full_names]
+    initial_core_users = read_combine_files(f"{data_directory_path}/historic_data/entity_files/all_users/", finalized_user_files[0:2])
+    # initial_core_orgs = read_combine_files(f"{data_directory_path}/historic_data/entity_files/all_orgs/", finalized_org_files)
+    # initial_core_repos = read_combine_files(f"{data_directory_path}/historic_data/entity_files/all_repos/", finalized_repo_files)
