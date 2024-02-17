@@ -189,8 +189,10 @@ if __name__ == "__main__":
     initial_core_orgs = read_combine_files(f"{data_directory_path}/historic_data/entity_files/all_orgs/", finalized_org_files)
     initial_core_repos = read_combine_files(f"{data_directory_path}/historic_data/entity_files/all_repos/", finalized_repo_files)
     # get_count_metadata(entity_df: pd.DataFrame, entity_type: str, dir_path: str)
-    
-    subset_core_repos = initial_core_repos
-    # subset_core_repos.to_csv(f"subset_core_repos.csv", index=False)
-    # subset_core_repos = pd.read_csv(f"subset_core_repos.csv")
+    error_file_path = f"{data_directory_path}/error_logs/repo_errors.csv"
+    if os.path.exists(error_file_path):
+        error_df = pd.read_csv(error_file_path)
+        subset_core_repos = initial_core_repos[~initial_core_repos.full_name.isin(error_df.full_name)]
+    else:
+        subset_core_repos = initial_core_repos
     subset_core_repos = get_count_metadata(subset_core_repos, "repos", f"{data_directory_path}/historic_data/entity_files/all_repos/")

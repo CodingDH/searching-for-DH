@@ -37,7 +37,7 @@ def log_error_to_csv(search_query: str, status_code: int, search_term: str, sear
     :param search_term: The search term that caused the error.
     :param file_path: The path to the CSV file where the error should be logged.
     """
-    df = pd.DataFrame({'search_query': [search_query], 'status_code': [status_code], 'error_date': [datetime.now().strftime("%Y-%m-%d")], 'search_term': [search_term], 'search_term_source': [search_term_source]})
+    df = pd.DataFrame({'error_url': [search_query], 'status_code': [status_code], 'error_date': [datetime.now().strftime("%Y-%m-%d")], 'search_term': [search_term], 'search_term_source': [search_term_source]})
     df.to_csv(file_path, index=False)
 
 def fetch_data(query: str, data_directory_path: str, search_term: str, search_term_source: str) -> Tuple[pd.DataFrame, requests.Response]:
@@ -394,8 +394,8 @@ def generate_initial_search_datasets(rates_df: pd.DataFrame, initial_repo_output
 
     error_file = f"{data_directory_path}/error_logs/search_errors.csv"
     if os.path.exists(error_file):
-        drop_fields = ['search_term', 'search_term_source', 'status_code', 'search_query']
-        clean_write_error_file(error_file)
+        drop_fields = ['search_term', 'search_term_source', 'status_code', 'error_url']
+        clean_write_error_file(error_file, drop_fields)
     
     final_terms = prepare_terms_and_directories(f'{data_directory_path}/derived_files/grouped_cleaned_translated_terms.csv', f'{data_directory_path}/derived_files/threshold_search_errors.csv', target_terms)
     for index, row in final_terms.iterrows():

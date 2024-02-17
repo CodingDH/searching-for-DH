@@ -165,26 +165,6 @@ def read_csv_file(file_name: str, directory: Optional[str] = None, encoding: Opt
     except Exception as e:
         console.print(f'Failed to read {file_name} with {encoding} encoding. Error: {e}', style='bold red')
         return None
-
-def clean_write_error_file(error_file_path: str, drop_fields: List) -> None:
-    """
-    Cleans error file and writes it. Drops duplicates if error_time column exists. Also drops duplicates based on drop_field column.
-
-    :param error_file_path: Path to error file
-    :param drop_fields: Fields to drop
-    """
-    # Clean error file and write it
-    if os.path.exists(error_file_path):
-        error_df = read_csv_file(error_file_path)
-        # Drop duplicates if error_date exists
-        if 'error_date' in error_df.columns:
-            error_df = error_df.sort_values(by=['error_date']).drop_duplicates(subset=[drop_field], keep='last')
-        else: 
-            error_df = error_df.drop_duplicates(subset=drop_fields, keep='last')
-        error_df.to_csv(error_file_path, index=False)
-    else:
-        console.print('No error file to clean', style='bold blue')
-    
     
 def read_combine_files(dir_path: str, files: Optional[List] = None, file_path: Optional[str] = None, grouped_columns: Optional[List] = [] , return_all: bool = False) -> pd.DataFrame:
     """
@@ -343,14 +323,33 @@ def drop_columns(df: pd.DataFrame, columns: List) -> pd.DataFrame:
             df = df.drop(columns=[col])
     return df
 
-def write_to_error_file(error_file_path: str, error: str, entity: str, entity_type: str, url: str) -> None:
-    error_df = pd.DataFrame([{entity_column: row[entity_column], "error_time": time.time(), "error_url": row.url}])
+def clean_write_error_file(error_file_path: str, drop_fields: List) -> None:
+    """
+    Cleans error file and writes it. Drops duplicates if error_time column exists. Also drops duplicates based on drop_field column.
+
+    :param error_file_path: Path to error file
+    :param drop_fields: Fields to drop
+    """
+    # Clean error file and write it
+    if os.path.exists(error_file_path):
+        error_df = read_csv_file(error_file_path)
+        # Drop duplicates if error_date exists
+        if 'error_date' in error_df.columns:
+            error_df = error_df.sort_values(by=['error_date']).drop_duplicates(subset=[drop_field], keep='last')
+        else: 
+            error_df = error_df.drop_duplicates(subset=drop_fields, keep='last')
+        error_df.to_csv(error_file_path, index=False)
+    else:
+        console.print('No error file to clean', style='bold blue')
+
+def write_to_error_file(error_file_path: str, row: pd.DataFrame, entity_column: str, status_code: int) -> None:
+    error_df = pd.DataFrame([{entity_column: row[entity_column], "error_date": datetime.now().strftime("%Y-%m-%d"), "error_url": row.url, "status_code": status_code}])
     if os.path.exists(error_file_path):
         error_df.to_csv(error_file_path, mode='a', header=False, index=False)
     else:
         error_df.to_csv(error_file_path, index=False)
 
-def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, temp_entity_dir: str, entity_progress_bar: tqdm, error_file_path: str, write_only_new: bool):
+def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, temp_entity_dir: str, entity_progress_bar: tqdm, error_file_path: str, write_only_new: bool, retry_errors: bool = False):
     """
     Gets new entities from GitHub API. 
 
@@ -360,7 +359,7 @@ def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, t
     :param entity_progress_bar: Entity progress bar
     :param error_file_path: Path to error file
     :param write_only_new: Boolean indicating whether to write only new entities
-    :return: Combined entity dataframe
+    :param retry_errors: Boolean indicating whether to retry errors
     """
     data_directory_path = get_data_directory_path()
     # Create temporary directory if it doesn't exist
@@ -415,11 +414,20 @@ def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, t
     'two_factor_authentication']
 
     excluded_file_path = f'{data_directory_path}/metadata_files/excluded_{entity_type}.csv'
-    error_file_path = f"{data_directory_path}/error_logs/potential_{entity_type}_errors.csv"
-
+    
     # Get entity column based on entity type
     entity_column = "full_name" if entity_type == "repos" else "login"
     entity_type_singular = entity_type[:-1]
+
+    if os.path.exists(error_file_path):
+        drop_fields = [entity_column, 'error_url']
+        clean_write_error_file(error_file_path, drop_fields)
+        if retry_errors == False:
+            error_df = read_csv_file(error_file_path)
+            potential_new_entities_df = potential_new_entities_df[~potential_new_entities_df[entity_column].isin(error_df[entity_column])]
+            if potential_new_entities_df.empty:
+                console.print(f"No new entities to process for {entity_type}", style="bold blue")
+                return
 
     if os.path.exists(excluded_file_path):
         excluded_entities = read_csv_file(excluded_file_path)
@@ -454,10 +462,11 @@ def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, t
             if entity_type == "orgs":
                 query = row.url if "/users/" in row.url else row.url.replace("/orgs/", "/users/")
             # Make request
-            response = make_request_with_rate_limiting(query, auth_headers)
+            response, status_code = make_request_with_rate_limiting(query, auth_headers)
             # If response is None, update progress bar and continue
             if response is None and entity_type != "orgs":
                 entity_progress_bar.update(1)
+                write_to_error_file(error_file_path, row, entity_column, status_code)
                 continue
             # If response is None and entity type is orgs, create empty dataframe
             elif response is None and entity_type == "orgs":
@@ -467,6 +476,7 @@ def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, t
                 response_df = pd.json_normalize(response_data)
                 if "message" in response_df.columns:
                     console.print(f"Error for {row[entity_column]}: {response_df.message.values[0]}", style="bold red")
+                    write_to_error_file(error_file_path, row, entity_column, status_code)
                     entity_progress_bar.update(1)
                     continue
             
@@ -476,7 +486,7 @@ def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, t
             else:
                 response_df = response_df[user_cols]
                 query = row.url.replace("/users/", "/orgs/") if "/users/" in row.url else row.url
-                response = make_request_with_rate_limiting(query, auth_headers)
+                response, _ = make_request_with_rate_limiting(query, auth_headers)
                 if response is None:
                     expanded_df = pd.DataFrame(columns=headers.columns, data=None, index=None)
                 else:
@@ -509,7 +519,7 @@ def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, t
             entity_progress_bar.update(1)
         except Exception as e:
             console.print(f"Error for {row[entity_column]}: {e}", style="bold red")
-            
+            write_to_error_file(error_file_path, row, entity_column, status_code)
             entity_progress_bar.update(1)
             continue
 
