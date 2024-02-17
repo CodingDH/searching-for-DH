@@ -11,7 +11,7 @@ from data_generation_scripts.general_utils import read_combine_files, check_tota
 
 console = Console()
 
-def write_results_to_csv(count_column: str, row: pd.DataFrame, entity_type: str, dir_path: str):
+def write_entity_results_to_csv(count_column: str, row: pd.DataFrame, entity_type: str, dir_path: str):
     """Function to write results to csv
     
     :param count_column: Column that will store the count values
@@ -51,7 +51,7 @@ def get_results(row: pd.DataFrame, count_column: str, url_column: str, auth_head
     total_results = check_total_pages(url, auth_headers)
     console.print(f"Total results for {url}: {total_results}", style="bold green")
     row[count_column] = total_results
-    write_results_to_csv(count_column, row, entity_type, dir_path)
+    write_entity_results_to_csv(count_column, row, entity_type, dir_path)
     return row
 
 def get_counts(df: pd.DataFrame, url_column: str, count_column: str, entity_type: str, dir_path: str, check_state: bool, auth_headers: dict=None) -> pd.DataFrame:
@@ -120,7 +120,7 @@ def get_count_metadata(entity_df: pd.DataFrame, entity_type: str, dir_path: str)
     data_directory_path = get_data_directory_path()
     if entity_type == "repos":
         cols_df = read_csv_file(f"{data_directory_path}/metadata_files/repo_url_cols.csv")
-        skip_types = ['review_comments_url', 'commits_url', 'collaborators_url']
+        skip_types = ['review_comments_url', 'collaborators_url']
         cols_df = cols_df[~cols_df.url_column.isin(skip_types)]
         entity_df = process_counts(entity_df, cols_df, auth_headers, entity_type, dir_path)
     else:

@@ -342,8 +342,9 @@ def clean_write_error_file(error_file_path: str, drop_fields: List) -> None:
     else:
         console.print('No error file to clean', style='bold blue')
 
-def write_to_error_file(error_file_path: str, row: pd.DataFrame, entity_column: str, status_code: int) -> None:
-    error_df = pd.DataFrame([{entity_column: row[entity_column], "error_date": datetime.now().strftime("%Y-%m-%d"), "error_url": row.url, "status_code": status_code}])
+def log_error_to_file(error_file_path: str, additional_data: dict, status_code: int, error_url: str) -> None:
+    error_df = pd.DataFrame([{"error_date": datetime.now().strftime("%Y-%m-%d"), "error_url": error_url, "status_code": status_code}])
+    error_df = pd.concat([error_df, pd.DataFrame([additional_data])], axis=1)
     if os.path.exists(error_file_path):
         error_df.to_csv(error_file_path, mode='a', header=False, index=False)
     else:
@@ -466,7 +467,8 @@ def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, t
             # If response is None, update progress bar and continue
             if response is None and entity_type != "orgs":
                 entity_progress_bar.update(1)
-                write_to_error_file(error_file_path, row, entity_column, status_code)
+                additional_data = {entity_column: row[entity_column]}
+                log_error_to_file(error_file_path, additional_data, status_code, query)
                 continue
             # If response is None and entity type is orgs, create empty dataframe
             elif response is None and entity_type == "orgs":
@@ -476,7 +478,8 @@ def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, t
                 response_df = pd.json_normalize(response_data)
                 if "message" in response_df.columns:
                     console.print(f"Error for {row[entity_column]}: {response_df.message.values[0]}", style="bold red")
-                    write_to_error_file(error_file_path, row, entity_column, status_code)
+                    additional_data = {entity_column: row[entity_column]}
+                    log_error_to_file(error_file_path, additional_data, status_code, query)
                     entity_progress_bar.update(1)
                     continue
             
@@ -519,7 +522,8 @@ def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, t
             entity_progress_bar.update(1)
         except Exception as e:
             console.print(f"Error for {row[entity_column]}: {e}", style="bold red")
-            write_to_error_file(error_file_path, row, entity_column, status_code)
+            additional_data = {entity_column: row[entity_column]}
+            log_error_to_file(error_file_path, additional_data, status_code, query)
             entity_progress_bar.update(1)
             continue
 

@@ -18,7 +18,7 @@ from tqdm import tqdm
 # Local application/library specific imports
 import apikey
 sys.path.append("..")
-from data_generation_scripts.general_utils import  read_csv_file, check_total_pages, check_total_results, check_rate_limit, make_request_with_rate_limiting, sort_groups_add_coding_dh_id, get_data_directory_path, clean_write_error_file
+from data_generation_scripts.general_utils import  read_csv_file, check_total_pages, check_total_results, check_rate_limit, make_request_with_rate_limiting, sort_groups_add_coding_dh_id, get_data_directory_path, clean_write_error_file, log_error_to_file
 
 # Load in the API key
 auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
@@ -28,17 +28,6 @@ auth_headers = {'Authorization': f'token {auth_token}','User-Agent': 'request'}
 
 # Initiate the console
 console = Console()
-
-def log_error_to_csv(search_query: str, status_code: int, search_term: str, search_term_source: str, file_path: str):
-    """
-    Logs errors to a CSV file.
-
-    :param row_index: The index of the row in the search terms CSV.
-    :param search_term: The search term that caused the error.
-    :param file_path: The path to the CSV file where the error should be logged.
-    """
-    df = pd.DataFrame({'error_url': [search_query], 'status_code': [status_code], 'error_date': [datetime.now().strftime("%Y-%m-%d")], 'search_term': [search_term], 'search_term_source': [search_term_source]})
-    df.to_csv(file_path, index=False)
 
 def fetch_data(query: str, data_directory_path: str, search_term: str, search_term_source: str) -> Tuple[pd.DataFrame, requests.Response]:
     """
@@ -56,7 +45,8 @@ def fetch_data(query: str, data_directory_path: str, search_term: str, search_te
     # Check if response is None
     if response is None:
         console.print(f"Failed to fetch data for query: {query}. Error from fetch_data function.", style="bold red")
-        log_error_to_csv(query, status_code, search_term, search_term_source, f"{data_directory_path}/error_logs/search_errors.csv")
+        additional_data = {"search_term": search_term, "search_term_source": search_term_source}
+        log_error_to_file(f"{data_directory_path}/error_logs/search_errors.csv", additional_data, status_code, query)
         return pd.DataFrame(), None
     
     response_data = response.json()
