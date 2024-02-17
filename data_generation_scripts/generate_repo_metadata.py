@@ -22,133 +22,25 @@ auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
 
 auth_headers = {'Authorization': f'token {auth_token}','User-Agent': 'request'}
 
-def get_languages(row):
-    """Function to get languages for a repo
-    :param row: row from repo_df
-    :return: dictionary of languages with number of bytes"""
-    temp_repo_dir = "../data/temp/repo_languages/"
-    temp_name = row.full_name.replace('/', '_') + '_language.json'
-    temp_path = temp_repo_dir + temp_name
-    if os.path.exists(temp_path):
-        with open(temp_path, 'r') as f:
-            response_data = ast.literal_eval(f.read())
-    else:
-        try:
-            response = requests.get(row.languages_url, headers=auth_headers)
-            response_data = get_response_data(response, row.languages_url)
-            
-        except:
-            print("Error getting languages for repo: " + row.full_name)
-            response_data = None
-        if response_data is not None:
-            os.makedirs(temp_repo_dir, exist_ok=True)
-            with open(temp_path, 'w') as f:
-                f.write(str(response_data))
-    return response_data
 
-def get_repo_languages(repo_df, output_path):
-    """Function to get languages for all repos in repo_df
-    :param repo_df: dataframe of repos
-    :param output_path: path to save output
-    :param rates_df: dataframe of rate limit info
-    :return: dataframe of repos with languages"""
-    print(len(repo_df))
-    if 'languages' in repo_df.columns:
-        repos_without_languages = repo_df[repo_df.languages.isna()]
-        repos_with_languages = repo_df[repo_df.languages.notna()]
-    else: 
-        repos_without_languages = repo_df
-        repos_with_languages = pd.DataFrame()
 
-    if len(repos_without_languages) > 0:
-        tqdm.pandas(desc="Getting Languages")
-        repos_without_languages['languages'] = repos_without_languages.progress_apply(get_languages, axis=1)
-        repo_df = pd.concat([repos_with_languages, repos_without_languages])
-        print(len(repo_df))
-        repo_df = repo_df.drop_duplicates(subset=['full_name'])
-        print(len(repo_df))
-        repo_df.to_csv(output_path, index=False)
-    return repo_df
+def turn_names_into_list(prefix, df):
+    return pd.DataFrame([{prefix: df.name.tolist()}])
 
-def get_labels(row):
-    """Function to get labels for a repo
-    :param row: row from repo_df
-    :return: list of labels
-    Could save this output in separate file since labels also returns url, color, description, and whether the label is default or not"""
-    response = requests.get(row.labels_url.split('{')[0], headers=auth_headers)
-    response_data = get_response_data(response, row.labels_url.split('{')[0])
-    if response_data is not None:
-        labels_df = pd.DataFrame(response_data)
-        labels = labels_df['name'].tolist()
-    else:
-        labels = []
-    return labels
-
-def get_repo_labels(repo_df, output_path):
-    """Function to get labels for all repos in repo_df
-    :param repo_df: dataframe of repos
-    :param output_path: path to save output
-    :param rates_df: dataframe of rate limit info
-    :return: dataframe of repos with labels"""
-    if 'labels' in repo_df.columns:
-        repos_without_labels = repo_df[repo_df.labels.isna()]
-        repos_with_labels = repo_df[repo_df.labels.notna()]
-    else: 
-        repos_without_labels = repo_df
-        repos_with_labels = pd.DataFrame()
-    
-    if len(repos_without_labels) > 0:
-        tqdm.pandas(desc="Getting Labels")
-        repos_without_labels['labels'] = repos_without_labels.progress_apply(get_labels, axis=1)
-        repo_df = pd.concat([repos_with_labels, repos_without_labels])
-        repo_df = repo_df.drop_duplicates(subset=['id'])
-        repo_df.to_csv(output_path, index=False)
-    return repo_df
-
-def get_tags(repo_df, existing_repo_dir, error_file_path):
-    """Function to get tags for a repo
-    :param row: row from repo_df
-    :return: list of tags"""
-    response = requests.get(row.tags_url, headers=auth_headers)
-    response_data = get_response_data(response, row.tags_url)
-    if response_data is not None:
-        tags_df = pd.DataFrame(response_data)
-        tags = tags_df['name'].tolist()
-    else:
-        tags = []
-    return tags
-
-def get_repo_tags(repo_df, existing_repo_dir, error_file_path):
-    """Function to get tags for all repos in repo_df
-    :param repo_df: dataframe of repos
-    :param output_path: path to save output
-    :param rates_df: dataframe of rate limit info
-    :return: dataframe of repos with tags"""
-    drop_fields = ["full_name", "error_url"]
-    clean_write_error_file(error_file_path, drop_fields)
-    if 'tags' in repo_df.columns:
-        repos_without_tags = repo_df[repo_df.tags.isna()]
-    else: 
-        repos_without_tags = repo_df
-
-    if len(repos_without_tags) > 0:
-        tqdm.pandas(desc="Getting Tags")
-        repos_without_tags['tags'] = repos_without_tags.progress_apply(get_tags, axis=1, existing_repo_dir=existing_repo_dir, error_file_path=error_file_path)
-
-def get_profiles(repo_df, existing_repo_dir, error_file_path):
+def get_metadata(repo_df, existing_repo_dir, error_file_path, check_column, url_column):
     """Function to get community profiles and health percentages for all repos in repo_df
     :param repo_df: dataframe of repos
     :param existing_repo_dir: path to directory to write existing repos
     :param error_file_path: path to file to write errors
     """
-    profile_bar = tqdm(total=len(repo_df), desc="Getting Community Profiles")
+    profile_bar = tqdm(total=len(repo_df), desc="Getting Metadata")
     for _, row in repo_df.iterrows():
         existing_entities_path = f"{row.full_name.replace('/', '_').replace(' ', '_')}_coding_dh_repo.csv"
         existing_output_path = existing_repo_dir + existing_entities_path
         if os.path.exists(existing_output_path):
             existing_df = pd.read_csv(existing_output_path)
             try:
-                query = row.url + '/community/profile'
+                query = row[url_column] + '/community/profile' if 'health_percentage' in check_column else row[url_column]
                 response, status_code = make_request_with_rate_limiting(query, auth_headers)
                 if response is not None:
                     response_df = pd.json_normalize(response)
@@ -158,7 +50,16 @@ def get_profiles(repo_df, existing_repo_dir, error_file_path):
                         log_error_to_file(error_file_path, additional_data, status_code, query)
                         profile_bar.update(1)
                         continue
-                    response_df = response_df.rename(columns={'updated_at': 'community_profile_updated_at'})
+                    if 'health_percentage' in response_df.columns:
+                        response_df = response_df.rename(columns={'updated_at': 'community_profile_updated_at'})
+                    elif 'languages' in url_column:
+                        # prefix languages to each column
+                        response_df = response_df.add_prefix('languages.')
+                    else:
+                        prefixes = ['tags', 'labels']
+                        for prefix in prefixes:
+                            if prefix in url_column:
+                                response_df = turn_names_into_list(prefix, response_df)
                     # convert the 'updated_at' column to datetime
                     existing_df['coding_dh_date'] = pd.to_datetime(existing_df['coding_dh_date'])
 
@@ -193,7 +94,7 @@ def get_profiles(repo_df, existing_repo_dir, error_file_path):
         else:
             console.print(f"Repo {row.full_name} does not exist in the coding DH repo directory", style="bold red")
 
-def get_repo_profile(repo_df,  error_file_path, existing_repo_dir):
+def get_repo_metadata(repo_df,  error_file_path, existing_repo_dir, check_column, url_column):
     """Function to get community profiles and health percentages for all repos in repo_df
     :param repo_df: dataframe of repos
     :param error_file_path: path to file to write errors
@@ -201,13 +102,13 @@ def get_repo_profile(repo_df,  error_file_path, existing_repo_dir):
     """
     drop_fields = ["full_name", "error_url"]
     clean_write_error_file(error_file_path, drop_fields)
-    if 'health_percentage' in repo_df.columns:
-        repos_without_community_profile = repo_df[repo_df.health_percentage.isna()]
+    if check_column in repo_df.columns:
+        repos_without_metadata = repo_df[repo_df[check_column].isna()]
     else: 
-        repos_without_community_profile = repo_df
+        repos_without_metadata = repo_df
 
-    if len(repos_without_community_profile) > 0:
-        get_profiles(repos_without_community_profile, existing_repo_dir, error_file_path)
+    if len(repos_without_metadata) > 0:
+        get_metadata(repos_without_metadata, existing_repo_dir, error_file_path, check_column, url_column)
 
 def clean_owner(row: pd.DataFrame) -> pd.DataFrame:
     """Function to clean owner column
@@ -231,11 +132,4 @@ def get_repo_owners(repo_df: pd.DataFrame) -> pd.DataFrame:
 
 
 if __name__ == "__main__":
-    # repo_df = pd.read_csv("../data/temp/repo_metadata.csv")
-    # repo_df = get_repo_owners(repo_df)
-    # repo_df = get_repo_languages(repo_df, "../data/temp/repo_metadata.csv")
-    # repo_df = get_repo_labels(repo_df, "../data/temp/repo_metadata.csv")
-    # get_repo_profile(repo_df, "../data/temp/repo_metadata.csv", "../data/coding_dh_repo/")
-    # get_repo_tags(repo_df, "../data/coding_dh_repo/", "../data/temp/repo_metadata_errors.csv")
-    # repo_df = get_repo_tags(repo_df, "../data/temp/repo_metadata.csv")
-    # repo_df.to_csv("../data/temp/repo_metadata.csv", index=False)
+    
