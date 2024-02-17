@@ -81,11 +81,12 @@ if __name__ == "__main__":
     search_user_queries_df = search_user_queries_df[search_user_queries_df.search_term_source.isin(cleaned_terms.search_term_source.unique())]
     search_repo_queries_df, repo_queries_df = create_queries_directories("repo", cleaned_terms)
     search_repo_queries_df = search_repo_queries_df[search_repo_queries_df.search_term_source.isin(cleaned_terms.search_term_source.unique())]
-
-    entity_type = "users"
-    potential_new_entities_df = search_user_queries_df.drop_duplicates(subset=['login'])
+    write_only_new = True
+    entity_type = "repos"
+    potential_new_entities_df = search_repo_queries_df.drop_duplicates(subset=['full_name'])
     # potential_new_entities_df = potential_new_entities_df[0:10]
-    temp_entity_dir = f"{data_directory_path}/historic_data/entity_files/all_users/"
+    temp_entity_dir = f"{data_directory_path}/historic_data/entity_files/all_repos/"
     entity_progress_bar = tqdm(total=potential_new_entities_df.shape[0], desc="Processing entities")
-    error_file_path = f"{data_directory_path}/error_logs/user_errors.csv"
-    get_new_entities(entity_type, potential_new_entities_df, temp_entity_dir, entity_progress_bar, error_file_path)
+    error_file_path = f"{data_directory_path}/error_logs/repo_errors.csv"
+    console.print(f"Error file path: {error_file_path}")
+    # get_new_entities(entity_type, potential_new_entities_df, temp_entity_dir, entity_progress_bar, error_file_path, write_only_new)

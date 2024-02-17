@@ -18,7 +18,7 @@ from tqdm import tqdm
 # Local application/library specific imports
 import apikey
 sys.path.append("..")
-from data_generation_scripts.general_utils import  read_csv_file, check_total_pages, check_total_results, check_rate_limit, make_request_with_rate_limiting, sort_groups_add_coding_dh_id, get_data_directory_path
+from data_generation_scripts.general_utils import  read_csv_file, check_total_pages, check_total_results, check_rate_limit, make_request_with_rate_limiting, sort_groups_add_coding_dh_id, get_data_directory_path, clean_write_error_file
 
 # Load in the API key
 auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
@@ -29,8 +29,18 @@ auth_headers = {'Authorization': f'token {auth_token}','User-Agent': 'request'}
 # Initiate the console
 console = Console()
 
+def log_error_to_csv(search_query: str, status_code: int, search_term: str, search_term_source: str, file_path: str):
+    """
+    Logs errors to a CSV file.
 
-def fetch_data(query: str, data_directory_path: str) -> Tuple[pd.DataFrame, requests.Response]:
+    :param row_index: The index of the row in the search terms CSV.
+    :param search_term: The search term that caused the error.
+    :param file_path: The path to the CSV file where the error should be logged.
+    """
+    df = pd.DataFrame({'search_query': [search_query], 'status_code': [status_code], 'error_date': [datetime.now().strftime("%Y-%m-%d")], 'search_term': [search_term], 'search_term_source': [search_term_source]})
+    df.to_csv(file_path, index=False)
+
+def fetch_data(query: str, data_directory_path: str, search_term: str, search_term_source: str) -> Tuple[pd.DataFrame, requests.Response]:
     """
     Fetches data from the search API using the provided query. This function returns both the 
     processed data as a DataFrame and the raw response object from the API request.
@@ -42,10 +52,11 @@ def fetch_data(query: str, data_directory_path: str) -> Tuple[pd.DataFrame, requ
         2. Response: The raw response object from the requests library, providing access to response headers, status code, and other metadata.
     """
     # Initiate the request
-    response = make_request_with_rate_limiting(query, auth_headers)
+    response, status_code = make_request_with_rate_limiting(query, auth_headers)
     # Check if response is None
     if response is None:
         console.print(f"Failed to fetch data for query: {query}. Error from fetch_data function.", style="bold red")
+        log_error_to_csv(query, status_code, search_term, search_term_source, f"{data_directory_path}/error_logs/search_errors.csv")
         return pd.DataFrame(), None
     
     response_data = response.json()
@@ -64,7 +75,7 @@ def fetch_data(query: str, data_directory_path: str) -> Tuple[pd.DataFrame, requ
             response_df["search_query"] = query
     return response_df, response
 
-def get_search_api_data(query: str, total_pages: int, data_directory_path: str) -> pd.DataFrame:
+def get_search_api_data(query: str, total_pages: int, data_directory_path: str, search_term: str, search_term_source: str) -> pd.DataFrame:
     """
     Retrieves data from the search API based on the specified query across a defined number of pages. This function consolidates the data from all pages into a single DataFrame.
 
@@ -79,7 +90,7 @@ def get_search_api_data(query: str, total_pages: int, data_directory_path: str) 
     try:
         # Get the data from the API
         time.sleep(0.01)
-        df, response = fetch_data(query, data_directory_path)
+        df, response = fetch_data(query, data_directory_path, search_term, search_term_source)
         dfs.append(df)
         pbar.update(1)
         # Loop through the pages. A suggestion we gathered from https://stackoverflow.com/questions/33878019/how-to-get-data-from-all-pages-in-github-api-with-python
@@ -130,7 +141,7 @@ def process_search_data(rates_df: pd.DataFrame, query: str, output_path: str, ro
         time.sleep(3700)
         updated_rates_df = check_rate_limit()
         calls_remaining = updated_rates_df["resources.search.remaining"].values[0]
-    searched_df = get_search_api_data(query, total_pages, data_directory_path)
+    searched_df = get_search_api_data(query, total_pages, data_directory_path, row_data["search_term"], row_data["search_term_source"])
     searched_df = searched_df.reset_index(drop=True)
     searched_df["search_term"] = row_data["search_term"]
     searched_df["search_term_source"] = row_data["search_term_source"]
@@ -251,17 +262,6 @@ def prepare_terms_and_directories(translated_terms_output_path: str, threshold_f
         final_terms = final_terms
     # Return the final terms
     return final_terms
-
-def log_error_to_csv(row_index: int, search_term: str, file_path: str):
-    """
-    Logs errors to a CSV file.
-
-    :param row_index: The index of the row in the search terms CSV.
-    :param search_term: The search term that caused the error.
-    :param file_path: The path to the CSV file where the error should be logged.
-    """
-    df = pd.DataFrame({'row_index': [row_index], 'search_term': [search_term], 'error_date': [datetime.now().strftime("%Y-%m-%d")]})
-    df.to_csv(file_path, index=False)
 
 def search_for_topics(row: pd.Series, rates_df: pd.DataFrame, initial_repo_output_path: str, search_query: str, source_type: str, data_directory_path: str):
     """
@@ -391,6 +391,11 @@ def generate_initial_search_datasets(rates_df: pd.DataFrame, initial_repo_output
 
     if os.path.exists(initial_user_output_path) == False:
         os.makedirs(initial_user_output_path)
+
+    error_file = f"{data_directory_path}/error_logs/search_errors.csv"
+    if os.path.exists(error_file):
+        drop_fields = ['search_term', 'search_term_source', 'status_code', 'search_query']
+        clean_write_error_file(error_file)
     
     final_terms = prepare_terms_and_directories(f'{data_directory_path}/derived_files/grouped_cleaned_translated_terms.csv', f'{data_directory_path}/derived_files/threshold_search_errors.csv', target_terms)
     for index, row in final_terms.iterrows():
@@ -410,7 +415,7 @@ def generate_initial_search_datasets(rates_df: pd.DataFrame, initial_repo_output
             search_for_users(row, search_query, rates_df, initial_user_output_path, source_type, data_directory_path)
         except Exception as e:
             console.print(f"Error with {row.search_term}: {e}", style="bold red")
-            log_error_to_csv(index, row.search_term, f'{data_directory_path}/derived_files/search_errors.csv')
+            # log_error_to_csv(index, row.search_term, f'{data_directory_path}/derived_files/search_errors.csv')
             continue
 
 

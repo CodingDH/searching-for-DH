@@ -82,13 +82,13 @@ def make_request_with_rate_limiting(url: str, auth_headers: dict, number_of_atte
         console.print("Status code", response.status_code)
         # Check if response is valid and return it if it is
         if response.status_code == 200:
-            return response
+            return response, response.status_code
         elif response.status_code == 401:
             console.print("Response status code 401: unauthorized access. Recommend checking api key. Error from make_request_with_rate_limiting function", style='bold red')
-            return None
+            return None, response.status_code
         elif response.status_code == 204:
             console.print(f'Response status code 204: No data for {url}.  Error from make_request_with_rate_limiting function', style='bold red')
-            return None
+            return None, response.status_code
         # If not, check if it's a rate limit issue
         if index == 0:
             console.print('Hitting rate limiting set by number of attempts. Sleeping for 120 seconds to ensure that queries are not blocked by API. Message from make_request_with_rate_limiting function', style='bold red')
@@ -101,7 +101,7 @@ def make_request_with_rate_limiting(url: str, auth_headers: dict, number_of_atte
                 time.sleep(3600)
     # If it's not a rate limit issue, return None
     console.print(f'Query failed after {number_of_attempts} attempts with code {response.status_code}. Failing URL: {url}. Error from make_request_with_rate_limiting function', style='bold red')
-    return None
+    return None, response.status_code
 
 def check_total_pages(url: str, auth_headers: dict) -> int:
     """
@@ -115,7 +115,7 @@ def check_total_pages(url: str, auth_headers: dict) -> int:
     finalized_url = f'{url}&per_page=1' if "?state=all" in url else f'{url}?per_page=1'
 
     # Get total number of pages
-    response = make_request_with_rate_limiting(finalized_url, auth_headers)
+    response, _ = make_request_with_rate_limiting(finalized_url, auth_headers)
     # If response is None or there are no links, return 1
     if response is None or len(response.links) == 0:
         return 0
@@ -132,7 +132,7 @@ def check_total_results(url: str, auth_headers: dict) -> Optional[int]:
     :return: Total number of results. If response is None, returns None.
     """
     # Get total number of results
-    response = make_request_with_rate_limiting(url, auth_headers)
+    response, _ = make_request_with_rate_limiting(url, auth_headers)
     # If response is None, return None
     if response is None:
         data = {'total_count': None}
@@ -166,21 +166,21 @@ def read_csv_file(file_name: str, directory: Optional[str] = None, encoding: Opt
         console.print(f'Failed to read {file_name} with {encoding} encoding. Error: {e}', style='bold red')
         return None
 
-def clean_write_error_file(error_file_path: str, drop_field: str) -> None:
+def clean_write_error_file(error_file_path: str, drop_fields: List) -> None:
     """
     Cleans error file and writes it. Drops duplicates if error_time column exists. Also drops duplicates based on drop_field column.
 
     :param error_file_path: Path to error file
-    :param drop_field: Field to drop duplicates on
+    :param drop_fields: Fields to drop
     """
     # Clean error file and write it
     if os.path.exists(error_file_path):
         error_df = read_csv_file(error_file_path)
-        # Drop duplicates if error_time exists
-        if 'error_time' in error_df.columns:
-            error_df = error_df.sort_values(by=['error_time']).drop_duplicates(subset=[drop_field], keep='last')
+        # Drop duplicates if error_date exists
+        if 'error_date' in error_df.columns:
+            error_df = error_df.sort_values(by=['error_date']).drop_duplicates(subset=[drop_field], keep='last')
         else: 
-            error_df = error_df.drop_duplicates(subset=[drop_field], keep='last')
+            error_df = error_df.drop_duplicates(subset=drop_fields, keep='last')
         error_df.to_csv(error_file_path, index=False)
     else:
         console.print('No error file to clean', style='bold blue')
@@ -343,7 +343,14 @@ def drop_columns(df: pd.DataFrame, columns: List) -> pd.DataFrame:
             df = df.drop(columns=[col])
     return df
 
-def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, temp_entity_dir: str, entity_progress_bar: tqdm, error_file_path: str):
+def write_to_error_file(error_file_path: str, error: str, entity: str, entity_type: str, url: str) -> None:
+    error_df = pd.DataFrame([{entity_column: row[entity_column], "error_time": time.time(), "error_url": row.url}])
+    if os.path.exists(error_file_path):
+        error_df.to_csv(error_file_path, mode='a', header=False, index=False)
+    else:
+        error_df.to_csv(error_file_path, index=False)
+
+def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, temp_entity_dir: str, entity_progress_bar: tqdm, error_file_path: str, write_only_new: bool):
     """
     Gets new entities from GitHub API. 
 
@@ -352,7 +359,7 @@ def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, t
     :param temp_entity_dir: Temporary entity directory
     :param entity_progress_bar: Entity progress bar
     :param error_file_path: Path to error file
-    :param overwrite_existing_temp_files: Boolean indicating whether to overwrite existing temporary files. Defaults to True.
+    :param write_only_new: Boolean indicating whether to write only new entities
     :return: Combined entity dataframe
     """
     data_directory_path = get_data_directory_path()
@@ -437,6 +444,9 @@ def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, t
             if os.path.exists(f"{temp_entity_dir}/{temp_entities_path}"):
                 existing_temp_entities_df = read_csv_file(f"{temp_entity_dir}/{temp_entities_path}")
                 existing_temp_entities_df = drop_columns(existing_temp_entities_df, columns_to_drop)
+                if write_only_new:
+                    entity_progress_bar.update(1)
+                    continue
             else:
                 existing_temp_entities_df = pd.DataFrame()
             # Get query
@@ -499,11 +509,7 @@ def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, t
             entity_progress_bar.update(1)
         except Exception as e:
             console.print(f"Error for {row[entity_column]}: {e}", style="bold red")
-            error_df = pd.DataFrame([{entity_column: row[entity_column], "error_time": time.time(), "error_url": row.url}])
-            if os.path.exists(error_file_path):
-                error_df.to_csv(error_file_path, mode='a', header=False, index=False)
-            else:
-                error_df.to_csv(error_file_path, index=False)
+            
             entity_progress_bar.update(1)
             continue
 
