@@ -335,7 +335,7 @@ def clean_write_error_file(error_file_path: str, drop_fields: List) -> None:
         error_df = read_csv_file(error_file_path)
         # Drop duplicates if error_date exists
         if 'error_date' in error_df.columns:
-            error_df = error_df.sort_values(by=['error_date']).drop_duplicates(subset=[drop_field], keep='last')
+            error_df = error_df.sort_values(by=['error_date']).drop_duplicates(subset=drop_fields, keep='last')
         else: 
             error_df = error_df.drop_duplicates(subset=drop_fields, keep='last')
         error_df.to_csv(error_file_path, index=False)
