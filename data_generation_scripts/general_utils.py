@@ -36,7 +36,8 @@ def set_data_directory_path(path: str) -> None:
 
     :param path: Path to data directory
     """
-    os.environ['CODING_DH_DATA_DIRECTORY_PATH'] = path
+    apikey.save("CODING_DH_DATA_DIRECTORY_PATH", path)
+    console.print(f'Coding DH data directory path set to {path}', style='bold blue')
 
 def get_data_directory_path() -> str:
     """
@@ -44,7 +45,7 @@ def get_data_directory_path() -> str:
 
     :return: Data directory path
     """
-    return os.getenv('CODING_DH_DATA_DIRECTORY_PATH')
+    return apikey.load("CODING_DH_DATA_DIRECTORY_PATH")
 
 def check_rate_limit() -> pd.DataFrame:
     """
@@ -110,14 +111,17 @@ def check_total_pages(url: str, auth_headers: dict) -> int:
     :param auth_headers: Authentication headers
     :return: Total number of pages. If there are no links or response is None, returns 1.
     """
+    
+    finalized_url = f'{url}&per_page=1' if "?state=all" in url else f'{url}?per_page=1'
+
     # Get total number of pages
-    response = make_request_with_rate_limiting(f'{url}?per_page=1', auth_headers)
+    response = make_request_with_rate_limiting(finalized_url, auth_headers)
     # If response is None or there are no links, return 1
     if response is None or len(response.links) == 0:
-        return 1
+        return 0
     # Otherwise, get the last page number
     match = re.search(r'\d+$', response.links['last']['url'])
-    return int(match.group()) if match is not None else 1
+    return int(match.group()) if match is not None else 0
 
 def check_total_results(url: str, auth_headers: dict) -> Optional[int]:
     """
@@ -359,6 +363,49 @@ def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, t
     # Subset headers for orgs and users
     user_cols = ["bio", "followers_url", "following_url", "gists_url", "gravatar_id", "hireable", "organizations_url","received_events_url", "site_admin", "starred_url",
     "subscriptions_url","login",]
+    repo_exclude_headers = ['squash_merge_commit_message', 'security_and_analysis.dependabot_security_updates.status', 'allow_squash_merge','merge_commit_title', 'allow_rebase_merge', 'allow_auto_merge', 'merge_commit_message', 'delete_branch_on_merge','use_squash_pr_title_as_default', 'allow_merge_commit','squash_merge_commit_title', 'security_and_analysis.secret_scanning_validity_checks.status', 'security_and_analysis.secret_scanning_push_protection.status', 'security_and_analysis.secret_scanning.status', 'allow_update_branch']
+    org_exclude_headers = ['two_factor_requirement_enabled',
+    'advanced_security_enabled_for_new_repositories',
+    'members_can_create_pages',
+    'members_can_create_public_pages',
+    'secret_scanning_push_protection_custom_link',
+    'total_private_repos',
+    'secret_scanning_validity_checks_enabled',
+    'billing_email',
+    'members_can_create_repositories',
+    'dependency_graph_enabled_for_new_repositories',
+    'plan.private_repos',
+    'dependabot_alerts_enabled_for_new_repositories',
+    'owned_private_repos',
+    'members_can_create_private_pages',
+    'private_gists',
+    'collaborators',
+    'plan.space',
+    'members_can_create_private_repositories',
+    'web_commit_signoff_required',
+    'secret_scanning_push_protection_enabled_for_new_repositories',
+    'default_repository_permission',
+    'members_can_create_internal_repositories',
+    'secret_scanning_enabled_for_new_repositories',
+    'members_allowed_repository_creation_type',
+    'plan.name',
+    'members_can_create_public_repositories',
+    'disk_usage',
+    'secret_scanning_push_protection_custom_link_enabled',
+    'dependabot_security_updates_enabled_for_new_repositories',
+    'plan.filled_seats',
+    'plan.seats',
+    'members_can_fork_private_repositories', 'org_query_time']
+    user_exclude_headers = ['disk_usage',
+    'private_gists',
+    'total_private_repos',
+    'collaborators',
+    'plan.space',
+    'plan.collaborators',
+    'plan.private_repos',
+    'owned_private_repos',
+    'plan.name',
+    'two_factor_authentication']
 
     excluded_file_path = f'{data_directory_path}/metadata_files/excluded_{entity_type}.csv'
     error_file_path = f"{data_directory_path}/error_logs/potential_{entity_type}_errors.csv"
@@ -441,6 +488,13 @@ def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, t
                 processed_files.append(group)
             final_processed_df = pd.concat(processed_files).reset_index(drop=True)
             console.print("Length final_df", len(final_processed_df))
+            if entity_type == "repos":
+                final_processed_df = drop_columns(final_processed_df, repo_exclude_headers)
+            elif entity_type == "orgs":
+                final_processed_df = drop_columns(final_processed_df, org_exclude_headers)
+            else:
+                final_processed_df = drop_columns(final_processed_df, user_exclude_headers)
+
             final_processed_df.to_csv(f"{temp_entity_dir}/{temp_entities_path}", index=False)
             entity_progress_bar.update(1)
         except Exception as e:

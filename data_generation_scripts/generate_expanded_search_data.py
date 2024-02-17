@@ -123,6 +123,7 @@ def process_search_data(rates_df: pd.DataFrame, query: str, output_path: str, ro
     console.print(f"Processing data for this finalized query: ", style="purple")
     console.print(query, style=f"link {query}")
     total_pages = int(check_total_pages(query, auth_headers=auth_headers))
+    total_pages = 1 if total_pages == 0 else total_pages
     console.print(f"Total pages: {total_pages}", style="green")
     calls_remaining = rates_df["resources.search.remaining"].values[0]
     while total_pages > calls_remaining:
