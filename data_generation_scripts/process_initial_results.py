@@ -81,8 +81,8 @@ if __name__ == "__main__":
     search_user_queries_df = search_user_queries_df[search_user_queries_df.search_term_source.isin(cleaned_terms.search_term_source.unique())]
     search_repo_queries_df, repo_queries_df = create_queries_directories("repo", cleaned_terms)
     search_repo_queries_df = search_repo_queries_df[search_repo_queries_df.search_term_source.isin(cleaned_terms.search_term_source.unique())]
-    write_only_new = True
-    retry_errors = True
+    write_only_new = False
+    retry_errors = False
     entity_type = "repos"
     potential_new_entities_df = search_repo_queries_df.drop_duplicates(subset=['full_name'])
     # potential_new_entities_df = potential_new_entities_df[0:10]
