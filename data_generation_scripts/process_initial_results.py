@@ -74,12 +74,12 @@ if __name__ == "__main__":
     cleaned_terms.loc[cleaned_terms.search_term.str.contains("&#39;"), "search_term"] = cleaned_terms.search_term.str.replace("&#39;", "'")
     cleaned_terms['lower_search_term'] = cleaned_terms.search_term.str.lower()
 
-    search_user_queries_df, user_queries_df = create_queries_directories("user", cleaned_terms)
+    search_user_queries_df = create_queries_directories("user", cleaned_terms)
     search_org_queries_df = search_user_queries_df[search_user_queries_df['type'] == 'Organization']
     search_org_queries_df = search_org_queries_df[search_org_queries_df.search_term_source.isin(cleaned_terms.search_term_source.unique())]
     search_user_queries_df = search_user_queries_df[search_user_queries_df['type'] == 'User']
     search_user_queries_df = search_user_queries_df[search_user_queries_df.search_term_source.isin(cleaned_terms.search_term_source.unique())]
-    search_repo_queries_df, repo_queries_df = create_queries_directories("repo", cleaned_terms)
+    search_repo_queries_df = create_queries_directories("repo", cleaned_terms)
     search_repo_queries_df = search_repo_queries_df[search_repo_queries_df.search_term_source.isin(cleaned_terms.search_term_source.unique())]
     write_only_new = False
     retry_errors = False

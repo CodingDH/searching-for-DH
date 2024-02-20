@@ -1,10 +1,9 @@
 # Standard library imports
 import os
 import re
-import shutil
 import time
 import warnings
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional, Union
 
 # Related third-party imports
@@ -13,7 +12,6 @@ import apikey
 import numpy as np
 import pandas as pd
 import requests
-from rich import print
 from rich.console import Console
 from tqdm import tqdm
 
@@ -97,7 +95,11 @@ def make_request_with_rate_limiting(url: str, auth_headers: dict, number_of_atte
         if index == 1:
             rates_df = check_rate_limit()
             if rates_df['resources.core.remaining'].values[0] == 0:
-                console.print('GitHub 5000 query rate limit reached. Sleeping for 1 hour and then restarting. Message from make_request_with_rate_limiting function', style='bold red')
+                # Get the current time
+                now = datetime.now()
+                # Calculate when the function should run again
+                run_again_at = now + timedelta(hours=1)
+                console.print(f'GitHub 5000 query rate limit reached at {now.strftime("%Y-%m-%d %H:%M:%S")}. Sleeping for 1 hour and then restarting at {run_again_at.strftime("%Y-%m-%d %H:%M:%S")}. Message from make_request_with_rate_limiting function', style='bold red')
                 time.sleep(3600)
     # If it's not a rate limit issue, return None
     console.print(f'Query failed after {number_of_attempts} attempts with code {response.status_code}. Failing URL: {url}. Error from make_request_with_rate_limiting function', style='bold red')
@@ -230,12 +232,13 @@ def get_headers(entity_type: str) -> pd.DataFrame:
     """
     data_directory_path = get_data_directory_path()
     # Get headers for entity type
+    headers_file_path = os.path.join(data_directory_path, 'metadata_files', f'{entity_type[:-1]}_headers.csv')
     if entity_type == 'users':
-        headers = read_csv_file(f'{data_directory_path}/metadata_files/user_headers.csv')
+        headers = read_csv_file(headers_file_path)
     elif entity_type == 'repos':
-        headers = read_csv_file(f'{data_directory_path}/metadata_files/repo_headers.csv')
+        headers = read_csv_file(headers_file_path)
     elif entity_type == 'orgs':
-        headers = read_csv_file(f'{data_directory_path}/metadata_files/org_headers.csv')
+        headers = read_csv_file(headers_file_path)
     else:
         console.print(f'No headers for {entity_type}', style='bold red')
         return None
@@ -283,19 +286,6 @@ def sort_groups_add_coding_dh_id(group: pd.DataFrame, subset_columns: List) -> p
 
     return group
 
-def get_entity_df(entity_type: str) -> pd.DataFrame:
-    """
-    Gets entity dataframe.
-
-    :param entity_path: Path to entity file
-    :return: Entity dataframe
-    """
-    data_directory_path = get_data_directory_path()
-    # Get entity dataframe
-    entity_df = read_csv_file(f"{data_directory_path}/large_files/entity_files/{entity_type}_dataset.csv")
-
-    return entity_df
-
 def check_headers_exist(df: pd.DataFrame, headers: pd.DataFrame) -> pd.DataFrame:
     """
     Checks if headers exist in dataframe and adds them if they don't.
@@ -310,7 +300,7 @@ def check_headers_exist(df: pd.DataFrame, headers: pd.DataFrame) -> pd.DataFrame
             df[column] = None  # If not, assign None
     return df
 
-def drop_columns(df: pd.DataFrame, columns: List) -> pd.DataFrame:
+def drop_columns_from_df(df: pd.DataFrame, columns: List) -> pd.DataFrame:
     """
     Drops columns from dataframe.
 
@@ -414,7 +404,7 @@ def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, t
     'plan.name',
     'two_factor_authentication']
 
-    excluded_file_path = f'{data_directory_path}/metadata_files/excluded_{entity_type}.csv'
+    excluded_file_path = os.path.join(data_directory_path, 'metadata_files', f'excluded_{entity_type}.csv')
     
     # Get entity column based on entity type
     entity_column = "full_name" if entity_type == "repos" else "login"
@@ -447,12 +437,13 @@ def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, t
     for _, row in potential_new_entities_df.iterrows():
         try:
             # Create temporary file path
-            temp_entities_path = f"{row[entity_column].replace('/', '_').replace(' ', '_')}_coding_dh_{entity_type_singular}.csv"
-            console.print(temp_entities_path)
+            temp_entities_file_name = f"{row[entity_column].replace('/', '_').replace(' ', '_')}_coding_dh_{entity_type_singular}.csv"
+            console.print(temp_entities_file_name)
             # Check if file exists
-            if os.path.exists(f"{temp_entity_dir}/{temp_entities_path}"):
-                existing_temp_entities_df = read_csv_file(f"{temp_entity_dir}/{temp_entities_path}")
-                existing_temp_entities_df = drop_columns(existing_temp_entities_df, columns_to_drop)
+            temp_file_path = os.path.join(temp_entity_dir, temp_entities_file_name)
+            if os.path.exists(temp_file_path):
+                existing_temp_entities_df = read_csv_file(temp_file_path)
+                existing_temp_entities_df = drop_columns_from_df(existing_temp_entities_df, columns_to_drop)
                 if write_only_new:
                     entity_progress_bar.update(1)
                     continue
@@ -512,13 +503,13 @@ def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, t
             final_processed_df = pd.concat(processed_files).reset_index(drop=True)
             console.print("Length final_df", len(final_processed_df))
             if entity_type == "repos":
-                final_processed_df = drop_columns(final_processed_df, repo_exclude_headers)
+                final_processed_df = drop_columns_from_df(final_processed_df, repo_exclude_headers)
             elif entity_type == "orgs":
-                final_processed_df = drop_columns(final_processed_df, org_exclude_headers)
+                final_processed_df = drop_columns_from_df(final_processed_df, org_exclude_headers)
             else:
-                final_processed_df = drop_columns(final_processed_df, user_exclude_headers)
+                final_processed_df = drop_columns_from_df(final_processed_df, user_exclude_headers)
 
-            final_processed_df.to_csv(f"{temp_entity_dir}/{temp_entities_path}", index=False)
+            final_processed_df.to_csv(temp_file_path, index=False)
             entity_progress_bar.update(1)
         except Exception as e:
             console.print(f"Error for {row[entity_column]}: {e}", style="bold red")
@@ -568,6 +559,52 @@ def create_queries_directories(entity_type: str, cleaned_terms: pd.DataFrame) ->
         search_queries_dfs.append(df)
     search_queries_df = pd.concat(search_queries_dfs)
     return search_queries_df
+
+def get_data_from_search_terms(target_terms: List, data_directory_path: str) -> Union[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    # Load in the translated terms
+    cleaned_terms = pd.read_csv(f'{data_directory_path}/derived_files/grouped_cleaned_translated_terms.csv', encoding='utf-8-sig')
+
+    if 'keep_term' in cleaned_terms.columns:
+        cleaned_terms = cleaned_terms[cleaned_terms.keep_term == True]
+    # check if columns need renaming
+    columns_to_rename = ['code', 'term', 'term_source']
+    if all(elem in cleaned_terms.columns for elem in columns_to_rename):
+        cleaned_terms = cleaned_terms.rename(columns={'code': 'natural_language', 'term': 'search_term', 'term_source': 'search_term_source'})
+    cleaned_terms = cleaned_terms[cleaned_terms.search_term_source.isin(target_terms)]
+    cleaned_terms = cleaned_terms.reset_index(drop=True)
+
+    cleaned_terms.loc[cleaned_terms.search_term.str.contains("&#39;"), "search_term"] = cleaned_terms.search_term.str.replace("&#39;", "'")
+    cleaned_terms['lower_search_term'] = cleaned_terms.search_term.str.lower()
+
+    search_user_queries_df = create_queries_directories("user", cleaned_terms)
+    search_org_queries_df = search_user_queries_df[search_user_queries_df['type'] == 'Organization']
+    search_org_queries_df = search_org_queries_df[search_org_queries_df.search_term_source.isin(cleaned_terms.search_term_source.unique())]
+    search_user_queries_df = search_user_queries_df[search_user_queries_df['type'] == 'User']
+    search_user_queries_df = search_user_queries_df[search_user_queries_df.search_term_source.isin(cleaned_terms.search_term_source.unique())]
+    search_repo_queries_df = create_queries_directories("repo", cleaned_terms)
+    search_repo_queries_df = search_repo_queries_df[search_repo_queries_df.search_term_source.isin(cleaned_terms.search_term_source.unique())]
+
+
+    user_files = os.listdir(f"{data_directory_path}/historic_data/entity_files/all_users/")
+    org_files = os.listdir(f"{data_directory_path}/historic_data/entity_files/all_orgs/")
+    repo_files = os.listdir(f"{data_directory_path}/historic_data/entity_files/all_repos/")
+    cleaned_user_files = [f.split("_coding_dh_")[0] for f in user_files if f.endswith(".csv")]
+    cleaned_org_files = [f.split("_coding_dh_")[0] for f in org_files if f.endswith(".csv")]
+    cleaned_repo_files = [f.split("_coding_dh_")[0].replace("_", "/", 1) for f in repo_files if f.endswith(".csv")]
+    existing_search_user_queries_df = search_user_queries_df[search_user_queries_df.login.isin(cleaned_user_files)]
+    existing_search_org_queries_df = search_org_queries_df[search_org_queries_df.login.isin(cleaned_org_files)]
+    existing_search_repo_queries_df = search_repo_queries_df[search_repo_queries_df.full_name.isin(cleaned_repo_files)]
+    finalized_user_logins = existing_search_user_queries_df.login.unique().tolist()
+    finalized_org_logins = existing_search_org_queries_df.login.unique().tolist()
+    finalized_repo_full_names = existing_search_repo_queries_df.full_name.unique().tolist()
+
+    finalized_user_files = [f"{login}_coding_dh_user.csv" for login in finalized_user_logins]
+    finalized_org_files = [f"{login}_coding_dh_org.csv" for login in finalized_org_logins]
+    finalized_repo_files = [f"{full_name.replace('/', '_')}_coding_dh_repo.csv" for full_name in finalized_repo_full_names]
+    initial_core_users = read_combine_files(f"{data_directory_path}/historic_data/entity_files/all_users/", finalized_user_files)
+    initial_core_orgs = read_combine_files(f"{data_directory_path}/historic_data/entity_files/all_orgs/", finalized_org_files)
+    initial_core_repos = read_combine_files(f"{data_directory_path}/historic_data/entity_files/all_repos/", finalized_repo_files)
+    return initial_core_users, initial_core_orgs, initial_core_repos
 
 
 def get_core_users_repos(combine_files: bool =True) -> Union[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:

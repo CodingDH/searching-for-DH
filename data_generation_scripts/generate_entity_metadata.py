@@ -7,7 +7,13 @@ warnings.filterwarnings('ignore')
 import pandas as pd
 import os
 sys.path.append("..")
-from data_generation_scripts.general_utils import read_combine_files, check_total_pages, read_csv_file, get_data_directory_path, create_queries_directories
+from data_generation_scripts.general_utils import *
+from ast import literal_eval
+import apikey
+
+auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
+
+auth_headers = {'Authorization': f'token {auth_token}','User-Agent': 'request'}
 
 console = Console()
 
@@ -177,6 +183,8 @@ def get_counts(df: pd.DataFrame, url_column: str, count_column: str, entity_type
         needs_counts = df
         has_counts = pd.DataFrame()
     console.print(f"For {entity_type}, {len(needs_counts)} {count_column} need to be processed versus {len(has_counts)} has already been processed", style="bold blue")
+    if url_column == "owner.organizations_url":
+        needs_counts = needs_counts[needs_counts['owner.type'] == 'User']
     if len(has_counts) == len(df):
         df = has_counts
     else:
