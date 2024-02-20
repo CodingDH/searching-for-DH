@@ -24,7 +24,7 @@ if __name__ == "__main__":
     data_directory_path = get_data_directory_path() 
     target_terms: list = ["Public History", "Digital History", "Digital Cultural Heritage", "Cultural Analytics", "Computational Humanities", "Computational Social Science", "Digital Humanities"]
 
-    initial_core_users, initial_core_orgs, initial_core_repos = get_data_from_search_terms(data_directory_path, target_terms)
+    initial_core_users, initial_core_orgs, initial_core_repos = get_data_from_search_terms(data_directory_path, target_terms, return_search_queries=False)
     # get_count_metadata(entity_df: pd.DataFrame, entity_type: str, dir_path: str)
     error_file_path = f"{data_directory_path}/error_logs/repo_errors.csv"
     if os.path.exists(error_file_path):

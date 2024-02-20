@@ -554,13 +554,35 @@ def create_queries_directories(entity_type: str, cleaned_terms: pd.DataFrame) ->
     queries_df = queries_df.reset_index(drop=True)
     search_queries_dfs = []
     for _, row in tqdm(queries_df.iterrows(), total=queries_df.shape[0], desc="Processing queries"):
-        df = pd.read_csv(row.file_path, encoding='utf-8-sig')
+        df = read_csv_file(row.file_path, encoding='utf-8-sig')
         df["search_file_name"] = row.file_name
         search_queries_dfs.append(df)
     search_queries_df = pd.concat(search_queries_dfs)
     return search_queries_df
 
-def get_data_from_search_terms(target_terms: List, data_directory_path: str) -> Union[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def get_entity_files_from_search_queries(search_user_queries_df, search_org_queries_df, search_repo_queries_df, data_directory_path: str):
+    user_files = os.listdir(f"{data_directory_path}/historic_data/entity_files/all_users/")
+    org_files = os.listdir(f"{data_directory_path}/historic_data/entity_files/all_orgs/")
+    repo_files = os.listdir(f"{data_directory_path}/historic_data/entity_files/all_repos/")
+    cleaned_user_files = [f.split("_coding_dh_")[0] for f in user_files if f.endswith(".csv")]
+    cleaned_org_files = [f.split("_coding_dh_")[0] for f in org_files if f.endswith(".csv")]
+    cleaned_repo_files = [f.split("_coding_dh_")[0].replace("_", "/", 1) for f in repo_files if f.endswith(".csv")]
+    existing_search_user_queries_df = search_user_queries_df[search_user_queries_df.login.isin(cleaned_user_files)]
+    existing_search_org_queries_df = search_org_queries_df[search_org_queries_df.login.isin(cleaned_org_files)]
+    existing_search_repo_queries_df = search_repo_queries_df[search_repo_queries_df.full_name.isin(cleaned_repo_files)]
+    finalized_user_logins = existing_search_user_queries_df.login.unique().tolist()
+    finalized_org_logins = existing_search_org_queries_df.login.unique().tolist()
+    finalized_repo_full_names = existing_search_repo_queries_df.full_name.unique().tolist()
+
+    finalized_user_files = [f"{login}_coding_dh_user.csv" for login in finalized_user_logins]
+    finalized_org_files = [f"{login}_coding_dh_org.csv" for login in finalized_org_logins]
+    finalized_repo_files = [f"{full_name.replace('/', '_')}_coding_dh_repo.csv" for full_name in finalized_repo_full_names]
+    initial_core_users = read_combine_files(f"{data_directory_path}/historic_data/entity_files/all_users/", finalized_user_files)
+    initial_core_orgs = read_combine_files(f"{data_directory_path}/historic_data/entity_files/all_orgs/", finalized_org_files)
+    initial_core_repos = read_combine_files(f"{data_directory_path}/historic_data/entity_files/all_repos/", finalized_repo_files)
+    return initial_core_users, initial_core_orgs, initial_core_repos
+
+def get_data_from_search_terms(target_terms: List, data_directory_path: str, return_search_queries: bool) -> Union[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     # Load in the translated terms
     cleaned_terms = pd.read_csv(f'{data_directory_path}/derived_files/grouped_cleaned_translated_terms.csv', encoding='utf-8-sig')
 
@@ -584,64 +606,12 @@ def get_data_from_search_terms(target_terms: List, data_directory_path: str) -> 
     search_repo_queries_df = create_queries_directories("repo", cleaned_terms)
     search_repo_queries_df = search_repo_queries_df[search_repo_queries_df.search_term_source.isin(cleaned_terms.search_term_source.unique())]
 
-
-    user_files = os.listdir(f"{data_directory_path}/historic_data/entity_files/all_users/")
-    org_files = os.listdir(f"{data_directory_path}/historic_data/entity_files/all_orgs/")
-    repo_files = os.listdir(f"{data_directory_path}/historic_data/entity_files/all_repos/")
-    cleaned_user_files = [f.split("_coding_dh_")[0] for f in user_files if f.endswith(".csv")]
-    cleaned_org_files = [f.split("_coding_dh_")[0] for f in org_files if f.endswith(".csv")]
-    cleaned_repo_files = [f.split("_coding_dh_")[0].replace("_", "/", 1) for f in repo_files if f.endswith(".csv")]
-    existing_search_user_queries_df = search_user_queries_df[search_user_queries_df.login.isin(cleaned_user_files)]
-    existing_search_org_queries_df = search_org_queries_df[search_org_queries_df.login.isin(cleaned_org_files)]
-    existing_search_repo_queries_df = search_repo_queries_df[search_repo_queries_df.full_name.isin(cleaned_repo_files)]
-    finalized_user_logins = existing_search_user_queries_df.login.unique().tolist()
-    finalized_org_logins = existing_search_org_queries_df.login.unique().tolist()
-    finalized_repo_full_names = existing_search_repo_queries_df.full_name.unique().tolist()
-
-    finalized_user_files = [f"{login}_coding_dh_user.csv" for login in finalized_user_logins]
-    finalized_org_files = [f"{login}_coding_dh_org.csv" for login in finalized_org_logins]
-    finalized_repo_files = [f"{full_name.replace('/', '_')}_coding_dh_repo.csv" for full_name in finalized_repo_full_names]
-    initial_core_users = read_combine_files(f"{data_directory_path}/historic_data/entity_files/all_users/", finalized_user_files)
-    initial_core_orgs = read_combine_files(f"{data_directory_path}/historic_data/entity_files/all_orgs/", finalized_org_files)
-    initial_core_repos = read_combine_files(f"{data_directory_path}/historic_data/entity_files/all_repos/", finalized_repo_files)
-    return initial_core_users, initial_core_orgs, initial_core_repos
-
-
-def get_core_users_repos(combine_files: bool =True) -> Union[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """
-    Gets core users, repos, and orgs.
-
-    :param combine_files: Boolean indicating whether to combine files. Defaults to True.
-    :return: Core users, repos, and orgs
-    """
-    initial_core_users = read_csv_file(f"{data_directory_path}/derived_files/initial_core_users.csv")
-    initial_core_users['origin'] = 'initial_core'
-    initial_core_repos = read_csv_file(f"{data_directory_path}/derived_files/initial_core_repos.csv")
-    initial_core_repos['origin'] = 'initial_core'
-    initial_core_orgs = read_csv_file(f"{data_directory_path}/derived_files/initial_core_orgs.csv")
-    initial_core_orgs['origin'] = 'initial_core'
-
-    firstpass_core_users = read_csv_file(f"{data_directory_path}/derived_files/firstpass_core_users.csv")
-    firstpass_core_users['origin'] = 'firstpass_core'
-    firstpass_core_repos = read_csv_file(f"{data_directory_path}/derived_files/firstpass_core_repos.csv")
-    firstpass_core_repos['origin'] = 'firstpass_core'
-    firstpass_core_orgs = read_csv_file(f"{data_directory_path}/derived_files/firstpass_core_orgs.csv")
-    firstpass_core_orgs['origin'] = 'firstpass_core'
-
-    finalpass_core_users = read_csv_file(f"{data_directory_path}/derived_files/finalpass_core_users.csv")
-    finalpass_core_users['origin'] = 'finalpass_core'
-    finalpass_core_repos = read_csv_file(f"{data_directory_path}/large_files/derived_files/finalpass_core_repos.csv", low_memory=False, on_bad_lines='skip')
-    finalpass_core_repos['origin'] = 'finalpass_core'
-    finalpass_core_orgs = read_csv_file(f"{data_directory_path}/derived_files/finalpass_core_orgs.csv")
-    finalpass_core_orgs['origin'] = 'finalpass_core'
-
-    if combine_files:
-        core_users = pd.concat([initial_core_users, firstpass_core_users, finalpass_core_users])
-        core_repos = pd.concat([initial_core_repos, firstpass_core_repos, finalpass_core_repos])
-        core_orgs = pd.concat([initial_core_orgs, firstpass_core_orgs, finalpass_core_orgs])
-        return core_users, core_repos, core_orgs
+    if return_search_queries:
+        return search_user_queries_df, search_org_queries_df, search_repo_queries_df
     else:
-        return initial_core_users, initial_core_repos, initial_core_orgs, firstpass_core_users, firstpass_core_repos, firstpass_core_orgs, finalpass_core_users, finalpass_core_repos, finalpass_core_orgs
+        initial_core_users, initial_core_orgs, initial_core_repos = get_entity_files_from_search_queries(search_user_queries_df, search_org_queries_df, search_repo_queries_df, data_directory_path)
+        return initial_core_users, initial_core_orgs, initial_core_repos
+
 
 
 def save_chart(chart: alt.Chart, filename: str, scale_factor=2.0) -> None:
