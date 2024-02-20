@@ -2,6 +2,7 @@
 import os
 import re
 import time
+import ast
 import warnings
 from datetime import datetime, timedelta
 from typing import List, Optional, Union
@@ -222,7 +223,6 @@ def read_combine_files(dir_path: str, files: Optional[List] = None, file_path: O
         combined_df = pd.concat(dfs)
     return combined_df
 
-
 def get_headers(entity_type: str) -> pd.DataFrame:
     """
     Gets headers for entity type.
@@ -244,7 +244,110 @@ def get_headers(entity_type: str) -> pd.DataFrame:
         return None
     return headers
 
-def sort_groups_add_coding_dh_id(group: pd.DataFrame, subset_columns: List) -> pd.DataFrame:
+def sort_groups_add_coding_dh_id(group: pd.DataFrame, subset_columns: List[str]) -> pd.DataFrame:
+    """
+    Sorts a DataFrame group based on 'coding_dh_date' and adds a new column 'coding_dh_id' with unique identifiers.
+    If the group has more than one unique row (excluding subset_columns), each row gets a unique identifier.
+    If the group has only one unique row (excluding subset_columns), it gets the identifier 0.
+
+    Parameters:
+    group (pd.DataFrame): DataFrame group to sort and add identifiers to.
+    subset_columns (List[str]): List of column names to exclude when checking for unique rows.
+
+    Returns:
+    pd.DataFrame: The sorted DataFrame group with the new 'coding_dh_id' column.
+    """
+    # Convert strings that represent lists into actual lists
+    for col in group.columns:
+        group[col] = group[col].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) and x.startswith('[') and x.endswith(']') else x)
+
+    # Handle list columns and convert them to sorted comma-separated strings
+    list_cols = [col for col in group.columns if group[col].apply(lambda x: isinstance(x, list)).any()]
+    for col in list_cols:
+        group[col] = group[col].apply(lambda x: ', '.join(sorted(map(str, x))) if isinstance(x, list) else x)
+
+    subset_columns = list(set(subset_columns + list_cols))
+
+    # Sort the DataFrame by 'coding_dh_date' in ascending order
+    sorted_group = group.sort_values(by='coding_dh_date')
+
+    # Drop duplicates across all columns, excluding subset_columns
+    final_group = sorted_group.drop_duplicates(subset=sorted_group.columns.difference(subset_columns), keep='first')
+
+    # Assign unique identifiers
+    final_group['coding_dh_id'] = np.arange(len(final_group))
+    final_group = final_group.drop(columns=list_cols)
+
+    return final_group
+
+def recent_sort_groups_add_coding_dh_id(group: pd.DataFrame, subset_columns: List[str]) -> pd.DataFrame:
+    """
+    Sorts a DataFrame group based on 'coding_dh_date' and adds a new column 'coding_dh_id' with unique identifiers.
+    If the group has more than one unique row (excluding subset_columns), each row gets a unique identifier.
+    If the group has only one unique row (excluding subset_columns), it gets the identifier 0.
+
+    Parameters:
+    group (pd.DataFrame): DataFrame group to sort and add identifiers to.
+    subset_columns (List[str]): List of column names to exclude when checking for unique rows.
+
+    Returns:
+    pd.DataFrame: The sorted DataFrame group with the new 'coding_dh_id' column.
+    """
+    # Initialize list to keep track of columns with lists
+    list_cols = []
+
+   # Convert lists to comma-separated strings
+    for col in group.columns:
+        # Convert strings that represent lists into actual lists
+        group[col] = group[col].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) and x.startswith('[') and x.endswith(']') else x)
+
+        if group[col].apply(lambda x: isinstance(x, list)).any():
+            # Replace nulls with empty lists
+            group[col] = group[col].apply(lambda x: x if isinstance(x, list) else [])
+            
+            # Sort lists alphabetically and join into a string
+            group[f'combined_{col}'] = group[col].apply(lambda x: ', '.join(sorted(map(str, x))))
+            
+            # Add column to list_cols
+            subset_columns.append(col)
+            list_cols.append(f'combined_{col}')
+    # Sort the DataFrame by 'coding_dh_date' in ascending order
+    sorted_group = group.sort_values(by='coding_dh_date')
+    # Drop duplicates across columns, excluding subset_columns, and keep the first occurrence
+    unique_rows = pd.DataFrame()
+    # Temporarily drop subset_columns from sorted_group
+    temp_group = sorted_group.drop(columns=subset_columns, errors='ignore')
+
+    for col in sorted_group.columns.difference(subset_columns):
+
+        if temp_group[col].nunique() > 1:
+            print(f"Column {col} has more than one unique value")
+            # Drop duplicates based on col
+            unique_col_rows = temp_group.drop_duplicates(subset=col, keep='first')
+            # Use the index of unique_col_rows to select the corresponding rows in sorted_group
+            unique_col_rows_full = sorted_group.loc[unique_col_rows.index]
+
+            # Concatenate the result to unique_rows
+            unique_rows = pd.concat([unique_rows, unique_col_rows_full])
+        else:
+            print(f"Column {col} has only one unique value")
+            unique_rows = pd.concat([unique_rows, temp_group.iloc[0:1]])
+
+
+    # Drop duplicates from the combined results to ensure no duplicates in the final result
+    
+    final_group = unique_rows.drop_duplicates(subset=unique_rows.columns.difference(subset_columns)).sort_values(by='coding_dh_date')
+    # final_group = unique_rows.drop_duplicates().sort_values(by='coding_dh_date')
+
+    # Assign unique identifiers
+    final_group['coding_dh_id'] = np.arange(len(final_group))
+
+    # Drop the combined columns
+    final_group = final_group.drop(columns=list_cols)
+
+    return final_group
+
+def original_sort_groups_add_coding_dh_id(group: pd.DataFrame, subset_columns: List) -> pd.DataFrame:
     """
     Sorts a DataFrame group based on 'coding_dh_date' and adds a new column 'coding_dh_id' with unique identifiers.
     If the group has more than one unique row (excluding subset_columns), each row gets a unique identifier.
