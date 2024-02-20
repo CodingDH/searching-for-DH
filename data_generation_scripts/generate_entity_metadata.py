@@ -133,7 +133,7 @@ def write_entity_results_to_csv(count_column: str, row: pd.DataFrame, entity_typ
     entity_column = "full_name" if entity_type == "repos" else "login"
     entity_name = row[entity_column].replace("/", "_")
     entity_type_singular = entity_type[:-1]
-    file_path = f"{dir_path}{entity_name}_coding_dh_{entity_type_singular}.csv"
+    file_path = os.path.join(dir_path, f"{entity_name}_coding_dh_{entity_type_singular}.csv")
     console.print(f"Writing to {file_path}", style="bold green")
     if os.path.exists(file_path):
         df = read_csv_file(file_path)
@@ -231,18 +231,19 @@ def get_count_metadata(entity_df: pd.DataFrame, entity_type: str, dir_path: str)
     auth_headers = {'Authorization': f'token {auth_token}',
                 'User-Agent': 'request'}
     data_directory_path = get_data_directory_path()
+    cols_path = os.path.join(data_directory_path, "metadata_files", f"{entity_type[:-1]}_url_cols.csv")
     if entity_type == "repos":
-        cols_df = read_csv_file(f"{data_directory_path}/metadata_files/repo_url_cols.csv")
+        cols_df = read_csv_file(cols_path)
         skip_types = ['review_comments_url', 'collaborators_url']
         cols_df = cols_df[~cols_df.url_column.isin(skip_types)]
         entity_df = process_counts(entity_df, cols_df, auth_headers, entity_type, dir_path)
     else:
-        if os.path.exists(f"{data_directory_path}/metadata_files/user_url_cols.csv"):
-            cols_df = read_csv_file(f"{data_directory_path}/metadata_files/user_url_cols.csv")
+        if os.path.exists(cols_path):
+            cols_df = read_csv_file(cols_path)
         else:
             cols_dict ={'followers': 'followers', 'following': 'following', 'public_repos': 'public_repos', 'public_gists': 'public_gists', 'star_count': 'starred_url', 'subscription_count': 'subscriptions_url', 'organization_count': 'organizations_url'}
             cols_df = pd.DataFrame(cols_dict.items(), columns=['count_column', 'url_column'])
-            cols_df.to_csv(f"{data_directory_path}/metadata_files/user_url_cols.csv", index=False)
+            cols_df.to_csv(cols_path, index=False)
         if entity_type  == "orgs":
             console.print(f'Processing Orgs', style="bold blue")
             add_cols = pd.DataFrame({'count_column': ['members_count'], 'url_column': ['members_url']})
@@ -259,7 +260,8 @@ if __name__ == "__main__":
     target_terms: list = ["Public History", "Digital History", "Digital Cultural Heritage", "Cultural Analytics", "Computational Humanities", "Computational Social Science", "Digital Humanities"]
 
     # Load in the translated terms
-    cleaned_terms = pd.read_csv(f'{data_directory_path}/derived_files/grouped_cleaned_translated_terms.csv', encoding='utf-8-sig')
+    cleaned_terms_path = os.path.join(data_directory_path, "derived_files", "grouped_cleaned_translated_terms.csv")
+    cleaned_terms = read_csv_file(cleaned_terms_path, encoding='utf-8-sig')
 
     if 'keep_term' in cleaned_terms.columns:
         cleaned_terms = cleaned_terms[cleaned_terms.keep_term == True]
