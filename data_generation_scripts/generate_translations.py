@@ -18,7 +18,7 @@ from rich.console import Console
 from tqdm import tqdm
 import sys
 sys.path.append("..")
-from data_generation_scripts.general_utils import get_data_directory_path
+from data_generation_scripts.general_utils import get_data_directory_path, read_csv_file
 warnings.filterwarnings('ignore')
 # Load Google Cloud credentials. You can get your own credentials by following the instructions here: https://cloud.google.com/translate/docs/setup and saving them with apikey.save("GOOGLE_TRANSLATE_CREDENTIALS", "path/to/your/credentials.json")
 key_path = apikey.load("GOOGLE_TRANSLATE_CREDENTIALS")
@@ -67,7 +67,7 @@ def get_directionality(directionality_path: str) -> pd.DataFrame:
     """
     # Read in the directionality data if it exists, otherwise scrape it from Wikimedia
     if os.path.exists(directionality_path):
-        df = pd.read_csv(directionality_path)
+        df = read_csv_file(directionality_path)
     else:
         # Get the directionality data from Wikimedia using BeautifulSoup
         url = "https://meta.wikimedia.org/wiki/Template:List_of_language_names_ordered_by_code"
@@ -117,12 +117,13 @@ def generate_initial_terms(target_terms: list, data_directory_path: str, dh_exis
     """
     if dh_exists:
         # Load the existing translations of DH terms that were found on GitHub
-        dh_df = pd.DataFrame([json.load(codecs.open(
-            f'{data_directory_path}/metadata_files/en.Digital humanities.json', 'r', 'utf-8-sig'))])
+        dh_df_path = os.path.join(data_directory_path, "metadata_files", "en.Digital humanities.json")
+        dh_df = pd.DataFrame([json.load(codecs.open(dh_df_path, 'r', 'utf-8-sig'))])
         dh_df = dh_df.melt()
         dh_df.columns = ['language', 'term']
         # Load in all ISO 639-1 languages
-        iso_languages = pd.read_csv(f"{data_directory_path}/metadata_files/iso_639_choices.csv")
+        iso_languages_path = os.path.join(data_directory_path, "metadata_files", "iso_639_choices.csv")
+        iso_languages = read_csv_file(iso_languages_path)
         iso_languages = iso_languages.rename(columns={'name': 'language_name'})
         # Merge the DH terms with the ISO 639-1 languages
         merged_dh = pd.merge(dh_df, iso_languages, on='language', how='outer')
@@ -173,18 +174,18 @@ def generate_translated_terms(data_directory_path: str, directionality_df: pd.Da
 
     Returns a dataframe with translated terms
     """
-    cleaned_terms_output_path = f"{data_directory_path}/derived_files/cleaned_translated_terms.csv"
+    cleaned_terms_output_path = os.path.join(data_directory_path, "derived_files", "cleaned_translated_terms.csv")
 
-    grouped_terms_output_path = f"{data_directory_path}/derived_files/grouped_cleaned_translated_terms.csv"
+    grouped_terms_output_path = os.path.join(data_directory_path, "derived_files", "grouped_cleaned_translated_terms.csv")
     # Load the existing datasets if they exist and rerun_code is False
     if os.path.exists(cleaned_terms_output_path) and os.path.exists(grouped_terms_output_path) and (not rerun_code):
-        cleaned_terms_df = pd.read_csv(cleaned_terms_output_path)
-        grouped_terms_df = pd.read_csv(grouped_terms_output_path)
+        cleaned_terms_df = read_csv_file(cleaned_terms_output_path)
+        grouped_terms_df = read_csv_file(grouped_terms_output_path)
     else:
         # Load existing translations if they exist
         if os.path.exists(cleaned_terms_output_path):
             console.print("Loading existing cleaned terms", style="bold green")
-            cleaned_terms_df = pd.read_csv(cleaned_terms_output_path)
+            cleaned_terms_df = read_csv_file(cleaned_terms_output_path)
             existing_target_terms = cleaned_terms_df.term_source.unique().tolist()
             # Handle Digital Humanities slightly differently because we generate the translations from existing files from other scholars
             dh_exists = ['Digital Humanities' in term for term in existing_target_terms]
@@ -206,7 +207,7 @@ def generate_translated_terms(data_directory_path: str, directionality_df: pd.Da
             cleaned_terms_df = pd.concat([cleaned_terms_df, new_cleaned_terms_df])
             # Save the cleaned terms
             cleaned_terms_df.to_csv(f'{cleaned_terms_output_path}', index=False)
-        cleaned_terms_df = pd.read_csv(f'{cleaned_terms_output_path}')
+        cleaned_terms_df = read_csv_file(f'{cleaned_terms_output_path}')
         # Subset directionality to LTR and RTL languages
         directionality_df = directionality_df[directionality_df.directionality.isin(['ltr', 'rtl'])]
 
@@ -243,7 +244,7 @@ def generate_translated_terms(data_directory_path: str, directionality_df: pd.Da
 
 if __name__ == '__main__':
     local_data_directory_path = get_data_directory_path()
-    existing_directionality_path = f"{local_data_directory_path}/metadata_files/iso_639_choices_directionality_wikimedia.csv"
+    existing_directionality_path = os.path.join(local_data_directory_path, "metadata_files", "iso_639_choices_directionality_wikimedia.csv")
     local_target_terms: list = ["Humanities", "Public History", "Digital History", "Digital Cultural Heritage", "Cultural Analytics", "Computational Humanities", "Computational Social Science"]
     should_rerun_code = True
     existing_directionality_df = get_directionality(existing_directionality_path)

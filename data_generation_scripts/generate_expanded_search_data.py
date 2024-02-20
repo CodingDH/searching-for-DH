@@ -382,12 +382,14 @@ def generate_initial_search_datasets(rates_df: pd.DataFrame, initial_repo_output
     if os.path.exists(initial_user_output_path) == False:
         os.makedirs(initial_user_output_path)
 
-    error_file = f"{data_directory_path}/error_logs/search_errors.csv"
+    error_file = os.path.join(data_directory_path, "error_logs", "search_errors.csv")
     if os.path.exists(error_file):
         drop_fields = ['search_term', 'search_term_source', 'status_code', 'error_url']
         clean_write_error_file(error_file, drop_fields)
     
-    final_terms = prepare_terms_and_directories(f'{data_directory_path}/derived_files/grouped_cleaned_translated_terms.csv', f'{data_directory_path}/derived_files/threshold_search_errors.csv', target_terms)
+    cleaned_terms_path = os.path.join(data_directory_path, "derived_files", "grouped_cleaned_translated_terms.csv")
+    threshold_search_errors_path = os.path.join(data_directory_path, "derived_files", "threshold_search_errors.csv")
+    final_terms = prepare_terms_and_directories(cleaned_terms_path, threshold_search_errors_path, target_terms)
     for index, row in final_terms.iterrows():
         try:
             # Update the search term to be displayed correctly
