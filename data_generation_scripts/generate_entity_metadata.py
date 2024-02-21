@@ -219,12 +219,13 @@ def process_counts(df: pd.DataFrame, cols_df: pd.DataFrame, auth_headers: dict, 
                 console.print(f'Counts already exist {row.count_column} for {entity_type}')
     return df
 
-def get_count_metadata(entity_df: pd.DataFrame, entity_type: str, dir_path: str) -> pd.DataFrame:
+def get_count_metadata(entity_df: pd.DataFrame, entity_type: str, dir_path: str, return_df: bool) -> pd.DataFrame:
     """Function to get count metadata for users, organizations, and repositories
 
     :param entity_df: DataFrame with user or organization or repository data
     :param entity_type: Type of entity (users or orgs or repos)
     :param dir_path: Directory path to existing csv files
+    :param return_df: Boolean to return the dataframe
     :return: DataFrame with the total results"""
     auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
 
@@ -251,7 +252,8 @@ def get_count_metadata(entity_df: pd.DataFrame, entity_type: str, dir_path: str)
             entity_df["members_url"] = entity_df["url"].apply(lambda x: x + "/public_members")
             entity_df.members_url = entity_df.members_url.str.replace('users', 'orgs')
         entity_df = process_counts(entity_df, cols_df, auth_headers, entity_type, dir_path)
-    return entity_df
+    if return_df:
+        return entity_df
             
 
 if __name__ == "__main__":
