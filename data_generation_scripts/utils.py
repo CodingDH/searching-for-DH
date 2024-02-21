@@ -1,838 +1,620 @@
+# Standard library imports
+import os
 import re
 import time
+import ast
+import warnings
+from datetime import datetime, timedelta
+from typing import List, Optional, Union
+
+# Related third-party imports
+import altair as alt
+import apikey
+import numpy as np
 import pandas as pd
 import requests
-import apikey
-import os
-import math
-import shutil
+from rich.console import Console
 from tqdm import tqdm
-from datetime import datetime
-import altair as alt
-import warnings
-warnings.filterwarnings('ignore')
-import vl_convert as vlc
-from typing import Optional, List, Any
-import numpy as np
 
+# Local application/library specific imports
+import vl_convert as vlc
+
+# Filter warnings
+warnings.filterwarnings('ignore')
+
+# Load auth token
 auth_token = apikey.load("DH_GITHUB_DATA_PERSONAL_TOKEN")
 
 auth_headers = {'Authorization': f'token {auth_token}','User-Agent': 'request'}
 
-"""Rate Limit and Response Functions
-1. Check rate limit
-2. Check total pages
-3. Check total results
-4. Get response data"""
+console = Console()
+
+def set_data_directory_path(path: str) -> None:
+    """
+    Sets data directory path.
+
+    :param path: Path to data directory
+    """
+    apikey.save("CODING_DH_DATA_DIRECTORY_PATH", path)
+    console.print(f'Coding DH data directory path set to {path}', style='bold blue')
+
+def get_data_directory_path() -> str:
+    """
+    Gets data directory path.
+
+    :return: Data directory path
+    """
+    return apikey.load("CODING_DH_DATA_DIRECTORY_PATH")
 
 def check_rate_limit() -> pd.DataFrame:
-    """Function to check rate limit status
-    :return: data from rate limit api call"""
+    """
+    Checks rate limit status on GitHub API
+
+    :return: data from rate limit api call
+    """
     # Checks for rate limit so that you don't hit issues with Github API. Mostly for search API that has a 30 requests per minute https://docs.github.com/en/rest/rate-limit
     url = 'https://api.github.com/rate_limit'
+    # Make request
     response = requests.get(url, headers=auth_headers, timeout=10)
     if response.status_code != 200:
-        print(f'Failed to retrieve rate limit with status code: {response.status_code}')
+        console.print(f'Failed to retrieve rate limit with status code: {response.status_code}. Error from check_rate_limit function', style='bold red')
         return pd.DataFrame()
+    # Convert to dataframe
     rates_df = pd.json_normalize(response.json())
     return rates_df
 
-def check_total_pages(url: str, auth_headers: dict) -> int:
-    # Check total number of pages to get from search. Useful for not going over rate limit
-    response = requests.get(f'{url}?per_page=1', headers=auth_headers, timeout=10)
-    if response.status_code != 200:
-        print('hit rate limiting. trying to sleep...')
-        time.sleep(120)
-        response = requests.get(url, headers=auth_headers, timeout=10)
-        if response.status_code != 200:
-            rates_df = check_rate_limit()
-            if rates_df['resources.core.remaining'].values[0] == 0:
-                print('rate limit reached. sleeping for 1 hour')
-                time.sleep(3600)
-                response = requests.get(url, headers=auth_headers, timeout=10)
-                if response.status_code != 200:
-                    print(f'query failed third time with code {response.status_code}. Failing URL: {url}')
-                    total_pages = 1
-    if len(response.links) == 0:
-        total_pages = 1
-    else:
-        match = re.search(r'\d+$', response.links['last']['url'])
-        total_pages = match.group() if match is not None else 1
-    return int(total_pages)
-
-def check_total_results(url: str) -> Optional[int]:
-    """Function to check total number of results from API. Useful for not going over rate limit. Differs from check_total_pages because this returns all results, not just total number of pagination.
-
-    :param url: URL to check.
-    :type url: str
-    :return: Total count of results.
-    :rtype: int, optional
+def make_request_with_rate_limiting(url: str, auth_headers: dict, number_of_attempts: int = 3, timeout: int = 10) -> requests.Response:
     """
-    response = requests.get(url, headers=auth_headers, timeout=10)
-    if response.status_code != 200:
-        print('hit rate limiting. trying to sleep...')
-        time.sleep(120)
-        response = requests.get(url, headers=auth_headers, timeout=10)
-        if response.status_code != 200:
+    Makes a GET request to the specified URL with handling for rate limiting. If the request encounters rate limiting, 
+    it will attempt to retry the request a specified number of times before giving up. The function also adheres to 
+    a timeout for server response.
+
+    :param url: String representing the URL to which the request is made.
+    :param auth_headers: Dictionary containing authentication headers for the request.
+    :param number_of_attempts: Integer specifying the maximum number of attempts for the request. Defaults to 3.
+    :param timeout: Integer specifying the timeout in seconds to wait for a response from the server. Defaults to 10.
+    :return: The response object from the requests library representing the outcome of the GET request.
+    """
+    # Set range for number of attempts
+    for index in range(number_of_attempts):
+        response = requests.get(url, headers=auth_headers, timeout=timeout)
+        console.print("Status code", response.status_code)
+        # Check if response is valid and return it if it is
+        if response.status_code == 200:
+            return response, response.status_code
+        elif response.status_code == 401:
+            console.print("Response status code 401: unauthorized access. Recommend checking api key. Error from make_request_with_rate_limiting function", style='bold red')
+            return None, response.status_code
+        elif response.status_code == 204:
+            console.print(f'Response status code 204: No data for {url}.  Error from make_request_with_rate_limiting function', style='bold red')
+            return None, response.status_code
+        # If not, check if it's a rate limit issue
+        if index == 0:
+            console.print('Hitting rate limiting set by number of attempts. Sleeping for 120 seconds to ensure that queries are not blocked by API. Message from make_request_with_rate_limiting function', style='bold red')
+            time.sleep(120)
+        # If it is, wait for an hour and try again
+        if index == 1:
             rates_df = check_rate_limit()
             if rates_df['resources.core.remaining'].values[0] == 0:
-                print('rate limit reached. sleeping for 1 hour')
+                # Get the current time
+                now = datetime.now()
+                # Calculate when the function should run again
+                run_again_at = now + timedelta(hours=1)
+                console.print(f'GitHub 5000 query rate limit reached at {now.strftime("%Y-%m-%d %H:%M:%S")}. Sleeping for 1 hour and then restarting at {run_again_at.strftime("%Y-%m-%d %H:%M:%S")}. Message from make_request_with_rate_limiting function', style='bold red')
                 time.sleep(3600)
-                response = requests.get(url, headers=auth_headers, timeout=10)
-                if response.status_code != 200:
-                    print(f'query failed third time with code {response.status_code}. Failing URL: {url}')
-                    data = {'total_count': None}
-        data = response.json()
+    # If it's not a rate limit issue, return None
+    console.print(f'Query failed after {number_of_attempts} attempts with code {response.status_code}. Failing URL: {url}. Error from make_request_with_rate_limiting function', style='bold red')
+    return None, response.status_code
+
+def check_total_pages(url: str, auth_headers: dict) -> int:
+    """
+    Checks total number of pages for a given url on the GitHub API.
+
+    :param url: URL to check
+    :param auth_headers: Authentication headers
+    :return: Total number of pages. If there are no links or response is None, returns 1.
+    """
+    
+    finalized_url = f'{url}&per_page=1' if "?state=all" in url else f'{url}?per_page=1'
+
+    # Get total number of pages
+    response, _ = make_request_with_rate_limiting(finalized_url, auth_headers)
+    # If response is None or there are no links, return 1
+    if response is None or len(response.links) == 0:
+        return 0
+    # Otherwise, get the last page number
+    match = re.search(r'\d+$', response.links['last']['url'])
+    return int(match.group()) if match is not None else 0
+
+def check_total_results(url: str, auth_headers: dict) -> Optional[int]:
+    """
+    Checks total number of results for a given url on the GitHub API.
+    
+    :param url: URL to check
+    :param auth_headers: Authentication headers
+    :return: Total number of results. If response is None, returns None.
+    """
+    # Get total number of results
+    response, _ = make_request_with_rate_limiting(url, auth_headers)
+    # If response is None, return None
+    if response is None:
+        data = {'total_count': None}
     else:
         data = response.json()
-    return data['total_count']
+    # Return total count
+    return data.get('total_count')
+        
+def read_csv_file(file_name: str, directory: Optional[str] = None, encoding: Optional[str] = 'utf-8', error_bad_lines: Optional[bool] = False) -> Optional[pd.DataFrame]:
+    """
+    Reads a CSV file into a pandas DataFrame. This function allows specification of the directory, encoding, 
+    and handling of bad lines in the CSV file. If the file cannot be read, the function returns None.
 
-def get_response_data(response, query):
-    """Function to get and process response data from GitHub API call
-    :param response: response from initial API call
-    :param query: query used to make initial API call
-    :return: response data"""
-    # First, check if response is valid
-    if response.status_code == 401:
-        print("response code 401 - unauthorized access. check api key")
-        return []
-    elif response.status_code == 204:
-        print(f'No data for {query}')
-        return []
-    elif response.status_code == 200:
-        return response.json()
-    else:
-        print(f'response code: {response.status_code}. hit rate limiting. trying to sleep...')
-        time.sleep(10)
-        response = requests.get(query, headers=auth_headers, timeout=10)
-
-        # Check if response is valid a second time after sleeping
-        if response.status_code != 200:
-            print(f'query failed twice with code {response.status_code}. Failing URL: {query}')
-
-            # If failed again, check the rate limit and sleep for the amount of time needed to reset rate limit
-            rates_df = check_rate_limit()
-            if rates_df['resources.core.remaining'].values[0] == 0:
-                print('rate limit reached. sleeping for 1 hour')
-                time.sleep(3600)
-                response = requests.get(query, headers=auth_headers, timeout=10)
-                if response.status_code != 200:
-                    print(f'query failed third time with code {response.status_code}. Failing URL: {query}')
-                    return []
-                else:
-                    return response.json()
-            else:
-                return response.json()
-
-"""Manipulate Files Functions
-1. Read csv file
-2. Read and combine files
-2. Check return error file
-3. Check if older file exists and move it to archive
-4. Check if older entity files exist and grab any missing entities to add to our most recent file"""
-
-def read_csv_file(directory: str, file_name: str) -> Optional[pd.DataFrame]:
-    """Reads a CSV file into a pandas DataFrame."""
+    :param file_name: String representing the name of the CSV file to read.
+    :param directory: Optional string specifying the directory where the file is located. If None, it is assumed the file is in the current working directory.
+    :param encoding: Optional string specifying the encoding used in the CSV file. Defaults to 'utf-8'.
+    :param error_bad_lines: Optional boolean indicating whether to skip bad lines in the CSV. If False, an error is raised for bad lines. Defaults to False.
+    :return: A pandas DataFrame containing the data from the CSV file, or None if the file cannot be read.
+    """
+    # Read in the file
+    file_path = file_name if directory is None else os.path.join(directory, file_name)
     try:
-        return pd.read_csv(os.path.join(directory, file_name), low_memory=False, encoding='utf-8')
+        # Return the dataframe
+        return pd.read_csv(file_path, low_memory=False, encoding=encoding, error_bad_lines=error_bad_lines)
+    # If there's a Pandas error, print it and return None
     except pd.errors.EmptyDataError:
-        print(f'Empty dataframe for {file_name}')
+        console.print(f'Empty dataframe for {file_name}', style='bold red')
         return None
-
-
-def create_file_dict(directory: str, file_name: str) -> dict:
-    """Create a file dictionary with name, size, and directory."""
-    file_dict = {}
-    loaded_file = os.path.join(directory, file_name)
-    file_size = os.path.getsize(loaded_file)
-    file_dict['file_name'] = file_name
-    file_dict['file_size'] = file_size
-    file_dict['directory'] = directory
-    return file_dict
-
-def read_combine_files(dir_path: str, check_all_dirs: bool=False, file_path_contains: Optional[str]=None, large_files: bool=False) -> pd.DataFrame:
-    """Combines all files in a directory."""
-    excluded_dirs = ['temp', 'derived_files', 'metadata_files', 'repo_data', 'user_data', 'derived_files', 'archived_data', 'error_logs', 'archived_files']
-    rows = []
-    relevant_files = []
-
-    for directory, _, files in os.walk(dir_path):
-        if check_all_dirs and directory == '../data':
+    # If there's an error, print it and return None
+    except Exception as e:
+        console.print(f'Failed to read {file_name} with {encoding} encoding. Error: {e}', style='bold red')
+        return None
+    
+def read_combine_files(dir_path: str, files: Optional[List] = None, file_path: Optional[str] = None, grouped_columns: Optional[List] = [] , return_all: bool = False) -> pd.DataFrame:
+    """
+    Reads all CSV files in a directory, combines them into a single DataFrame, and writes the result to a file. Items are organized by most recent coding_dh_date.
+    If return_all is False, only the most recent entry for each group (defined by grouped_columns) is kept.
+    
+    Parameters:
+    dir_path (str): The path to the directory containing the CSV files.
+    file_path (str): The path to the file where the combined DataFrame will be written.
+    grouped_columns (list, optional): The columns to group by when return_all is False. Defaults to None.
+    return_all (bool, optional): Whether to return all rows or only the most recent for each group. Defaults to False.
+    
+    Returns:
+    pd.DataFrame: The combined DataFrame.
+    """
+    
+    # Remove the output file if it already exists
+    if files is None:
+        files = os.listdir(dir_path)
+    
+    dfs = []
+    for file in tqdm(files, desc=f"Reading files in {dir_path}"):
+        # Skip .DS_Store files
+        if '.DS_Store' in file:
+            os.remove(os.path.join(dir_path, file))
             continue
-        if check_all_dirs and any(excluded_dir in directory for excluded_dir in excluded_dirs):
-            continue
-
-        for file_name in files:
-            if file_path_contains is None or file_path_contains in file_name:
-                if large_files:
-                    relevant_files.append(create_file_dict(directory, file_name))
+        df = read_csv_file(os.path.join(dir_path, file))
+        
+        if df is not None:
+            try:
+                if not return_all:
+                    df['coding_dh_date'] = pd.to_datetime(df['coding_dh_date'], errors='coerce')
+                    df = df.sort_values(by="coding_dh_date", ascending=False)
+                    # get the latest date
+                    if ('entity' not in dir_path) and (len(grouped_columns) > 0):
+                        df = df.groupby(grouped_columns).first().reset_index()
+                    else:
+                        df = df[0:1]
+                    
+                if file_path is not None and os.path.exists(file_path):
+                    # Write DataFrame to file
+                    mode = "a" if os.path.exists(file_path) else "w"
+                    df.to_csv(file_path, mode=mode, header=(mode=="w"), index=False)
                 else:
-                    row = read_csv_file(directory, file_name)
-                    if row is not None:
-                        rows.append(row)
-
-    if large_files:
-        files_df = pd.DataFrame(relevant_files)
-        if len(files_df) == 0:
-            return pd.DataFrame()
-        files_df['date'] = "202" + files_df['file_name'].str.split('202').str[1].str.split('.').str[0]
-        files_df.date = files_df.date.str.replace("_", "-")
-        files_df.date = pd.to_datetime(files_df.date)
-        top_files = files_df.sort_values(by=['file_size', 'date'], ascending=[False, False]).head(2)
-        rows = [read_csv_file(row.directory, row.file_name) for _, row in top_files.iterrows() if row is not None]
-
-    combined_df = pd.concat(rows) if len(rows) > 0 else pd.DataFrame()
+                    dfs.append(df)
+            except:
+                console.print(f"Error with file {file}", style="bold red")
+                continue
+    
+    if file_path is not None and os.path.exists(file_path):
+        combined_df = read_csv_file(file_path)
+    else:
+        combined_df = pd.concat(dfs)
     return combined_df
 
+def get_headers(entity_type: str) -> pd.DataFrame:
+    """
+    Gets headers for entity type.
 
-def check_return_error_file(error_file_path):
-    """Function to check if error file exists and return it if it does
-    :param error_file_path: path to error file
-    :return: error dataframe"""
-    if os.path.exists(error_file_path):
-        error_df = pd.read_csv(error_file_path)
-        return error_df
+    :param entity_type: Type of entity
+    :return: Headers dataframe
+    """
+    data_directory_path = get_data_directory_path()
+    # Get headers for entity type
+    headers_file_path = os.path.join(data_directory_path, 'metadata_files', f'{entity_type[:-1]}_headers.csv')
+    if entity_type == 'users':
+        headers = read_csv_file(headers_file_path)
+    elif entity_type == 'repos':
+        headers = read_csv_file(headers_file_path)
+    elif entity_type == 'orgs':
+        headers = read_csv_file(headers_file_path)
     else:
-        return pd.DataFrame()
+        console.print(f'No headers for {entity_type}', style='bold red')
+        return None
+    return headers
 
-def clean_write_error_file(error_file_path, drop_field):
-    """Function to clean error file and write it
-    :param error_file_path: path to error file
-    :param drop_field: field to drop from error file"""
+def sort_groups_add_coding_dh_id(group: pd.DataFrame, subset_columns: List[str]) -> pd.DataFrame:
+    """
+    Sorts a DataFrame group based on 'coding_dh_date' and adds a new column 'coding_dh_id' with unique identifiers.
+    If the group has more than one unique row (excluding subset_columns), each row gets a unique identifier.
+    If the group has only one unique row (excluding subset_columns), it gets the identifier 0.
+
+    Parameters:
+    group (pd.DataFrame): DataFrame group to sort and add identifiers to.
+    subset_columns (List[str]): List of column names to exclude when checking for unique rows.
+
+    Returns:
+    pd.DataFrame: The sorted DataFrame group with the new 'coding_dh_id' column.
+    """
+    # Convert strings that represent lists into actual lists
+    for col in group.columns:
+        group[col] = group[col].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) and x.startswith('[') and x.endswith(']') else x)
+
+    # Handle list columns and convert them to sorted comma-separated strings
+    list_cols = [col for col in group.columns if group[col].apply(lambda x: isinstance(x, list)).any()]
+    for col in list_cols:
+        group[col] = group[col].apply(lambda x: ', '.join(sorted(map(str, x))) if isinstance(x, list) else x)
+
+    subset_columns = list(set(subset_columns + list_cols))
+
+    # Sort the DataFrame by 'coding_dh_date' in ascending order
+    sorted_group = group.sort_values(by='coding_dh_date')
+
+    # Drop duplicates across all columns, excluding subset_columns
+    final_group = sorted_group.drop_duplicates(subset=sorted_group.columns.difference(subset_columns), keep='first')
+
+    # Assign unique identifiers
+    final_group['coding_dh_id'] = np.arange(len(final_group))
+    final_group = final_group.drop(columns=list_cols)
+
+    return final_group
+
+def check_headers_exist(df: pd.DataFrame, headers: pd.DataFrame) -> pd.DataFrame:
+    """
+    Checks if headers exist in dataframe and adds them if they don't.
+
+    :param df: Dataframe
+    :param headers: Headers dataframe
+    :return: Dataframe with headers
+    """
+    # Check if each column in headers exists in the response data
+    for column in headers.columns:
+        if column not in df.columns:
+            df[column] = None  # If not, assign None
+    return df
+
+def drop_columns_from_df(df: pd.DataFrame, columns: List) -> pd.DataFrame:
+    """
+    Drops columns from dataframe.
+
+    :param df: Dataframe
+    :param columns: Columns to drop
+    :return: Dataframe with dropped columns
+    """
+    for col in columns:
+        if col in df.columns:
+            df = df.drop(columns=[col])
+    return df
+
+def clean_write_error_file(error_file_path: str, drop_fields: List) -> None:
+    """
+    Cleans error file and writes it. Drops duplicates if error_time column exists. Also drops duplicates based on drop_field column.
+
+    :param error_file_path: Path to error file
+    :param drop_fields: Fields to drop
+    """
+    # Clean error file and write it
     if os.path.exists(error_file_path):
-        error_df = pd.read_csv(error_file_path)
-        if 'error_time' in error_df.columns:
-            error_df = error_df.sort_values(by=['error_time']).drop_duplicates(subset=[drop_field], keep='last')
+        error_df = read_csv_file(error_file_path)
+        # Drop duplicates if error_date exists
+        if 'error_date' in error_df.columns:
+            error_df = error_df.sort_values(by=['error_date']).drop_duplicates(subset=drop_fields, keep='last')
         else: 
-            error_df = error_df.drop_duplicates(subset=[drop_field], keep='last')
+            error_df = error_df.drop_duplicates(subset=drop_fields, keep='last')
         error_df.to_csv(error_file_path, index=False)
     else:
-        print('no error file to clean')
+        console.print('No error file to clean', style='bold blue')
 
-def check_if_older_file_exists(file_path):
-    """Function to check if older file exists and move it to older_files folder
-    :param file_path: path to file"""
-    if os.path.exists(file_path):
-        src = file_path 
-        new_file_path = file_path.replace('/data/','/data/older_files/')
-        time_stamp = datetime.now().strftime("%Y_%m_%d")
-        dst = new_file_path.replace('.csv', f'_{time_stamp}.csv')
-        
-        new_dir = os.path.dirname(new_file_path)
-        if not os.path.exists(new_dir):
-            os.makedirs(new_dir)
-
-        if not os.path.exists(dst):
-            shutil.copy2(src, dst)  
-
-
-def check_for_entity_in_older_queries(entity_path, entity_df, is_large=True):
-    """Function to check if entity exists in older queries and add it to our most recent version of the file
-    :param entity_path: path to entity file
-    :param entity_df: entity dataframe"""
-    entity_type = entity_path.split('/')[-1].split('_dataset')[0]
-    print(entity_type)
-    older_entity_file_path = entity_path.replace('data/', 'data/older_files/')
-    older_entity_file_dir = os.path.dirname(older_entity_file_path) + '/'
-
-
-    older_entity_df = read_combine_files(dir_path=older_entity_file_dir, check_all_dirs=True, file_path_contains=entity_type, large_files=is_large)
-    print(f'older entity df shape: {older_entity_df.shape}')
-    if len(older_entity_df) > 0:
-        entity_field = 'full_name' if entity_type == 'repos' else 'login'
-        missing_entities = older_entity_df[~older_entity_df[entity_field].isin(entity_df[entity_field])]
-
-        if entity_type == 'users':
-            user_headers = pd.read_csv('../data/metadata_files/users_dataset_cols.csv')
-            if set(missing_entities.columns) != set(user_headers.columns):
-                error_file_path = "../data/error_logs/potential_users_errors.csv"
-                error_df = check_return_error_file(error_file_path)
-                now = pd.Timestamp('now')
-                error_df['error_time'] = pd.to_datetime(error_df['error_time'], errors='coerce')
-                error_df = error_df.dropna(subset=['error_time'])  # Drop any rows where 'error_time' is NaT
-                error_df['time_since_error'] = (now - error_df['error_time']).dt.days
-                error_df = error_df[error_df.time_since_error > 7]
-                missing_entities = missing_entities[~missing_entities.login.isin(error_df.login)]
-                missing_entities = missing_entities[user_headers.columns]
-        if entity_type == 'repos':
-            repo_headers = pd.read_csv('../data/metadata_files/repo_headers.csv')
-            if set(missing_entities.columns) != set(repo_headers.columns):
-                error_file_path = "../data/error_logs/potential_repos_errors.csv"
-                error_df = check_return_error_file(error_file_path)
-                now = pd.Timestamp('now')
-                error_df['error_time'] = pd.to_datetime(error_df['error_time'], errors='coerce')
-                error_df = error_df.dropna(subset=['error_time'])  # Drop any rows where 'error_time' is NaT
-                error_df['time_since_error'] = (now - error_df['error_time']).dt.days
-                error_df = error_df[error_df.time_since_error > 7]
-                missing_entities = missing_entities[~missing_entities.full_name.isin(error_df.full_name)]
-                missing_entities = missing_entities[repo_headers.columns]
-        if len(missing_entities) > 0:
-            missing_entities = missing_entities[missing_entities.id.notna()]
-            entity_df = pd.concat([entity_df, missing_entities])
-            cleaned_field = 'cleaned_repo_query_time' if entity_type == 'repos' else 'cleaned_user_query_time'
-            time_field = 'repo_query_time' if entity_type == 'repos' else 'user_query_time'
-            entity_df[cleaned_field] = pd.to_datetime(entity_df[time_field], errors='coerce')
-            entity_field = 'full_name' if 'repo' in entity_type else 'login'
-            entity_df = entity_df.sort_values(by=[cleaned_field], ascending=False).drop_duplicates(subset=[entity_field], keep='first').drop(columns=[cleaned_field])
-    check_if_older_file_exists(entity_path)
-    entity_df.to_csv(entity_path, index=False)
-    return entity_df
-
-def check_file_size_and_move(file_dir):
-    """Function to check if file size is too large and move it
-    :param file_dir: path to file directory"""
-    for dir, _, files in os.walk(file_dir):
-        for file in files:
-            file_path = os.path.join(dir, file)
-            size = os.path.getsize(file_path)
-            size = round(size/(1024*1024), 2)
-            if size > 50:
-            
-                new_file_path = file_path.replace('data/', 'data/large_files/')
-            
-                if not os.path.exists(new_file_path):
-                    shutil.copy2(file_path, new_file_path)
-                    os.remove(file_path)
-
-def check_file_created(file_path, existing_df):
-    df = pd.read_csv(file_path, low_memory=False)
-    if len(df) == len(existing_df):
-        return True
+def log_error_to_file(error_file_path: str, additional_data: dict, status_code: int, error_url: str) -> None:
+    error_df = pd.DataFrame([{"error_date": datetime.now().strftime("%Y-%m-%d"), "error_url": error_url, "status_code": status_code}])
+    error_df = pd.concat([error_df, pd.DataFrame([additional_data])], axis=1)
+    if os.path.exists(error_file_path):
+        error_df.to_csv(error_file_path, mode='a', header=False, index=False)
     else:
-        print(f'File {file_path} not created correctly')
-        return False
+        error_df.to_csv(error_file_path, index=False)
 
-"""User Functions
-1. Get new users data
-2. Check add user
-4. Get user"""
-
-def get_new_users(potential_new_users_df, temp_users_dir, users_progress_bar,  error_file_path, overwrite_existing_temp_files = True):
-    """Function to get new users from the users file
-    :param potential_new_users_df: dataframe of new identified users
-    :param temp_users_dir: path to temp users directory
-    :param users_progress_bar: progress bar for users (Not sure this is working though)
-    :param error_file_path: path to error file
-    :param overwrite_existing_temp_files: boolean to overwrite existing temp files or not
-    :return: new users dataframe
+def get_new_entities(entity_type:str, potential_new_entities_df: pd.DataFrame, temp_entity_dir: str, entity_progress_bar: tqdm, error_file_path: str, write_only_new: bool, retry_errors: bool = False):
     """
-    # Check if temp users directory exists. If it does, delete it and recreate it. Otherwise create it.
-    user_cols = pd.read_csv('../data/metadata_files/users_dataset_cols.csv')
+    Gets new entities from GitHub API. 
+
+    :param entity_type: Type of entity
+    :param potential_new_entities_df: Potential new entities dataframe
+    :param temp_entity_dir: Temporary entity directory
+    :param entity_progress_bar: Entity progress bar
+    :param error_file_path: Path to error file
+    :param write_only_new: Boolean indicating whether to write only new entities
+    :param retry_errors: Boolean indicating whether to retry errors
+    """
+    data_directory_path = get_data_directory_path()
+    # Create temporary directory if it doesn't exist
+    if not os.path.exists(temp_entity_dir):
+        os.makedirs(temp_entity_dir, exist_ok=True)
     
-    if (os.path.exists(temp_users_dir)) and (overwrite_existing_temp_files):
-        shutil.rmtree(temp_users_dir)
-          
-    if not os.path.exists(temp_users_dir):
-        os.makedirs(temp_users_dir)
-    # Update and refresh progress bar with the length of the potential new users dataframe
-    users_progress_bar.total = len(potential_new_users_df)
-    users_progress_bar.refresh()
-    # Loop through each user in the potential new users dataframe
-    for _, user_row in potential_new_users_df.iterrows():
+    # Subset headers for orgs and users
+    user_cols = ["bio", "followers_url", "following_url", "gists_url", "gravatar_id", "hireable", "organizations_url","received_events_url", "site_admin", "starred_url",
+    "subscriptions_url","login",]
+    repo_exclude_headers = ['squash_merge_commit_message', 'security_and_analysis.dependabot_security_updates.status', 'allow_squash_merge','merge_commit_title', 'allow_rebase_merge', 'allow_auto_merge', 'merge_commit_message', 'delete_branch_on_merge','use_squash_pr_title_as_default', 'allow_merge_commit','squash_merge_commit_title', 'security_and_analysis.secret_scanning_validity_checks.status', 'security_and_analysis.secret_scanning_push_protection.status', 'security_and_analysis.secret_scanning.status', 'allow_update_branch']
+    org_exclude_headers = ['two_factor_requirement_enabled',
+    'advanced_security_enabled_for_new_repositories',
+    'members_can_create_pages',
+    'members_can_create_public_pages',
+    'secret_scanning_push_protection_custom_link',
+    'total_private_repos',
+    'secret_scanning_validity_checks_enabled',
+    'billing_email',
+    'members_can_create_repositories',
+    'dependency_graph_enabled_for_new_repositories',
+    'plan.private_repos',
+    'dependabot_alerts_enabled_for_new_repositories',
+    'owned_private_repos',
+    'members_can_create_private_pages',
+    'private_gists',
+    'collaborators',
+    'plan.space',
+    'members_can_create_private_repositories',
+    'web_commit_signoff_required',
+    'secret_scanning_push_protection_enabled_for_new_repositories',
+    'default_repository_permission',
+    'members_can_create_internal_repositories',
+    'secret_scanning_enabled_for_new_repositories',
+    'members_allowed_repository_creation_type',
+    'plan.name',
+    'members_can_create_public_repositories',
+    'disk_usage',
+    'secret_scanning_push_protection_custom_link_enabled',
+    'dependabot_security_updates_enabled_for_new_repositories',
+    'plan.filled_seats',
+    'plan.seats',
+    'members_can_fork_private_repositories', 'org_query_time']
+    user_exclude_headers = ['disk_usage',
+    'private_gists',
+    'total_private_repos',
+    'collaborators',
+    'plan.space',
+    'plan.collaborators',
+    'plan.private_repos',
+    'owned_private_repos',
+    'plan.name',
+    'two_factor_authentication']
+
+    excluded_file_path = os.path.join(data_directory_path, 'metadata_files', f'excluded_{entity_type}.csv')
+    
+    # Get entity column based on entity type
+    entity_column = "full_name" if entity_type == "repos" else "login"
+    entity_type_singular = entity_type[:-1]
+
+    if os.path.exists(error_file_path):
+        drop_fields = [entity_column, 'error_url']
+        clean_write_error_file(error_file_path, drop_fields)
+        if retry_errors == False:
+            error_df = read_csv_file(error_file_path)
+            potential_new_entities_df = potential_new_entities_df[~potential_new_entities_df[entity_column].isin(error_df[entity_column])]
+            if potential_new_entities_df.empty:
+                console.print(f"No new entities to process for {entity_type}", style="bold blue")
+                return
+
+    if os.path.exists(excluded_file_path):
+        excluded_entities = read_csv_file(excluded_file_path)
+        # Exclude entities and check for errors
+        potential_new_entities_df = potential_new_entities_df[~potential_new_entities_df[entity_column].isin(excluded_entities[entity_column])]
+
+    # Get headers
+    headers = get_headers(entity_type)
+
+    # Update progress bar
+    entity_progress_bar.total = len(potential_new_entities_df)
+    entity_progress_bar.refresh()
+    columns_to_drop = ['org_query_time', 'user_query_time', 'repo_query_time', 'search_query_time', 'coding_dh_id']
+
+    # Loop through potential new entities
+    for _, row in potential_new_entities_df.iterrows():
         try:
-        
-            # Create temporary file name for user
-            temp_users_path = f"{user_row.login.replace('/', '')}_potential_users.csv"
-            if (os.path.exists(temp_users_dir + temp_users_path)):
-                users_progress_bar.update(1)
-                continue
-            expanded_response = requests.get(user_row.url, headers=auth_headers)
-            expanded_response_data = get_response_data(expanded_response, user_row.url)
-            if expanded_response_data is None:
-                users_progress_bar.update(1)
-                continue
-            expanded_df = pd.json_normalize(expanded_response_data)
-            # Only get the columns we want from the user dataframe. Primarily do this because we will get much more data for our user profiles than any other ones
-            expanded_df = expanded_df[user_cols.columns]
-            expanded_df.to_csv(temp_users_dir+temp_users_path, index=False)
-            # Only continue if sufficient rate limit
-            rates_df = check_rate_limit()
-            calls_remaining = rates_df['resources.core.limit']
-            if int(calls_remaining) < 0:
-                print(f'Remaining queries: {calls_remaining}')
-                reset_time = rates_df['resources.core.reset']
-                current_time = time.time()
-                print(f'Sleeping for {int(reset_time) - math.trunc(current_time)}')
-                time.sleep(int(reset_time) - math.trunc(current_time))
+            # Create temporary file path
+            temp_entities_file_name = f"{row[entity_column].replace('/', '_').replace(' ', '_')}_coding_dh_{entity_type_singular}.csv"
+            console.print(temp_entities_file_name)
+            # Check if file exists
+            temp_file_path = os.path.join(temp_entity_dir, temp_entities_file_name)
+            if os.path.exists(temp_file_path):
+                existing_temp_entities_df = read_csv_file(temp_file_path)
+                existing_temp_entities_df = drop_columns_from_df(existing_temp_entities_df, columns_to_drop)
+                if write_only_new:
+                    entity_progress_bar.update(1)
+                    continue
             else:
+                existing_temp_entities_df = pd.DataFrame()
+            # Get query
+            query = row.url
+            if entity_type == "orgs":
+                query = row.url if "/users/" in row.url else row.url.replace("/orgs/", "/users/")
+            # Make request
+            response, status_code = make_request_with_rate_limiting(query, auth_headers)
+            # If response is None, update progress bar and continue
+            if response is None and entity_type != "orgs":
+                entity_progress_bar.update(1)
+                additional_data = {entity_column: row[entity_column]}
+                log_error_to_file(error_file_path, additional_data, status_code, query)
                 continue
-            users_progress_bar.update(1)
-        except:
-            users_progress_bar.total = users_progress_bar.total - 1
-            error_df = pd.DataFrame([{'login': user_row.login, 'error_time': time.time(), 'error_url': user_row.url}])
-            if os.path.exists(error_file_path):
-                error_df.to_csv(error_file_path, mode='a', header=False, index=False)
+            # If response is None and entity type is orgs, create empty dataframe
+            elif response is None and entity_type == "orgs":
+                response_df = pd.DataFrame(columns=headers.columns, data=None, index=None)
             else:
-                error_df.to_csv(error_file_path, index=False)
-            # users_progress_bar.update(1)
-            continue
-    # Combine all users in temp directory into one dataframe
-    new_users_df = read_combine_files(dir_path=temp_users_dir)
-    users_progress_bar.close()
-    # Delete temp directory
-    if overwrite_existing_temp_files:
-        shutil.rmtree(temp_users_dir)
-    return new_users_df
-
-
-def check_add_users(potential_new_users_df, users_output_path, return_df, overwrite_existing_temp_files):
-    """Function to check if users are already in the users file and add them if not
-    :param potential_new_users_df: dataframe of new identified users
-    :param users_output_path: path to users file
-    :param return_df: boolean to return the dataframe or not
-    :param overwrite_existing_temp_files: boolean to overwrite existing temp files or not
-    """
-    # Also define temporary directory path for users
-    temp_users_dir = "../data/temp/temp_users/"
-    excluded_users = pd.read_csv('../data/metadata_files/excluded_users.csv')
-    potential_new_users_df = potential_new_users_df[~potential_new_users_df.login.isin(excluded_users.login)]
-    error_file_path = "../data/error_logs/potential_users_errors.csv"
-    error_df = check_return_error_file(error_file_path)
-    if os.path.exists(users_output_path):
-        users_df = pd.read_csv(users_output_path)
-        new_users_df = potential_new_users_df[~potential_new_users_df.login.isin(users_df.login)]
-        print(f"Number of new users: {len(new_users_df)}")
-        if len(error_df) > 0:
-            new_users_df = new_users_df[~new_users_df.login.isin(error_df.login)]
-        if len(new_users_df) > 0:
-            users_progress_bar = tqdm(total=len(new_users_df), desc='Users', position=1)
-            print(len(new_users_df))
-            expanded_new_users = get_new_users(new_users_df, temp_users_dir, users_progress_bar, error_file_path, overwrite_existing_temp_files)
-        else:
-            expanded_new_users = new_users_df
-        users_df = pd.concat([users_df, expanded_new_users])
-        users_df = users_df.drop_duplicates(subset=['login'])
-    else:
-        new_users_df = potential_new_users_df.copy()
-        users_progress_bar = tqdm(total=len(new_users_df), desc='Users', position=1)
-        users_df = get_new_users(potential_new_users_df, temp_users_dir, users_progress_bar, error_file_path, overwrite_existing_temp_files)
-    
-    clean_write_error_file(error_file_path, 'login')
-    check_if_older_file_exists(users_output_path)
-    users_df['user_query_time'] = datetime.now().strftime("%Y-%m-%d")
-    users_df.to_csv(users_output_path, index=False)
-    # check_for_entity_in_older_queries(users_output_path, users_df)
-    if return_df:
-        users_df = get_user_df(users_output_path)
-        return users_df
-
-def get_user_df(output_path):
-    """Function to get user dataframe
-    :param output_path: path to output file
-    :return: user dataframe"""
-    user_df = pd.read_csv(output_path)
-    return user_df
-
-def combined_updated_users(user_output_path, updated_user_output_path, overwrite_existing_temp_files, return_df):
-    if (os.path.exists(user_output_path)) and (os.path.exists(updated_user_output_path)):
-        users_df = pd.read_csv(user_output_path, low_memory=False)
-        check_if_older_file_exists(user_output_path)
-        updated_user_df = pd.read_csv(updated_user_output_path, low_memory=False)
-        existing_users_df = users_df[~users_df.login.isin(updated_user_df.login)]
-        combined_users_df = pd.concat([updated_user_df, existing_users_df])
-        combined_users_df = combined_users_df[updated_user_df.columns.tolist()]
-        combined_users_df = combined_users_df.fillna(np.nan).replace([np.nan], [None])
-        combined_users_df = combined_users_df.sort_values(by=['user_query_time']).drop_duplicates(subset=['login'], keep='first')
-        cleaned_users_df = check_for_entity_in_older_queries(user_output_path, combined_users_df)
-        if overwrite_existing_temp_files:
-            double_check = check_file_created(user_output_path, cleaned_users_df)
-            if double_check:
-                os.remove(updated_user_output_path)
-        if return_df:
-            return combined_users_df
-    
-
-"""Repo Functions
-1. Get new repos data
-2. Check if repos are already in the repos file and add them if not
-3. Get repo dataset"""
-    
-def get_new_repos(potential_new_repos_df, temp_repos_dir, repos_progress_bar,  error_file_path, overwrite_existing_temp_files=True):
-    """Function to get new repos from the repos file (currently not using anywhere but keeping just in case we need it)
-    :param potential_new_repos_df: dataframe of new identified repos
-    :param temp_repos_dir: path to temp repos directory
-    :param repos_progress_bar: progress bar for repos 
-    :param error_file_path: path to error file
-    :param overwrite_existing_temp_files: boolean to overwrite existing temp files or not
-    :return: new repos dataframe
-    """
-    repo_headers = pd.read_csv('../data/metadata_files/repo_headers.csv')
-    # Check if temp users directory exists. If it does, delete it and recreate it. Otherwise create it.
-    if (os.path.exists(temp_repos_dir)) and (overwrite_existing_temp_files):
-        shutil.rmtree(temp_repos_dir)
-
-    if not os.path.exists(temp_repos_dir):
-        os.makedirs(temp_repos_dir)  
-
-    # Create temporary file name for repo
-    repos_progress_bar.total = len(potential_new_repos_df)
-    repos_progress_bar.refresh()
-
-    for _, row in potential_new_repos_df.iterrows():
-        try:
-            # Create temporary file name for user
-            temp_repos_path = f"{row.full_name.replace('/', '')}_potential_repos.csv"
-            if os.path.exists(temp_repos_dir + temp_repos_path):
-                repos_progress_bar.update(1)
-                continue
-            response = requests.get(row.url, headers=auth_headers)
-            response_data = get_response_data(response, row.url)
-            if response_data is None:
-                repos_progress_bar.update(1)
-                continue
-            response_df = pd.json_normalize(response_data)
-            if 'message' in response_df.columns:
-                print(response_df.message.values[0])
-                repos_progress_bar.update(1)
-                continue
-            missing_headers = list(set(repo_headers.columns.tolist()) - set(response_df.columns.tolist()))
-            if len(missing_headers) > 0:
-                merged_df = pd.concat([response_df, repo_headers])
-                merged_df = merged_df[repo_headers.columns.tolist()]
-                merged_df = merged_df.dropna(subset=['full_name'])
-                response_df = merged_df[repo_headers.columns.tolist()]
-            else:
-                response_df = response_df[repo_headers.columns.tolist()]
-                response_df = response_df[repo_headers.columns]
-            response_df.to_csv(temp_repos_dir + temp_repos_path, index=False)
-            # Only continue if sufficient rate limit
-            rates_df = check_rate_limit()
-            calls_remaining = rates_df['resources.core.limit']
-            if int(calls_remaining) < 0:
-                print(f'Remaining queries: {calls_remaining}')
-                reset_time = rates_df['resources.core.reset']
-                current_time = time.time()
-                print(f'Sleeping for {int(reset_time) - math.trunc(current_time)}')
-                time.sleep(int(reset_time) - math.trunc(current_time))
-            else:
-                continue
-            repos_progress_bar.update(1)
-        except:
-            repos_progress_bar.total = repos_progress_bar.total - 1
-            # print(f"Error on getting repo for {row.full_name}")
-            error_df = pd.DataFrame([{'full_name': row.full_name, 'error_time': time.time(), 'error_url': row.url}])
-            if os.path.exists(error_file_path):
-                error_df.to_csv(error_file_path, mode='a', header=False, index=False)
-            else:
-                error_df.to_csv(error_file_path, index=False)
-            # repos_progress_bar.update(1)
-            continue
-    new_repos_df = read_combine_files(dir_path =temp_repos_dir)
-    new_repos_df = new_repos_df.drop_duplicates(subset=['full_name', 'id'])
-    new_repos_df = new_repos_df[repo_headers.columns]
-    repos_progress_bar.close()
-    if overwrite_existing_temp_files:
-        shutil.rmtree(temp_repos_dir)
-    return new_repos_df
-
-def check_add_repos(potential_new_repo_df, repo_output_path, return_df):
-    """Function to check if repo are already in the repo file and add them if not 
-    :param potential_new_repo_df: dataframe of contributors
-    :param repo_output_path: path to repo file
-    :param return_df: boolean to return dataframe or not
-    :return: repo dataframe
-    """
-    error_file_path = '../data/error_logs/potential_repos_errors.csv'
-    repo_headers = pd.read_csv('../data/metadata_files/repo_headers.csv')
-    if os.path.exists(repo_output_path):
-        repo_df = pd.read_csv(repo_output_path)
-        print(f"Number of repos: {len(repo_df)}", time.time())
-        new_repo_df = potential_new_repo_df[~potential_new_repo_df.full_name.isin(repo_df.full_name)]
-        error_df = check_return_error_file(error_file_path)
-        if len(error_df) > 0:
-            new_repo_df = new_repo_df[~new_repo_df.full_name.isin(error_df.full_name)]
-        print(f"Number of new repos: {len(new_repo_df)}", time.time())
-        if len(new_repo_df) > 0:
-            new_repo_df = new_repo_df[repo_headers.columns]
-            repo_df = pd.concat([repo_df, new_repo_df])
-            repo_df = repo_df.drop_duplicates(subset=['full_name'])
-            print(f"Number of repos: {len(repo_df)}", time.time())
-        else:
-            repo_df = repo_df[repo_headers.columns]
-            print(f"Number of repos: {len(repo_df)}", time.time(), "inner else statement")
-    else:
-        repo_df = potential_new_repo_df
-
-    print(f"Number of repos: {len(repo_df)}, checking if older file exists", time.time())
-    check_if_older_file_exists(repo_output_path)
-    repo_df['repo_query_time'] = datetime.now().strftime("%Y-%m-%d")
-    repo_df.to_csv(repo_output_path, index=False)
-    print("Repo file updated", time.time())
-    repo_df = check_for_entity_in_older_queries(repo_output_path, repo_df, is_large=True)
-    if return_df:
-        # repo_df = get_repo_df(repo_output_path)
-        return repo_df
-
-def get_repo_df(output_path):
-    """Function to get repo dataframe
-    :param output_path: path to output file
-    :return: repo dataframe"""
-    repo_df = pd.read_csv(output_path, low_memory=False)
-    return repo_df
-
-def combined_updated_repos(repo_output_path, updated_repo_output_path, overwrite_existing_temp_files, return_df):
-    if (os.path.exists(repo_output_path)) and (os.path.exists(updated_repo_output_path)):
-        repos_df = pd.read_csv(repo_output_path, low_memory=False)
-        check_if_older_file_exists(repo_output_path)
-        updated_repo_df = pd.read_csv(updated_repo_output_path, low_memory=False)
-        existing_repos_df = repos_df[~repos_df.full_name.isin(updated_repo_df.full_name)]
-        combined_repos_df = pd.concat([updated_repo_df, existing_repos_df])
-        combined_repos_df = combined_repos_df[updated_repo_df.columns.tolist()]
-        combined_repos_df = combined_repos_df.fillna(np.nan).replace([np.nan], [None])
-        combined_repos_df = combined_repos_df.sort_values(by=['repo_query_time']).drop_duplicates(subset=['full_name'], keep='first')
-        cleaned_repos_df = check_for_entity_in_older_queries(repo_output_path, combined_repos_df)
-        if overwrite_existing_temp_files:
-            double_check = check_file_created(repo_output_path, cleaned_repos_df)
-            if double_check:
-                os.remove(updated_repo_output_path)
-        if return_df:
-            return combined_repos_df
-
-"""Org Functions"""
-
-def get_orgs(org_df, org_output_path, error_file_path, overwrite_existing_temp_files):
-    temp_org_dir = f"../data/temp/{org_output_path.split('/')[-1].split('.csv')[0]}/"
-
-    # Delete existing temporary directory and create it again
-    
-    if (os.path.exists(temp_org_dir) )and (overwrite_existing_temp_files):
-        shutil.rmtree(temp_org_dir)
-    
-    if not os.path.exists(temp_org_dir):
-        os.makedirs(temp_org_dir)
-    org_progress_bar = tqdm(total=len(org_df), desc="Cleaning Orgs", position=0)
-    org_headers = pd.read_csv('../data/metadata_files/org_headers.csv')
-    user_cols = ['bio', 'followers_url', 'following_url', 'gists_url', 'gravatar_id', 'hireable', 'organizations_url','received_events_url', 'site_admin', 'starred_url','subscriptions_url','user_query_time', 'login',]
-    for _, row in org_df.iterrows():
-        try:
-            # Create the temporary directory path to store the data
-            temp_org_path =  F"{row.login.replace('/','')}_org.csv"
-
-            # Check if the org_df has already been saved to the temporary directory
-            if os.path.exists(temp_org_dir + temp_org_path):
-                org_progress_bar.update(1)
-                continue
-            user_url = row.url if '/users/' in row.url else row.url.replace('/orgs/', '/users/')
-            print(user_url)
-            user_response = requests.get(user_url, headers=auth_headers)
-            user_response_data = get_response_data(user_response, user_url)
-            if user_response_data is None:
-                user_response_df = pd.DataFrame(columns=user_cols, data=None, index=None)
-            else:
-                user_response_df = pd.json_normalize(user_response_data)
-            user_response_df = user_response_df[user_cols]
-            # Create the url to get the org
-            url = row.url.replace('/users/', '/orgs/') if '/users/' in row.url else row.url
-            print(url)
-            # Make the first request
-            response = requests.get(url, headers=auth_headers)
-            response_data = get_response_data(response, url)
-            print(response_data)
-            if response_data is None:
-                response_df = pd.read_csv('../data/metadata_files/org_headers.csv')
-            else:
+                response_data = response.json()
                 response_df = pd.json_normalize(response_data)
-            print(response_df.columns.tolist())
-            response_df = response_df[org_headers.columns]
-            common_columns = list(set(response_df.columns.tolist()).intersection(set(user_response_df.columns.tolist())))
-            final_response_df = pd.merge(response_df, user_response_df, on=common_columns, how='left')
-            print(final_response_df.columns.tolist())
-            final_response_df.to_csv(temp_org_dir + temp_org_path, index=False)
-            org_progress_bar.update(1)
-        except:
-            org_progress_bar.total = org_progress_bar.total - 1
-            # print(f"Error on getting orgs for {row.login}")
-            error_df = pd.DataFrame([{'login': row.login, 'error_time': time.time(), 'error_url': row.url}])
+                if "message" in response_df.columns:
+                    console.print(f"Error for {row[entity_column]}: {response_df.message.values[0]}", style="bold red")
+                    additional_data = {entity_column: row[entity_column]}
+                    log_error_to_file(error_file_path, additional_data, status_code, query)
+                    entity_progress_bar.update(1)
+                    continue
             
-            if os.path.exists(error_file_path):
-                error_df.to_csv(error_file_path, mode='a', header=False, index=False)
+            if entity_type != "orgs":
+                final_df = check_headers_exist(response_df, headers)
+                final_df = final_df[headers.columns]
             else:
-                error_df.to_csv(error_file_path, index=False)
-            org_progress_bar.update(1)
+                response_df = response_df[user_cols]
+                query = row.url.replace("/users/", "/orgs/") if "/users/" in row.url else row.url
+                response, _ = make_request_with_rate_limiting(query, auth_headers)
+                if response is None:
+                    expanded_df = pd.DataFrame(columns=headers.columns, data=None, index=None)
+                else:
+                    response_data = response.json()
+                    expanded_df = pd.json_normalize(response_data)
+                    expanded_df = check_headers_exist(expanded_df, headers)            
+                    expanded_df = expanded_df[headers.columns]
+             
+                common_columns = list(set(response_df.columns).intersection(set(expanded_df.columns)))
+                final_df = pd.merge(response_df, expanded_df, on=common_columns, how='left')
+                
+            final_df["coding_dh_date"] = datetime.now().strftime("%Y-%m-%d")
+            combined_df = pd.concat([existing_temp_entities_df, final_df])
+            grouped_dfs = combined_df.groupby(entity_column)
+            processed_files = []
+            for _, group in tqdm(grouped_dfs, desc=f"Grouping files"):
+                subset_columns = ["coding_dh_date"]
+                group = sort_groups_add_coding_dh_id(group, subset_columns)
+                processed_files.append(group)
+            final_processed_df = pd.concat(processed_files).reset_index(drop=True)
+            console.print("Length final_df", len(final_processed_df))
+            if entity_type == "repos":
+                final_processed_df = drop_columns_from_df(final_processed_df, repo_exclude_headers)
+            elif entity_type == "orgs":
+                final_processed_df = drop_columns_from_df(final_processed_df, org_exclude_headers)
+            else:
+                final_processed_df = drop_columns_from_df(final_processed_df, user_exclude_headers)
+
+            final_processed_df.to_csv(temp_file_path, index=False)
+            entity_progress_bar.update(1)
+        except Exception as e:
+            console.print(f"Error for {row[entity_column]}: {e}", style="bold red")
+            additional_data = {entity_column: row[entity_column]}
+            log_error_to_file(error_file_path, additional_data, status_code, query)
+            entity_progress_bar.update(1)
             continue
-    org_df = read_combine_files(dir_path=temp_org_dir)
-    if overwrite_existing_temp_files:
-        # Delete the temporary directory
-        shutil.rmtree(temp_org_dir)
-    # Close the progress bars
-    org_progress_bar.close()
-    return org_df
 
-def check_add_orgs(potential_new_org_df, org_output_path, return_df, overwrite_existing_temp_files):
-    """Function to check if orgs are already in the org file and add them if not 
-    :param org_df: dataframe of orgs
-    :param org_output_path: path to org file
-    :param return_df: boolean to return dataframe or not
-    :return: org dataframe
+    # Read in all temporary files
+    # combined_entity_df = read_combine_files(temp_entity_dir)
+    entity_progress_bar.close()
+    # return combined_entity_df
+
+def create_queries_directories(entity_type: str, cleaned_terms: pd.DataFrame) -> pd.DataFrame:
     """
-    error_file_path = '../data/error_logs/org_errors.csv'
-    # org_headers = pd.read_csv('../data/metadata_files/org_headers.csv')
-    if os.path.exists(org_output_path):
-        org_df = pd.read_csv(org_output_path)
-        new_org_df = potential_new_org_df[~potential_new_org_df.login.isin(org_df.login)]
-        error_df = check_return_error_file(error_file_path)
-        if len(error_df) > 0:
-            new_org_df = new_org_df[~new_org_df.login.isin(error_df.login)]
-        if len(new_org_df) > 0:
-            # new_org_df = new_org_df[org_headers.columns]
-            cleaned_orgs = get_orgs(new_org_df, org_output_path, error_file_path, overwrite_existing_temp_files)
-            org_df = pd.concat([org_df, cleaned_orgs])
-            org_df = org_df.drop_duplicates(subset=['id'])
-    else:
-        org_df = get_orgs(potential_new_org_df, org_output_path, error_file_path, overwrite_existing_temp_files)
+    Function to create directories for the queries
 
-    check_if_older_file_exists(org_output_path)
-    org_df['org_query_time'] = datetime.now().strftime("%Y-%m-%d")
-    org_df.to_csv(org_output_path, index=False)
-    check_for_entity_in_older_queries(org_output_path, org_df)
-    if return_df:
-        org_df = get_org_df(org_output_path)
-        return org_df
-
-def get_org_df(output_path):
-    """Function to get org dataframe
-    :param output_path: path to output file
-    :return: org dataframe"""
-    org_df = pd.read_csv(output_path, low_memory=False)
-    return org_df
-
-def combined_updated_orgs(org_output_path, updated_org_output_path, overwrite_existing_temp_files, return_df):
-    if (os.path.exists(org_output_path)) and (os.path.exists(updated_org_output_path)):
-        orgs_df = pd.read_csv(org_output_path, low_memory=False)
-        check_if_older_file_exists(org_output_path)
-        updated_org_df = pd.read_csv(updated_org_output_path, low_memory=False)
-        existing_orgs_df = orgs_df[~orgs_df.login.isin(updated_org_df.login)]
-        combined_orgs_df = pd.concat([updated_org_df, existing_orgs_df])
-        combined_orgs_df = combined_orgs_df[updated_org_df.columns.tolist()]
-        combined_orgs_df = combined_orgs_df.fillna(np.nan).replace([np.nan], [None])
-        combined_orgs_df = combined_orgs_df.sort_values(by=['org_query_time']).drop_duplicates(subset=['login'], keep='first')
-        cleaned_orgs_df = check_for_entity_in_older_queries(org_output_path, combined_orgs_df)
-        if overwrite_existing_temp_files:
-            double_check = check_file_created(org_output_path, cleaned_orgs_df)
-            if double_check:
-                os.remove(updated_org_output_path)
-        if return_df:
-            return combined_orgs_df
-
-"""Join Functions
-1. Check if older join entities exist and add them to our latest join"""
-
-def get_missing_entries(df: pd.DataFrame, older_df: pd.DataFrame, subset_fields: List) -> pd.DataFrame:
-    """Function to check for missing entries in a dataframe
-    :param df: dataframe
-    :param older_df: older dataframe
-    :param subset_fields: fields to subset on
-    :return: missing values dataframe"""
-    merged_df = pd.merge(df[subset_fields], older_df[subset_fields], on=subset_fields, how='outer', indicator=True)
-    missing_values = merged_df[merged_df._merge == 'right_only']
-    double_check = missing_values[subset_fields]
-    combined_condition = np.ones(len(older_df), dtype=bool)
-    for field in subset_fields:
-        combined_condition = combined_condition & older_df[field].isin(double_check[field])
-    older_df['double_check'] = np.where(combined_condition, 1, 0)
-    final_missing_values = older_df[(older_df.double_check == 1) & (older_df[subset_fields[0]].isin(double_check[subset_fields[0]]))]
-    if len(final_missing_values) > 0:
-        final_missing_values = final_missing_values.drop(columns=['double_check'])
-        return final_missing_values
-    else:
-        return pd.DataFrame()
-
-
-
-def check_for_joins_in_older_queries(join_file_path: str, join_files_df: pd.DataFrame, join_unique_field: str, filter_fields: List, subset_terms: Optional[List]=[], is_large: bool=False) -> pd.DataFrame:
-    """Function to check if joins exist in older queries and add them to our most recent version of the file
-    :param join_file_path: path to join file
-    :param join_files_df: join dataframe
-    :param join_unique_field: unique field to join on
-    :param filter_fields: fields to filter on
-    :param is_large: boolean to check if file is large or not
-    :return: join dataframe"""
-    # Needs to check if older repos exist and then find their values in older join_files_df
-    join_type = join_file_path.split("/")[-1].split("_dataset")[0]
-
-    older_join_file_path = join_file_path.replace("data/", "data/older_files/")
-    older_join_file_dir = os.path.dirname(older_join_file_path) + "/"
-
-    older_join_df = read_combine_files(dir_path=older_join_file_dir, check_all_dirs=True, file_path_contains=join_type, large_files=is_large) 
-    
-    # entity_type = "" if "search" in join_file_path else "repo" if "repo" in join_file_path else "user"
-    entity_type = join_file_path.split('/')[-1].split('_')[0]
-
-    if 'comments' in join_file_path:
-        entity_type = "repo"
-
-    if "search" in join_file_path:
-        entity_type = ""
-
-    if "search" in join_file_path:
-        join_files_df = join_files_df[join_files_df.search_term_source.isin(subset_terms)]
-        older_join_df = older_join_df[older_join_df.search_term_source.isin(subset_terms)]
-
-    if len(older_join_df) > 0:
-        if join_unique_field in older_join_df.columns:
-            older_join_df = older_join_df[older_join_df[join_unique_field].notna()]
-            
-            combined_join_df = pd.concat([join_files_df, older_join_df])
-            time_field = 'search_query_time' if 'search_query' in join_unique_field else f'{entity_type}_query_time'
-            cleaned_field = 'cleaned_search_query_time' if 'search_query' in join_unique_field else f'cleaned_{entity_type}_query_time'
-            combined_join_df[cleaned_field] = None
-            combined_join_df.loc[combined_join_df[time_field].isna(), cleaned_field] = '2022-10-10'
-            combined_join_df[cleaned_field] = pd.to_datetime(combined_join_df[time_field], errors='coerce')
-            combined_join_df = combined_join_df.sort_values(by=[cleaned_field]).drop_duplicates(subset=filter_fields, keep='first').drop(columns=[cleaned_field])
-
-            missing_values = get_missing_entries(join_files_df, older_join_df, filter_fields)
-
-            if len(missing_values) > 0:
-                join_files_df = pd.concat([join_files_df, missing_values])
-                # join_files_df.to_csv(join_file_path, index=False)
-
-    return join_files_df
-
-def get_core_users_repos(combine_files=True):
-    """Function to get core users and repos
-    :return: core users and repos
+    :param entity_type: Type of entity
+    :param cleaned_terms: Cleaned terms dataframe
+    :return: Search Queries dataframe
     """
-    initial_core_users = pd.read_csv("../data/derived_files/initial_core_users.csv")
-    initial_core_users['origin'] = 'initial_core'
-    initial_core_repos = pd.read_csv("../data/derived_files/initial_core_repos.csv")
-    initial_core_repos['origin'] = 'initial_core'
-    initial_core_orgs = pd.read_csv("../data/derived_files/initial_core_orgs.csv")
-    initial_core_orgs['origin'] = 'initial_core'
+    data_directory_path = get_data_directory_path()
+    queries = []
+    for _, subdir, _ in tqdm(os.walk(data_directory_path + f"/searched_{entity_type}_data"), desc="Walking through directories"):
+        for directory in subdir:
+            for file in os.listdir(data_directory_path + f"/searched_{entity_type}_data/" + directory):
+                if file.endswith(".csv"):
+                    search_term_source = directory.replace("_", " ").title()
+                    if 'searched' in file:
+                        search_term = file.replace(".csv", "").split(f'{entity_type}s_searched_')[1].replace("+", " ").replace("&#39;", "'")
+                        if '20' in search_term:
+                            search_term = search_term.split("_20")[0]
+                    else:
+                        search_term = search_term_source
+                    
+                    subset_cleaned_terms = cleaned_terms[(cleaned_terms.search_term_source == search_term_source) & (cleaned_terms.search_term == search_term)]
+                    if not subset_cleaned_terms.empty:
+                        subset_cleaned_terms['file_path'] = f"{data_directory_path}/searched_{entity_type}_data/{directory}/{file}"
+                        subset_cleaned_terms["file_name"] = file
+                        queries.append(subset_cleaned_terms)
+    queries_df = pd.concat(queries)
+    queries_df = queries_df.reset_index(drop=True)
+    search_queries_dfs = []
+    for _, row in tqdm(queries_df.iterrows(), total=queries_df.shape[0], desc="Processing queries"):
+        df = read_csv_file(row.file_path, encoding='utf-8-sig')
+        df["search_file_name"] = row.file_name
+        search_queries_dfs.append(df)
+    search_queries_df = pd.concat(search_queries_dfs)
+    return search_queries_df
 
-    firstpass_core_users = pd.read_csv("../data/derived_files/firstpass_core_users.csv")
-    firstpass_core_users['origin'] = 'firstpass_core'
-    firstpass_core_repos = pd.read_csv("../data/derived_files/firstpass_core_repos.csv")
-    firstpass_core_repos['origin'] = 'firstpass_core'
-    firstpass_core_orgs = pd.read_csv("../data/derived_files/firstpass_core_orgs.csv")
-    firstpass_core_orgs['origin'] = 'firstpass_core'
+def get_entity_files_from_search_queries(search_user_queries_df, search_org_queries_df, search_repo_queries_df, data_directory_path: str):
+    user_files = os.listdir(f"{data_directory_path}/historic_data/entity_files/all_users/")
+    org_files = os.listdir(f"{data_directory_path}/historic_data/entity_files/all_orgs/")
+    repo_files = os.listdir(f"{data_directory_path}/historic_data/entity_files/all_repos/")
+    cleaned_user_files = [f.split("_coding_dh_")[0] for f in user_files if f.endswith(".csv")]
+    cleaned_org_files = [f.split("_coding_dh_")[0] for f in org_files if f.endswith(".csv")]
+    cleaned_repo_files = [f.split("_coding_dh_")[0].replace("_", "/", 1) for f in repo_files if f.endswith(".csv")]
+    existing_search_user_queries_df = search_user_queries_df[search_user_queries_df.login.isin(cleaned_user_files)]
+    existing_search_org_queries_df = search_org_queries_df[search_org_queries_df.login.isin(cleaned_org_files)]
+    existing_search_repo_queries_df = search_repo_queries_df[search_repo_queries_df.full_name.isin(cleaned_repo_files)]
+    finalized_user_logins = existing_search_user_queries_df.login.unique().tolist()
+    finalized_org_logins = existing_search_org_queries_df.login.unique().tolist()
+    finalized_repo_full_names = existing_search_repo_queries_df.full_name.unique().tolist()
 
-    finalpass_core_users = pd.read_csv("../data/derived_files/finalpass_core_users.csv")
-    finalpass_core_users['origin'] = 'finalpass_core'
-    finalpass_core_repos = pd.read_csv("../data/large_files/derived_files/finalpass_core_repos.csv", low_memory=False, on_bad_lines='skip')
-    finalpass_core_repos['origin'] = 'finalpass_core'
-    finalpass_core_orgs = pd.read_csv("../data/derived_files/finalpass_core_orgs.csv")
-    finalpass_core_orgs['origin'] = 'finalpass_core'
+    finalized_user_files = [f"{login}_coding_dh_user.csv" for login in finalized_user_logins]
+    finalized_org_files = [f"{login}_coding_dh_org.csv" for login in finalized_org_logins]
+    finalized_repo_files = [f"{full_name.replace('/', '_')}_coding_dh_repo.csv" for full_name in finalized_repo_full_names]
+    initial_core_users = read_combine_files(f"{data_directory_path}/historic_data/entity_files/all_users/", finalized_user_files)
+    initial_core_orgs = read_combine_files(f"{data_directory_path}/historic_data/entity_files/all_orgs/", finalized_org_files)
+    initial_core_repos = read_combine_files(f"{data_directory_path}/historic_data/entity_files/all_repos/", finalized_repo_files)
+    return initial_core_users, initial_core_orgs, initial_core_repos
 
-    if combine_files:
-        core_users = pd.concat([initial_core_users, firstpass_core_users, finalpass_core_users])
-        core_repos = pd.concat([initial_core_repos, firstpass_core_repos, finalpass_core_repos])
-        core_orgs = pd.concat([initial_core_orgs, firstpass_core_orgs, finalpass_core_orgs])
-        return core_users, core_repos, core_orgs
+def get_data_from_search_terms(target_terms: List, data_directory_path: str, return_search_queries: bool) -> Union[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    # Load in the translated terms
+    cleaned_terms = pd.read_csv(f'{data_directory_path}/derived_files/grouped_cleaned_translated_terms.csv', encoding='utf-8-sig')
+
+    if 'keep_term' in cleaned_terms.columns:
+        cleaned_terms = cleaned_terms[cleaned_terms.keep_term == True]
+    # check if columns need renaming
+    columns_to_rename = ['code', 'term', 'term_source']
+    if all(elem in cleaned_terms.columns for elem in columns_to_rename):
+        cleaned_terms = cleaned_terms.rename(columns={'code': 'natural_language', 'term': 'search_term', 'term_source': 'search_term_source'})
+    cleaned_terms = cleaned_terms[cleaned_terms.search_term_source.isin(target_terms)]
+    cleaned_terms = cleaned_terms.reset_index(drop=True)
+
+    cleaned_terms.loc[cleaned_terms.search_term.str.contains("&#39;"), "search_term"] = cleaned_terms.search_term.str.replace("&#39;", "'")
+    cleaned_terms['lower_search_term'] = cleaned_terms.search_term.str.lower()
+
+    search_user_queries_df = create_queries_directories("user", cleaned_terms)
+    search_org_queries_df = search_user_queries_df[search_user_queries_df['type'] == 'Organization']
+    search_org_queries_df = search_org_queries_df[search_org_queries_df.search_term_source.isin(cleaned_terms.search_term_source.unique())]
+    search_user_queries_df = search_user_queries_df[search_user_queries_df['type'] == 'User']
+    search_user_queries_df = search_user_queries_df[search_user_queries_df.search_term_source.isin(cleaned_terms.search_term_source.unique())]
+    search_repo_queries_df = create_queries_directories("repo", cleaned_terms)
+    search_repo_queries_df = search_repo_queries_df[search_repo_queries_df.search_term_source.isin(cleaned_terms.search_term_source.unique())]
+
+    if return_search_queries:
+        return search_user_queries_df, search_org_queries_df, search_repo_queries_df
     else:
-        return initial_core_users, initial_core_repos, initial_core_orgs, firstpass_core_users, firstpass_core_repos, firstpass_core_orgs, finalpass_core_users, finalpass_core_repos, finalpass_core_orgs
+        initial_core_users, initial_core_orgs, initial_core_repos = get_entity_files_from_search_queries(search_user_queries_df, search_org_queries_df, search_repo_queries_df, data_directory_path)
+        return initial_core_users, initial_core_orgs, initial_core_repos
 
 
-def save_chart(chart, filename, scale_factor=1):
+
+def save_chart(chart: alt.Chart, filename: str, scale_factor=2.0) -> None:
     '''
     Save an Altair chart using vl-convert
     
-    Parameters
-    ----------
-    chart : altair.Chart
-        Altair chart to save
-    filename : str
-        The path to save the chart to
-    scale_factor: int or float
+    :param chart: Altair chart to save
+    :param filename : The path to save the chart to
+    :param scale_factor: int or float
         The factor to scale the image resolution by.
         E.g. A value of `2` means two times the default resolution.
     '''
@@ -845,3 +627,7 @@ def save_chart(chart, filename, scale_factor=1):
                 f.write(vlc.vegalite_to_png(chart.to_dict(), scale=scale_factor))
         else:
             raise ValueError("Only svg and png formats are supported")
+        
+if __name__ == "__main__":
+    data_directory_path = "../../new_datasets"
+    set_data_directory_path(data_directory_path)
