@@ -7,7 +7,7 @@ from tqdm import tqdm
 from datetime import datetime
 
 sys.path.append("..")
-from data_generation_scripts.general_utils import read_csv_file
+from data_generation_scripts.general_utils import *
 import rich
 from rich.console import Console
 
@@ -225,45 +225,56 @@ if '__main__' == __name__:
     #                 processed_combined_df = row_df
     #                 processed_combined_df['coding_dh_id'] = 0
     #             processed_combined_df.to_csv(temp_path, index=False)
-    subset_path ="../../datasets/older_files/large_files/join_files/"
-    older_files = os.listdir(subset_path)
-    older_files = [f for f in older_files if f.endswith(".csv") and ("starred" in f) ]
-    from datetime import datetime
-    current_date = datetime.today().strftime('%Y-%m-%d')
-    df = pd.read_csv("../../datasets/updated_join_files/join_files/user_starred_join_dataset.csv")
-    drop_cols = ['org_query_time', 'user_query_time', 'repo_query_time', 'search_query_time', 'user_repos_url']
-    df = drop_columns(df, drop_cols)
-    df['coding_dh_date'] = pd.to_datetime(current_date)
-    new_temp_dir = "../../new_datasets/historic_data/join_files/user_starred_join_dataset"
-    if not os.path.exists(new_temp_dir):
-        os.makedirs(new_temp_dir)
+    # subset_path ="../../datasets/older_files/large_files/join_files/"
+    # older_files = os.listdir(subset_path)
+    # older_files = [f for f in older_files if f.endswith(".csv") and ("starred" in f) ]
+    # from datetime import datetime
+    # current_date = datetime.today().strftime('%Y-%m-%d')
+    # df = pd.read_csv("../../datasets/updated_join_files/join_files/user_starred_join_dataset.csv")
+    # drop_cols = ['org_query_time', 'user_query_time', 'repo_query_time', 'search_query_time', 'user_repos_url']
+    # df = drop_columns(df, drop_cols)
+    # df['coding_dh_date'] = pd.to_datetime(current_date)
+    # new_temp_dir = "../../new_datasets/historic_data/join_files/user_starred_join_dataset"
+    # if not os.path.exists(new_temp_dir):
+    #     os.makedirs(new_temp_dir)
     
-    grouped_columns = ["user_login", "full_name"]
-    # grouped_files = df.groupby(grouped_columns)
-    # for group in grouped_columns:
-    #     subset_columns = ['coding_dh_date']
-    #     group = sort_groups_add_id(group, subset_columns)
-    #     user_login = group.user_login.iloc[0].replace(" ", "_").replace("/", "_")
-    #     file_path = f"{new_temp_dir}/{user_login}_user_repo_starred_url.csv"
-    #     group.to_csv(file_path, index=False)
+    # grouped_columns = ["user_login", "full_name"]
+    # # grouped_files = df.groupby(grouped_columns)
+    # # for group in grouped_columns:
+    # #     subset_columns = ['coding_dh_date']
+    # #     group = sort_groups_add_id(group, subset_columns)
+    # #     user_login = group.user_login.iloc[0].replace(" ", "_").replace("/", "_")
+    # #     file_path = f"{new_temp_dir}/{user_login}_user_repo_starred_url.csv"
+    # #     group.to_csv(file_path, index=False)
 
-    # df = df.drop(columns=['coding_dh_id'])
-    processed_older_files = []
-    for file in tqdm(older_files, desc="Processing older files"):
-        older_date = "202" + file.split('_202')[1].replace("_", "-").split(".")[0]
-        older_date = older_date.split(" ")[0]
-        older_df = format_file(os.path.join(subset_path, file), older_date)
-        older_df = drop_columns(older_df, drop_cols)
-        older_df['coding_dh_date'] = pd.to_datetime(older_date)
-        processed_older_files.append(older_df)
-    combined_df = pd.concat([df] + processed_older_files)
-    grouped_files = combined_df.groupby(grouped_columns)
-    for group_key, group_df in tqdm(grouped_files, desc="Grouping files"):
-        subset_columns = ['coding_dh_date']
-        user_login = group_df.user_login.iloc[0].replace(" ", "_").replace("/", "_")
-        file_path = f"{new_temp_dir}/{user_login}_user_repo_starred_url.csv"
-        group_df = sort_groups_add_id(group_df, subset_columns)
-        group_df.to_csv(file_path, index=False)
+    # # df = df.drop(columns=['coding_dh_id'])
+    # processed_older_files = []
+    # for file in tqdm(older_files, desc="Processing older files"):
+    #     older_date = "202" + file.split('_202')[1].replace("_", "-").split(".")[0]
+    #     older_date = older_date.split(" ")[0]
+    #     older_df = format_file(os.path.join(subset_path, file), older_date)
+    #     older_df = drop_columns(older_df, drop_cols)
+    #     older_df['coding_dh_date'] = pd.to_datetime(older_date)
+    #     processed_older_files.append(older_df)
+    # combined_df = pd.concat([df] + processed_older_files)
+    # grouped_files = combined_df.groupby(grouped_columns)
+    # for group_key, group_df in tqdm(grouped_files, desc="Grouping files"):
+    #     subset_columns = ['coding_dh_date']
+    #     user_login = group_df.user_login.iloc[0].replace(" ", "_").replace("/", "_")
+    #     file_path = f"{new_temp_dir}/{user_login}_user_repo_starred_url.csv"
+    #     group_df = sort_groups_add_id(group_df, subset_columns)
+    #     group_df.to_csv(file_path, index=False)
+
+    repo_files = "../../new_datasets/historic_data/entity_files/all_repos"
+
+    for file in tqdm(os.listdir(repo_files), desc="Processing Files"):
+        if file.endswith(".csv"):
+            df = read_csv_file(os.path.join(repo_files, file))
+            df['coding_dh_date'] = pd.to_datetime(df.coding_dh_date)
+            df = drop_columns_from_df(df, ['user_query_time', 'org_query_time', 'repo_query_time', 'search_query_time', 'coding_dh_id'])
+            subset_columns = ['coding_dh_date']
+            df = sort_groups_add_id(df, subset_columns)
+            df.to_csv(os.path.join(repo_files, file), index=False)
     
 
 
