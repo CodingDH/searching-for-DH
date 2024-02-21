@@ -9,7 +9,6 @@ import os
 sys.path.append("..")
 from data_generation_scripts.general_utils import *
 from data_generation_scripts.generate_entity_interactions import *
-from ast import literal_eval
 import apikey
 
 import apikey
@@ -74,7 +73,7 @@ def process_firstpass_repo_owners(entity_type: str, expanded_owners: pd.DataFram
 if __name__ == "__main__":
 
     data_directory_path = get_data_directory_path() 
-    target_terms: list = ["Public History", "Digital History", "Digital Cultural Heritage", "Cultural Analytics", "Computational Humanities", "Computational Social Science", "Digital Humanities"]
+    target_terms: list = ["Digital Humanities"]
 
     initial_core_users, initial_core_orgs, initial_core_repos = get_data_from_search_terms(data_directory_path, target_terms, return_search_queries=False)
     
